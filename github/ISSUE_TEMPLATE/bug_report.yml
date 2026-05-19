@@ -1,0 +1,47 @@
+name: "Bug report"
+description: "Something broke or behaved wrong in the Studio UI"
+title: "[bug] "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Best filed via the `/report-ui` skill (auto-fills environment + screenshot).
+        See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md). This form is the manual fallback.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The actual behaviour you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Include the exact input you typed if relevant.
+      placeholder: |
+        1. Open the coach panel
+        2. Type "..."
+        3. Press Enter
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "Auto-filled by /report-ui. Manual: run `bash scripts/collect-studio-env.sh` and paste."
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshot / evidence
+      description: Drag an image here, or leave the marker the skill inserted.
