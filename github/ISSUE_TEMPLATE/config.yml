@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Report from inside HypeProof Studio (recommended)
-    url: https://github.com/jayleekr/hypeproof-studio/blob/main/CONTRIBUTING.md
-    about: >-
-      Best path: run the /report-ui Claude Code skill from the repo. It captures
-      a screenshot, loads full environment info, and files a solver-ready issue
-      automatically. These web forms are the manual fallback.
