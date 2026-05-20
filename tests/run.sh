@@ -22,8 +22,9 @@ expand_path() {
   case "$p" in *[\'\"\`\;\|\&]*) echo "$p"; return ;; esac
   eval "echo $p"
 }
-get_env_override() { local v="CONSUMER_$1"; echo "${!v:-}"; }
-get_t_v10_base()   { local v="T_V10_BASE_$1"; echo "${!v:-}"; }
+_sanitize() { echo "$1" | tr '-' '_'; }
+get_env_override() { local v="CONSUMER_$(_sanitize "$1")"; echo "${!v:-}"; }
+get_t_v10_base()   { local v="T_V10_BASE_$(_sanitize "$1")"; echo "${!v:-}"; }
 
 CONSUMERS=()
 while IFS= read -r raw; do

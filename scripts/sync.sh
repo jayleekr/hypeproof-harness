@@ -52,8 +52,10 @@ expand_path() {
 }
 get_override() {
   local name="$1"
-  # CONSUMER_<basename> env override (case-sensitive)
-  local var="CONSUMER_${name}"
+  # CONSUMER_<basename> env override; dashes are normalized to underscores
+  # because POSIX env var names can't contain dashes
+  local sanitized="${name//-/_}"
+  local var="CONSUMER_${sanitized}"
   echo "${!var:-}"
 }
 
