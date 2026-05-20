@@ -285,18 +285,22 @@ No secrets · no direct main push · `human-needed` label · skills via
 
 ## 7. 멤버 / Team
 
-### 이 repo 접근 권한 (vendor 아키텍처 이후 최소화)
+### 이 repo 접근 권한 (하이브리드 모델)
 
 | Name | GitHub | harness 권한 | 사유 |
 |---|---|---|---|
 | Jae Won (Jay) Lee | [@jayleekr](https://github.com/jayleekr) | admin | Maintainer |
-| Shin Jehyeong | [@JeHyeong2](https://github.com/JeHyeong2) | admin (pending) | Co-maintainer · 비상 액세스 |
+| Shin Jehyeong | [@JeHyeong2](https://github.com/JeHyeong2) | admin | Co-maintainer · 비상 액세스 |
+| Bongho Tae | [@xoqhdgh1002](https://github.com/xoqhdgh1002) | write | 1회 온보딩 clone + harness 기여 |
+| Jinyong Shin | [@JinyongShin](https://github.com/JinyongShin) | write | 1회 온보딩 clone + harness 기여 |
+| Taejin Kang (TJ) | [@TJ-kr](https://github.com/TJ-kr) | write | 1회 온보딩 clone + harness 기여 |
+| Jkim | [@ico1036](https://github.com/ico1036) | write | 1회 온보딩 clone + harness 기여 |
 
-**다른 멤버는 이 repo에 접근하지 않는다 — vendor 아키텍처의 핵심 이점.**
-2026-05-19에 submodule 시대에 발송된 컬래보레이터 초대(JinyongShin·
-xoqhdgh1002·TJ-kr·ico1036)는 2026-05-20에 회수됨. 멤버들은 자기 consumer
-repo(`studio`/`sediment`/`lab`)에 접근 권한만 있으면 vendored skill을 그대로
-사용 가능.
+멤버들은 처음 onboarding 시 이 repo를 clone하고 `/onboard-member` 스킬을
+실행한다 (§2a). 그 후 일상에서는 자기 consumer repo에서만 일하므로 harness에
+다시 들어올 일이 거의 없다. 하지만 shared 스킬/가이드를 함께 개선하고 싶을
+때를 위해 write 권한 부여 — PR 워크플로우로 기여 가능. **harness 변경은
+항상 피어리뷰** (§3.3 정책).
 
 ### 전체 컨트리뷰터 (consumer repo 기준)
 
