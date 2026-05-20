@@ -1,343 +1,196 @@
-# hypeproof-harness
+<h1 align="center">hypeproof-harness</h1>
 
-HypeProof 멤버들이 **같은 방식으로 같이 일하기 위한** 공유 레이어.
-`hypeproof-studio` · `sediment` · `hypeprooflab` 세 repo가 공유 스킬과
-협업 규약을 여기서 가져간다.
+<p align="center">
+  <b>HypeProof Lab의 AI-네이티브 워크플로 중심.</b><br>
+  Claude Code로 일하는 작은 팀이 같은 방식으로 움직이기 위한 공유 OS.
+</p>
 
-> **배포 모델 (2026-05-20부터)**: 서브모듈이 아니라 **vendored 실파일**.
-> 각 repo의 `.claude/skills/skill-creator/`는 이 repo의 같은 경로에서
-> 복사된 실파일이고, `HARNESS_VERSION` 파일이 어느 harness SHA에서
-> 복사됐는지 기록한다. 배경/근거는 §1, 동기화는 §2, 테스트 합격선은
-> [tests/REQUIREMENTS.md](./tests/REQUIREMENTS.md), 롤백은
-> [docs/rollback-vendor.md](./docs/rollback-vendor.md).
-
-<details><summary>English</summary>
-
-Shared collaboration layer for HypeProof members. Three repos —
-`hypeproof-studio`, `sediment`, `hypeprooflab` — vendor the shared skill
-into their own tree as real files; `HARNESS_VERSION` records the
-provenance SHA. **Submodule architecture was retired 2026-05-20**
-(see §1). Sync: §2. Test contract: `tests/REQUIREMENTS.md`. Rollback:
-`docs/rollback-vendor.md`.
-</details>
+<p align="center">
+  <code>private</code> · <code>Claude Code</code> · <code>macOS · Linux · WSL2</code> · <code>2026-05</code>
+</p>
 
 ---
 
-## 1. 무엇이 공유되나 / What's shared here
+## Why this exists
 
-| Path | 목적 |
-|---|---|
-| `skills/skill-creator/` | 새 스킬을 만들고 고치고 평가하는 generic 툴킷. 결합도 0(검증) |
-
-스킬은 이거 하나다. PR/이슈 스킬(`hype-open-pr`·`report-ui`)은 studio 환경에
-구조적으로 결합돼서 studio-local로 둔다. 추가 generic 스킬이 검증되면 여기로.
-
-`.github` 이슈/PR 템플릿이나 `human-needed` 라벨 정책 같은 **non-skill**
-협업 규약은 글로 §3–§6에 적힌다 — GitHub이 서브모듈/심링크 템플릿을 안
-따라가므로 파일로 공유되지 않는다.
-
-<details><summary>English</summary>
-
-One generic skill (`skill-creator`, zero repo coupling — verified by T6
-portability test). PR/issue skills are studio-coupled, kept studio-local.
-Non-skill conventions are prose in §3–§6.
-</details>
-
----
-
-## 2. 셋업 / Setup (하이브리드 모델)
-
-> **플랫폼 / Platform**: macOS arm64 권장 (Jay가 primary). Linux 대체로 동작
-> (`stat -f`을 쓰는 maintainer 스크립트 일부는 BSD 전용). Windows는 **WSL2
-> 강력 권장** — 네이티브 PowerShell/cmd는 일부 단계 미지원. Studio 로컬 빌드는
-> METAPLAN §0 정책상 **macOS arm64 전용** (Win/Linux는 CI 빌드된 .exe/.dmg만).
+> HypeProof는 AI-네이티브 회사다. Claude Code가 우리의 IDE이고,
+> 회의록·이슈·PR은 소스 코드만큼 중요한 자산이다. 4개 repo로 일하는
+> 작은 팀이 **같은 방식으로** 움직이려면 — 같은 스킬, 같은 이슈 흐름,
+> 같은 라벨 정책, 같은 온보딩 — 한 곳에 박혀 있어야 한다.
 >
-> **워크스페이스 경로**는 사용자가 정한다 — 본 문서에서 `$WS`로 표기되는 자리.
-> 예: `$WS=~/CodeWorkspace` 면 `$WS/hypeproof-studio` =
-> `~/CodeWorkspace/hypeproof-studio`. `/onboard-member` 스킬이 묻는다.
+> **여기가 그 한 곳이다.**
 
-### 2a. 신규 멤버 — 1회성 온보딩 (이 harness를 쓰는 유일한 시점)
+3개의 product repo(`hypeproof-studio`, `sediment`, `hypeprooflab`)는 각자의
+도메인을 책임진다. 이 harness는 그 세 repo가 **동일한 협업 OS를 공유하도록
+보장한다** — vendoring 메커니즘으로 코드는 각자, 워크플로는 하나.
+
+---
+
+## What's in here
+
+| 자산 | 무엇 | 어디로 vendored |
+|---|---|---|
+| `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | → 3 consumers `.claude/skills/` |
+| `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
+| `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 (5단계 lifecycle) | → 3 consumers `docs/` |
+| `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` / apply / `--commit`) | (maintainer) |
+| `tests/REQUIREMENTS.md` + `tests/run.sh` | T-V1..T-V10 vendor 정합성 검증 | (maintainer) |
+| `docs/rollback-vendor.md` | 5분 안에 submodule 모델로 돌아가는 7-step 런북 | (maintainer) |
+
+명시적으로 **공유 안 하는 것**: studio-local 규칙(`branding-swap`, `build-pipeline`,
+`extension-dev`), `e2e/` 흐름, `vscodium-base` 서브모듈, 각 repo의 `.github/`
+템플릿(GitHub가 submodule 심링크 템플릿을 안 따라가므로 vendor 불가).
+
+---
+
+## Quick start
+
+### 👥 신규 멤버 — 1회성 온보딩
 
 ```bash
 git clone git@github.com:jayleekr/hypeproof-harness.git
-cd hypeproof-harness
-claude   # Claude Code 세션 시작
-# 세션에서:
-/onboard-member            # 또는 "온보딩"
+cd hypeproof-harness && claude
 ```
 
-`/onboard-member` 스킬이 인터랙티브하게:
-1. 어느 consumer repo 멤버인지 물음 (studio/sediment/lab)
-2. `$WS/<repo>`에 clone (이미 있으면 git pull)
-3. git hooks 설치 (studio의 pre-push 등)
-4. Claude Code 설정·MCP 서버 검증
-5. 자기 consumer repo의 `docs/MEMBER-GUIDE.ko.md`로 안내
+Claude Code 세션에서:
 
-자세한 한글 가이드는 [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)
-— 멤버에게 vendoring된다.
+```
+/onboard-member
+```
 
-### 2b. 일상 작업 — harness는 시야에서 사라진다
+스킬이 인터랙티브하게 진행한다:
+1. **플랫폼 점검** — macOS / Linux / WSL2 / Windows native 판정
+2. **어느 consumer repo의 멤버인지** — studio · sediment · lab 중 선택
+3. **워크스페이스 경로** — `$HYPEPROOF_WORKSPACE` env, `~/code`, `~/dev`,
+   `~/CodeWorkspace` 등 자기 컨벤션 그대로 (강제 X)
+4. **clone + git hooks + Claude Code 설정 검증**
+5. 자기 repo의 `docs/MEMBER-GUIDE.ko.md`로 안내
 
-온보딩 이후엔 **자기 consumer repo에서만 일한다**. harness clone은 다시
-필요 없다. shared 콘텐츠(`skill-creator`, `MEMBER-GUIDE.ko.md`)는 이미
-consumer repo 안에 실파일로 vendoring돼 있다.
+키/토큰은 자동 저장 X (안내만). 재실행 안전(idempotent).
+
+> 자세한 워크플로 가이드는 [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md) —
+> 멤버에게 vendoring되므로 자기 consumer repo에서도 같은 파일을 볼 수 있다.
+
+### 🛠 메인테이너 — 공유 콘텐츠 업데이트
 
 ```bash
-cd $WS/<your-consumer-repo>
-claude
-# 일상 워크플로 — issue → branch → PR → merge (MEMBER-GUIDE §4 참조)
+# 1. canonical 편집
+vim skills/skill-creator/SKILL.md     # 또는 docs/MEMBER-GUIDE.ko.md
+git commit && git push origin main
+
+# 2. 모든 consumer로 동기
+bash scripts/sync.sh --check          # drift 미리보기 (read-only)
+bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
+                                       # (git 신원: consumer의 ambient config)
+
+# 3. 각 consumer push (또는 PR — harness 변경은 피어리뷰 권장)
 ```
 
-### 2c. 메인테이너 — shared 콘텐츠 업데이트
+**가드레일** (CR 시리즈 비판 반영):
+- `--commit`은 main 위 + skill 외 변경 없을 때만 (`ALLOW_ANY_BRANCH=1` 우회)
+- 신원은 consumer의 ambient git config 사용 — 스크립트가 override 안 함
+- `rsync --delete`가 consumer-only 파일 노릴 때 abort (`--force-delete` 강제)
 
-harness에서 `skills/skill-creator/` 또는 `docs/MEMBER-GUIDE.ko.md`를 고친 뒤:
+### 🔁 다른 머신에서 운영 (CONSUMER_* env override)
 
 ```bash
-bash scripts/sync.sh --check        # 어느 consumer가 drift하는지 (read-only)
-bash scripts/sync.sh                # apply: rsync 캐노니컬→ 각 consumer
-bash scripts/sync.sh --commit       # apply + 각 consumer main에 커밋
-# 그 다음 각 consumer에서 git push (또는 PR)
+CONSUMER_hypeproof_studio=/abs/path/to/local/clone \
+CONSUMER_sediment=/abs/path/to/sediment \
+  bash scripts/sync.sh --check
 ```
 
-가드: `--commit`은 main 위 + skill 외 변경 없을 때만 (CR-10).
-신원은 그 repo의 ambient git config (CR-4).
-rsync `--delete`가 consumer-only 파일 노릴 때 abort (CR-8).
-
-<details><summary>English</summary>
-
-**2a. New members — one-time onboarding**: `git clone hypeproof-harness`, run
-Claude Code, invoke `/onboard-member`. The skill clones your consumer repo,
-sets git hooks, validates Claude Code config, points you at your repo's
-vendored `docs/MEMBER-GUIDE.ko.md`.
-
-**2b. Day-to-day**: harness becomes invisible. Work happens in
-`$WS/<consumer-repo>/`. Shared content is already vendored. (`$WS` is user-chosen — defaults to `~/CodeWorkspace` for macOS but anything works.)
-
-**2c. Maintainers — sync vendored content**: edit canonical here, run
-`scripts/sync.sh --check / --apply / --commit`.
-</details>
-
-### 운영자 입장 — skill-creator를 업데이트할 때
-
-1. 이 repo(`hypeproof-harness`)에서 `skills/skill-creator/`를 편집·커밋·push
-2. 동기 스크립트 실행:
-   ```bash
-   bash scripts/sync.sh --check         # 어느 consumer가 drift하는지 보기 (read-only)
-   bash scripts/sync.sh                  # apply: rsync 캐노니컬→ 각 consumer
-   bash scripts/sync.sh --commit         # apply + 각 consumer의 main에 커밋 (push는 별도)
-   ```
-3. 각 consumer repo로 가서 `git push` (또는 PR)
-
-소비 repo 경로는 [`tests/consumers.txt`](./tests/consumers.txt)에 있다. 머신마다
-다르면 환경변수로 오버라이드: `CONSUMER_hypeproof_studio=/path bash scripts/sync.sh`
-(이름의 하이픈은 언더스코어로).
-
-### 가드레일
-
-- `--commit`은 consumer가 `main` 위에 있고 skill-creator 외 staged 변경이
-  없을 때만 진행. 우회 = `ALLOW_ANY_BRANCH=1`.
-- `--commit`은 commit 신원을 **그 repo의 ambient git config로 사용**한다 —
-  스크립트가 user.name을 절대 override 안 함.
-- rsync `--delete`가 consumer-side에 추가된 파일을 지우려 하면 abort. 강제 =
-  `--force-delete` 명시.
-
-### 누가 / 언제
-
-- **누가**: 메인테이너(Jay)가 기본 owner. 다른 멤버가 운영 가능하지만
-  변경은 모두 PR/리뷰 후에 sync 실행.
-- **언제**: harness `main` push 후 즉시. CI 자동화(harness → consumer
-  drift 알림 / 자동 PR 열기)는 향후 작업.
-
-<details><summary>English</summary>
-
-**Members**: just `git clone <repo>`; no setup. The vendored skill is
-already a real directory in `.claude/skills/skill-creator/`.
-
-**Operators** (updating skill-creator):
-1. edit and push `skills/skill-creator/` in this repo
-2. `bash scripts/sync.sh --check` to preview drift, `--commit` to apply
-   and create commits in each consumer using **the consumer's own git
-   identity** (the script never overrides `user.name`)
-3. push each consumer
-
-Consumer paths: `tests/consumers.txt`. Per-machine override:
-`CONSUMER_<basename-with-underscores>=/abs/path`.
-
-Guardrails: refuses if not on `main` (override: `ALLOW_ANY_BRANCH=1`),
-refuses if there are unrelated staged changes, refuses to `--delete`
-files only present in consumer (override: `--force-delete`).
-</details>
+`-`은 env 변수명에서 `_`로 정규화됨 (`hypeproof-studio` → `hypeproof_studio`).
 
 ---
 
-## 3. 같이 일하는 흐름 / How we work together
-
-회의 2026-05-18 결정한 5단계. **모든 코드 변경이 이 길로만 main에 들어간다.**
+## How it works
 
 ```
-이슈 발행 → 브랜치 → 커밋·테스트 → PR(템플릿) → merge → 이슈 자동 close
+                    ┌──────────────────────────────────┐
+                    │      hypeproof-harness           │
+                    │      ─────────────────           │
+                    │   canonical shared content       │
+                    │   + onboarding skill             │
+                    │   + sync/test tooling            │
+                    └──────────────┬───────────────────┘
+                                   │  scripts/sync.sh
+                                   │  (rsync + git commit, vendored real files)
+                                   ▼
+              ┌────────────────┬───┴────────────┬──────────────────┐
+              │                │                │                  │
+              ▼                ▼                ▼                  
+       hypeproof-studio    sediment        hypeprooflab        
+       VSCodium fork ·     knowledge DB    공개 사이트 +       
+       워크숍 도구          / SaaS          콘텐츠/운영         
 ```
 
-### 3.1 이슈 먼저
-모든 변경은 GitHub 이슈에서 출발. studio UI에서 발견했으면 `/report-ui`로,
-다른 repo는 그 repo의 이슈 폼.
+세 consumer는 같은 `skill-creator`·같은 `MEMBER-GUIDE`·같은 이슈/PR 컨벤션을
+공유한다. **차이는 각자의 도메인 코드뿐.** 멤버는 자기 consumer repo만
+신경 쓰면 된다 (이 harness는 메인테이너가 갱신).
 
-> **휴먼 vs AI**: 이슈에 `human-needed` 라벨이 붙으면 사람 처리. 없으면
-> AI(Claude Code) 자동 해결 시도 가능. 기준은 **지용 소유 (5/21 마감)**.
-
-### 3.2 브랜치 이름
-
-| 종류 | 이름 |
-|---|---|
-| 버그 픽스 | `fix/issue-<N>-<slug>` |
-| 새 기능 | `feat/issue-<N>-<slug>` |
-| 문서 | `docs/issue-<N>-<slug>` |
-| chore | `chore/<topic>` |
-
-`main` 직접 push 금지 — 메인테이너 전용. 가드: `.githooks/pre-push` + CI
-`main-guard`(소프트 — 우회 가능, 빨간 빌드).
-
-### 3.3 PR
-
-studio면 `/hype-open-pr`. 다른 repo면 `gh pr create --fill --base main`.
-
-**정책: PR 필수, 리뷰 선택.** 자신 있으면 셀프머지 OK. 단 *이 harness repo의
-변경은 회의 룰상 **항상 피어리뷰*** (3 repo가 공유하므로).
-
-### 3.4 PR 본문 필수
-
-- `Closes #<N>` — 머지 시 이슈 auto-close
-- What & why — 한 단락
-- Tested — §4의 무엇이 통과했는지
-
-### 3.5 머지 후
-
-- 브랜치 삭제 (`gh pr merge --delete-branch`)
-- 이슈는 auto-close
-
-<details><summary>English</summary>
-
-5-step lifecycle agreed 2026-05-18. **The only path to main.**
-
-```
-file issue → branch → commit & test → PR (template) → merge → auto-close
-```
-
-`human-needed` label = human required. Absent = AI may try. Criteria
-owned by 지용 (due 5/21). Branch naming: `fix/issue-<N>-<slug>`,
-`feat/...`, `docs/...`, `chore/<topic>`. **PR-first, review optional**;
-exception: changes to this harness repo are always peer-reviewed.
-PR body essentials: `Closes #<N>`, what & why, Tested. After merge:
-delete the branch.
-</details>
+설계 결정의 근거 (왜 submodule 대신 vendor):
+[`jay/reports/2026-05-20-vendor-migration.html`](https://github.com/jayleekr/hypeprooflab/blob/main/jay/reports/2026-05-20-vendor-migration.html)
 
 ---
 
-## 4. 테스트 게이트 / Test gate
+## Platform support
 
-repo별 스택에 묶여 있다 — 각자 자기 repo의 테스트 규약을 따른다:
+| OS | 멤버 온보딩 | Studio 로컬 빌드 | Sediment / Lab |
+|---|:---:|:---:|:---:|
+| **macOS** arm64 | ✅ Primary | ✅ Only supported | ✅ |
+| **Linux** | ✅ Works | ❌ METAPLAN §0 | ✅ |
+| **Windows** native | ⚠ unsupported | ❌ | ⚠ unsupported |
+| **Windows** + WSL2 | ✅ Recommended | ❌ | ✅ |
 
-| repo | 어디 | 머지 게이트 |
-|---|---|---|
-| `hypeproof-studio` | `e2e/` (Playwright + Electron) | `main-guard.yml` |
-| `sediment` | `services/sediment/validator/` | rubric 점수 |
-| `hypeprooflab` | `qa`/`qa-only` 스킬 · `healthcheck` | `ci.yml` |
-
-공유 룰: **자기 변경 영역에 해당하는 테스트가 통과 안 되면 머지 안 한다.**
-
-추가로 vendor 동기화 자체의 합격선은 [`tests/REQUIREMENTS.md`](./tests/REQUIREMENTS.md)
-의 T-V1..T-V10. 운영자가 sync 후 또는 의심될 때 `bash tests/run.sh` 실행.
-
-<details><summary>English</summary>
-
-Stack-bound, per-repo. Shared rule: don't merge with red tests in the
-area you touched. Additionally, vendor-sync correctness is covered by
-T-V1..T-V10 in `tests/REQUIREMENTS.md`; operators run `bash tests/run.sh`
-after sync or whenever in doubt.
-</details>
+워크스페이스 경로(`$WS`)는 자기 컨벤션 그대로 — `~/CodeWorkspace`,
+`~/code`, `~/dev`, `~/projects` 등 무엇이든. `/onboard-member`가 묻는다.
 
 ---
 
-## 5. 병행 작업 / Parallel work
+## Conventions
 
-```bash
-claude -w issue-12         # 이슈 #12용 새 worktree + 세션
-claude -w issue-15 --tmux  # 또 다른 worktree
-```
+> 자세한 5단계 lifecycle (이슈 → 브랜치 → 커밋·테스트 → PR → merge):
+> [`docs/MEMBER-GUIDE.ko.md §4`](docs/MEMBER-GUIDE.ko.md).
 
-흐름은 §3과 동일. worktree는 `.claude/worktrees/`(gitignored)에 두면 깔끔.
-repo별 함정은 각자 DEV-GUIDE의 worktree 섹션 참고.
+핵심 규칙 — 어기지 않음:
 
-<details><summary>English</summary>
-
-`claude -w issue-N`. Same flow as §3. Per-repo gotchas in each repo's
-DEV-GUIDE.
-</details>
+- **PR-first, review optional** · `main` 직접 push 금지 (메인테이너 제외)
+- **`human-needed` 라벨**로 AI 자동처리 vs 사람 필요 구분 (policy owner: 지용)
+- **스킬은 `/skill-creator`로만** 만들고 고친다 · SKILL.md 직접 손쓰지 말 것
+- **이 repo 변경은 항상 피어리뷰** — 3 consumer가 공유하므로
+- **시크릿 절대 커밋 금지** — 새면 Jay에게 알려 즉시 로테이션
 
 ---
 
-## 6. 가드레일 / Guardrails
+## Team & access
 
-- **시크릿 절대 커밋 금지**. 새면 Jay에게 알려 로테이션 — 드라마 X.
-- **main 직접 push 금지** (메인테이너 제외). PR로만.
-- **`human-needed` 라벨로 AI/사람 처리 구분.** 기준 = 지용 5/21.
-- **하네스 스킬은 `/skill-creator`로만** 만들고 고친다 (직접 SKILL.md 쓰지 말 것).
-- **이 repo 변경은 항상 피어리뷰.**
-
-<details><summary>English</summary>
-
-No secrets · no direct main push · `human-needed` label · skills via
-`/skill-creator` only · harness changes always peer-reviewed.
-</details>
-
----
-
-## 7. 멤버 / Team
-
-### 이 repo 접근 권한 (하이브리드 모델)
-
-| Name | GitHub | harness 권한 | 사유 |
+| | GitHub | role | note |
 |---|---|---|---|
-| Jae Won (Jay) Lee | [@jayleekr](https://github.com/jayleekr) | admin | Maintainer |
-| Shin Jehyeong | [@JeHyeong2](https://github.com/JeHyeong2) | admin | Co-maintainer · 비상 액세스 |
-| Bongho Tae | [@xoqhdgh1002](https://github.com/xoqhdgh1002) | write | 1회 온보딩 clone + harness 기여 |
-| Jinyong Shin | [@JinyongShin](https://github.com/JinyongShin) | write | 1회 온보딩 clone + harness 기여 |
-| Taejin Kang (TJ) | [@TJ-kr](https://github.com/TJ-kr) | write | 1회 온보딩 clone + harness 기여 |
-| Jkim | [@ico1036](https://github.com/ico1036) | write | 1회 온보딩 clone + harness 기여 |
+| Jay Lee | [`@jayleekr`](https://github.com/jayleekr) | `admin` | maintainer |
+| Jehyeong Shin | [`@JeHyeong2`](https://github.com/JeHyeong2) | `admin` | co-maintainer |
+| Bongho Tae | [`@xoqhdgh1002`](https://github.com/xoqhdgh1002) | `write` | onboarding + 기여 |
+| Jinyong Shin | [`@JinyongShin`](https://github.com/JinyongShin) | `write` | onboarding + 기여 |
+| TJ Kang | [`@TJ-kr`](https://github.com/TJ-kr) | `write` | onboarding + 기여 |
+| Jkim | [`@ico1036`](https://github.com/ico1036) | `write` | onboarding + 기여 |
 
-멤버들은 처음 onboarding 시 이 repo를 clone하고 `/onboard-member` 스킬을
-실행한다 (§2a). 그 후 일상에서는 자기 consumer repo에서만 일하므로 harness에
-다시 들어올 일이 거의 없다. 하지만 shared 스킬/가이드를 함께 개선하고 싶을
-때를 위해 write 권한 부여 — PR 워크플로우로 기여 가능. **harness 변경은
-항상 피어리뷰** (§3.3 정책).
-
-### 전체 컨트리뷰터 (consumer repo 기준)
-
-| Name | GitHub | Note |
-|---|---|---|
-| Jae Won (Jay) Lee | [@jayleekr](https://github.com/jayleekr) | Maintainer |
-| Shin Jehyeong | [@JeHyeong2](https://github.com/JeHyeong2) | Co-maintainer |
-| Bongho Tae | [@xoqhdgh1002](https://github.com/xoqhdgh1002) | Curriculum |
-| Jinyong Shin | [@JinyongShin](https://github.com/JinyongShin) | Engineering |
-| Taejin Kang (TJ) | [@TJ-kr](https://github.com/TJ-kr) | GTM |
-| Jkim | [@ico1036](https://github.com/ico1036) | Contributor |
-
-Ryan/Kiwon/JUNGWOO는 GitHub 아이디 매핑 미완.
-
-<details><summary>English</summary>
-
-Current collaborators. Ryan/Kiwon/JUNGWOO not yet GitHub-mapped.
-</details>
+멤버는 **1회 온보딩**에 한해 이 repo를 clone한다. 일상 작업은 자기 consumer
+repo에서. shared 콘텐츠를 함께 개선하고 싶으면 PR로 — 피어리뷰 후 머지.
 
 ---
 
-## 8. 어디서 무엇을 찾나 / Pointers
+## Reference
 
-- 각 repo 스택·빌드·키: 그 repo의 `DEV-GUIDE.md` / `CONTRIBUTING.md`
-- studio 페이즈/게이트: `METAPLAN.md` · 16 Essences: `docs/essence-v0.1.md`
-- 토폴로지/시퀀스/마일스톤 플랜:
-  `hypeprooflab:jay/reports/2026-05-19-repo-structure-diagram.html`
-- **Vendor 마이그레이션 보고서**:
-  `hypeprooflab:jay/reports/2026-05-20-vendor-migration.html`
-- Vendor 테스트 합격선: [tests/REQUIREMENTS.md](./tests/REQUIREMENTS.md)
-- Vendor 롤백 절차: [docs/rollback-vendor.md](./docs/rollback-vendor.md)
+- 📘 **한글 멤버 가이드** — [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)
+- 🧪 Vendor 테스트 합격선 — [`tests/REQUIREMENTS.md`](tests/REQUIREMENTS.md)
+- 🔄 롤백 런북 (vendor → submodule) — [`docs/rollback-vendor.md`](docs/rollback-vendor.md)
+- 📊 Vendor 마이그레이션 보고서 — `hypeprooflab:jay/reports/2026-05-20-vendor-migration.html`
+- 🗺 토폴로지·시퀀스 — `hypeprooflab:jay/reports/2026-05-19-repo-structure-diagram.html`
+- 🏗 Studio 페이즈/게이트 — `hypeproof-studio:METAPLAN.md`
+- 🎯 16 Essences (제품 철학) — `hypeproof-studio:docs/essence-v0.1.md`
+
+---
+
+<p align="center"><sub>
+maintained by <a href="https://github.com/jayleekr">@jayleekr</a> · last updated 2026-05-20 ·
+HypeProof Lab · 내부 사용
+</sub></p>
