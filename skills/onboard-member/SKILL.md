@@ -23,6 +23,24 @@ argument_hint: "[studio | sediment | lab] — optional; will ask if omitted"
 
 ## 흐름 / Flow
 
+### 0. 플랫폼 점검 (가장 먼저)
+
+```bash
+uname -s    # Darwin / Linux / MINGW*·CYGWIN*·MSYS* (Windows via Git Bash)
+```
+
+- **macOS** (`Darwin`): 모든 단계 정상 동작.
+- **Linux**: 대부분 동작. `stat -f`를 쓰는 메인테이너 스크립트(sync.sh, run.sh)
+  는 BSD 전용이지만 멤버 온보딩 흐름엔 영향 없음.
+- **Windows**: **WSL2 강력 권장.** 네이티브 PowerShell/cmd에선 일부 단계가
+  깨진다 (rsync 없음, BSD stat, `eval "echo ~"` 등). Git Bash로 부분 가능하나
+  스킬 검증은 WSL2 우선.
+- **Studio 멤버**(`hypeproof-studio`)는 추가 제약: 로컬 빌드는 **macOS arm64
+  전용** (METAPLAN §0 정책). Windows/Linux는 빌드 불가, CI(.exe·.dmg)로만 받음.
+  Studio 멤버가 Windows/Linux면 빌드 불가하니 진행 전 알림하고 사용자 확인.
+
+플랫폼이 미지원이면 사용자에게 명시적으로 알리고 abort (자동 진행 X).
+
 ### 1. 어느 repo의 멤버인지 확인
 
 `argument_hint`로 받은 값이 있으면(`studio`/`sediment`/`lab`) 그걸 사용하고, 없으면 **AskUserQuestion**으로 물어본다:
@@ -37,7 +55,22 @@ argument_hint: "[studio | sediment | lab] — optional; will ask if omitted"
 
 ### 2. 로컬 경로 확인 + Clone
 
-기본 경로: `~/CodeWorkspace/<repo>` (예: `~/CodeWorkspace/hypeproof-studio`). 사용자가 다른 경로 원하면 AskUserQuestion으로 받음.
+**워크스페이스 디렉토리는 사용자마다 다르다 — 묻는 게 원칙.** AskUserQuestion으로
+기존 워크스페이스 위치를 받는다. 후보:
+
+- 환경변수 `$HYPEPROOF_WORKSPACE`가 설정돼 있으면 그걸 우선 사용
+- `~/CodeWorkspace` 가 이미 있으면(기존 멤버 흔한 패턴) 후보로 제시
+- `~/code`, `~/dev`, `~/projects`, `~/work` 같은 일반적 컨벤션 후보로 제시
+- 사용자가 직접 경로 입력 가능
+
+선택한 베이스 경로를 `$WS`로 보존. 최종 clone 경로 = `$WS/<repo>`. 예시:
+
+| 사용자 환경 | $WS 예시 | 최종 경로 |
+|---|---|---|
+| macOS, 일반적 | `~/CodeWorkspace` | `~/CodeWorkspace/hypeproof-studio` |
+| Linux/WSL2, 다른 컨벤션 | `~/dev` | `~/dev/hypeproof-studio` |
+| Windows + WSL2 | `~/code` (WSL filesystem) | `~/code/hypeproof-studio` |
+| 다른 디스크 위치 | `/Volumes/work` 등 | `/Volumes/work/hypeproof-studio` |
 
 **경로에 이미 git 디렉토리가 있으면**:
 - `git -C <path> remote get-url origin`을 읽어 기대한 repo와 일치하는지 확인

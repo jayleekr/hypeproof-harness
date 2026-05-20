@@ -1,10 +1,14 @@
 # Consumer repos that vendor this harness. One path per line. Lines starting
 # with # are ignored. Paths can use ~ (HOME expansion) and ${VAR} substitution.
-# To override per-machine: set CONSUMER_<name> env var pointing to a different
-# absolute path. Names are case-insensitive matched on basename.
 #
-# Examples of overrides:
-#   CONSUMER_hypeproof-studio=/path/to/local/clone bash tests/run.sh
+# This file is **maintainer-side only** (sync.sh reads it). The paths below
+# reflect Jay's local convention (~/CodeWorkspace/...) and are NOT a
+# constraint on members — each member chooses their own workspace path
+# (the /onboard-member skill asks them).
+#
+# To override per-machine for the maintainer running sync.sh:
+#   CONSUMER_hypeproof_studio=/abs/path/to/local/clone bash tests/run.sh
+# (dashes in repo basename become underscores in env var name)
 #
 ~/CodeWorkspace/hypeproof-studio
 ~/CodeWorkspace/sediment

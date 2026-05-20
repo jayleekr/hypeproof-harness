@@ -47,6 +47,15 @@ Non-skill conventions are prose in §3–§6.
 
 ## 2. 셋업 / Setup (하이브리드 모델)
 
+> **플랫폼 / Platform**: macOS arm64 권장 (Jay가 primary). Linux 대체로 동작
+> (`stat -f`을 쓰는 maintainer 스크립트 일부는 BSD 전용). Windows는 **WSL2
+> 강력 권장** — 네이티브 PowerShell/cmd는 일부 단계 미지원. Studio 로컬 빌드는
+> METAPLAN §0 정책상 **macOS arm64 전용** (Win/Linux는 CI 빌드된 .exe/.dmg만).
+>
+> **워크스페이스 경로**는 사용자가 정한다 — 본 문서에서 `$WS`로 표기되는 자리.
+> 예: `$WS=~/CodeWorkspace` 면 `$WS/hypeproof-studio` =
+> `~/CodeWorkspace/hypeproof-studio`. `/onboard-member` 스킬이 묻는다.
+
 ### 2a. 신규 멤버 — 1회성 온보딩 (이 harness를 쓰는 유일한 시점)
 
 ```bash
@@ -59,7 +68,7 @@ claude   # Claude Code 세션 시작
 
 `/onboard-member` 스킬이 인터랙티브하게:
 1. 어느 consumer repo 멤버인지 물음 (studio/sediment/lab)
-2. `~/CodeWorkspace/<repo>`에 clone (이미 있으면 git pull)
+2. `$WS/<repo>`에 clone (이미 있으면 git pull)
 3. git hooks 설치 (studio의 pre-push 등)
 4. Claude Code 설정·MCP 서버 검증
 5. 자기 consumer repo의 `docs/MEMBER-GUIDE.ko.md`로 안내
@@ -74,7 +83,7 @@ claude   # Claude Code 세션 시작
 consumer repo 안에 실파일로 vendoring돼 있다.
 
 ```bash
-cd ~/CodeWorkspace/<your-consumer-repo>
+cd $WS/<your-consumer-repo>
 claude
 # 일상 워크플로 — issue → branch → PR → merge (MEMBER-GUIDE §4 참조)
 ```
@@ -102,7 +111,7 @@ sets git hooks, validates Claude Code config, points you at your repo's
 vendored `docs/MEMBER-GUIDE.ko.md`.
 
 **2b. Day-to-day**: harness becomes invisible. Work happens in
-`~/CodeWorkspace/<consumer-repo>/`. Shared content is already vendored.
+`$WS/<consumer-repo>/`. Shared content is already vendored. (`$WS` is user-chosen — defaults to `~/CodeWorkspace` for macOS but anything works.)
 
 **2c. Maintainers — sync vendored content**: edit canonical here, run
 `scripts/sync.sh --check / --apply / --commit`.
