@@ -1,0 +1,32 @@
+{
+  "harness_sha": "50075dc44771eb1b33554dbd74c40678298a0703",
+  "consumers_total": 3,
+  "consumers_found": 3,
+  "totals": {"pass": 11, "fail": 6, "defer": 3, "skip": 0, "na": 4},
+  "results": [
+    {"consumer":"hypeproof-studio","test":"T-V1","result":"PASS","note":"byte-identical (bidirectional)"},
+    {"consumer":"hypeproof-studio","test":"T-V2","result":"FAIL","note":"absent"},
+    {"consumer":"hypeproof-studio","test":"T-V3","result":"FAIL","note":".harness exists,.gitmodules lists .harness,skill-creator is a symlink"},
+    {"consumer":"hypeproof-studio","test":"T-V4","result":"PASS","note":"name=skill-creator"},
+    {"consumer":"hypeproof-studio","test":"T-V8","result":"PASS","note":"clean"},
+    {"consumer":"hypeproof-studio","test":"T-V9","result":"DEFER","note":"consumer CI"},
+    {"consumer":"hypeproof-studio","test":"T-V10","result":"N/A","note":"set T_V10_BASE_hypeproof-studio=<ref> to gate"},
+    {"consumer":"sediment","test":"T-V1","result":"PASS","note":"byte-identical (bidirectional)"},
+    {"consumer":"sediment","test":"T-V2","result":"FAIL","note":"absent"},
+    {"consumer":"sediment","test":"T-V3","result":"FAIL","note":".harness exists,.gitmodules lists .harness,skill-creator is a symlink"},
+    {"consumer":"sediment","test":"T-V4","result":"PASS","note":"name=skill-creator"},
+    {"consumer":"sediment","test":"T-V8","result":"PASS","note":"clean"},
+    {"consumer":"sediment","test":"T-V9","result":"DEFER","note":"consumer CI"},
+    {"consumer":"sediment","test":"T-V10","result":"N/A","note":"set T_V10_BASE_sediment=<ref> to gate"},
+    {"consumer":"repos","test":"T-V1","result":"PASS","note":"byte-identical (bidirectional)"},
+    {"consumer":"repos","test":"T-V2","result":"FAIL","note":"absent"},
+    {"consumer":"repos","test":"T-V3","result":"FAIL","note":".harness exists,.gitmodules lists .harness,skill-creator is a symlink"},
+    {"consumer":"repos","test":"T-V4","result":"PASS","note":"name=skill-creator"},
+    {"consumer":"repos","test":"T-V8","result":"PASS","note":"clean"},
+    {"consumer":"repos","test":"T-V9","result":"DEFER","note":"consumer CI"},
+    {"consumer":"repos","test":"T-V10","result":"N/A","note":"set T_V10_BASE_repos=<ref> to gate"},
+    {"consumer":"(harness)","test":"T-V5","result":"PASS","note":"syntax + --check + --commit modes"},
+    {"consumer":"(harness)","test":"T-V6","result":"N/A","note":"no vendored consumer to test drift against"},
+    {"consumer":"(harness)","test":"T-V7","result":"PASS","note":"second apply produced no content drift (rsync -a)"}
+  ]
+}

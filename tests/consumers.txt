@@ -1,0 +1,11 @@
+# Consumer repos that vendor this harness. One path per line. Lines starting
+# with # are ignored. Paths can use ~ (HOME expansion) and ${VAR} substitution.
+# To override per-machine: set CONSUMER_<name> env var pointing to a different
+# absolute path. Names are case-insensitive matched on basename.
+#
+# Examples of overrides:
+#   CONSUMER_hypeproof-studio=/path/to/local/clone bash tests/run.sh
+#
+~/CodeWorkspace/hypeproof-studio
+~/CodeWorkspace/sediment
+~/CodeWorkspace/hypeproof/.claude/worktrees/repos
