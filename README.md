@@ -58,6 +58,10 @@ cd <repo>
 서브모듈 init 같은 거 없다. `git submodule update --init` 결과도 no-op
 (서브모듈 자체가 없음). Vercel/CI도 영향 없음.
 
+> **이 README는 메인테이너용**. 일반 멤버를 위한 한글 가이드는 자기
+> consumer repo의 [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)에 있다
+> (이 harness에서 vendoring된 사본). 멤버들은 harness에 접근할 필요 없다.
+
 ### 운영자 입장 — skill-creator를 업데이트할 때
 
 1. 이 repo(`hypeproof-harness`)에서 `skills/skill-creator/`를 편집·커밋·push
