@@ -1,11 +1,11 @@
 <h1 align="center">hypeproof-harness</h1>
 
 <p align="center">
-  Claude Code로 일하는 HypeProof 팀의 공유 스킬·온보딩·워크플로 규약.
+  HypeProof 팀의 공유 스킬·온보딩·워크플로 규약.
 </p>
 
 <p align="center">
-  <code>private</code> · <code>Claude Code</code> · <code>macOS · Linux · WSL2</code>
+  <code>private</code> · <code>macOS · Linux · WSL2</code>
 </p>
 
 ---
@@ -13,6 +13,9 @@
 3개 product repo — `hypeproof-studio` · `sediment` · `hypeprooflab` — 가
 여기서 공유 스킬과 가이드를 vendor로 가져간다. 도메인 코드는 각자,
 공통 규약은 한 군데.
+
+현재 콘텐츠는 Claude Code 스킬 위주지만 Codex · OpenClaw 등 다른 AI 에이전트용
+자원도 같은 vendoring 메커니즘으로 여기 추가할 수 있다.
 
 ## What's in here
 
