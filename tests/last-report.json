@@ -1,5 +1,5 @@
 {
-  "harness_sha": "171bb3952f71328d79dceda5f37415b245c67c6f",
+  "harness_sha": "c0323a45707d9d276dbaf47c30b3c06802302dd2",
   "consumers_total": 3,
   "consumers_found": 3,
   "totals": {"pass": 21, "fail": 0, "defer": 3, "skip": 0, "na": 0},
@@ -10,23 +10,23 @@
     {"consumer":"hypeproof-studio","test":"T-V4","result":"PASS","note":"name=skill-creator"},
     {"consumer":"hypeproof-studio","test":"T-V8","result":"PASS","note":"clean"},
     {"consumer":"hypeproof-studio","test":"T-V9","result":"DEFER","note":"consumer CI"},
-    {"consumer":"hypeproof-studio","test":"T-V10","result":"PASS","note":"scope clean vs 534860f3e928d766799cb1bdd5b63ddd106ac14f"},
+    {"consumer":"hypeproof-studio","test":"T-V10","result":"PASS","note":"scope clean vs 534860f"},
     {"consumer":"sediment","test":"T-V1","result":"PASS","note":"byte-identical (bidirectional)"},
     {"consumer":"sediment","test":"T-V2","result":"PASS","note":"171bb39"},
     {"consumer":"sediment","test":"T-V3","result":"PASS","note":"clean"},
     {"consumer":"sediment","test":"T-V4","result":"PASS","note":"name=skill-creator"},
     {"consumer":"sediment","test":"T-V8","result":"PASS","note":"clean"},
     {"consumer":"sediment","test":"T-V9","result":"DEFER","note":"consumer CI"},
-    {"consumer":"sediment","test":"T-V10","result":"PASS","note":"scope clean vs 85b067a7a0d26c72659deeed06d6d4bb0fcc334f"},
+    {"consumer":"sediment","test":"T-V10","result":"PASS","note":"scope clean vs 85b067a"},
     {"consumer":"repos","test":"T-V1","result":"PASS","note":"byte-identical (bidirectional)"},
     {"consumer":"repos","test":"T-V2","result":"PASS","note":"171bb39"},
     {"consumer":"repos","test":"T-V3","result":"PASS","note":"clean"},
     {"consumer":"repos","test":"T-V4","result":"PASS","note":"name=skill-creator"},
     {"consumer":"repos","test":"T-V8","result":"PASS","note":"clean"},
     {"consumer":"repos","test":"T-V9","result":"DEFER","note":"consumer CI"},
-    {"consumer":"repos","test":"T-V10","result":"PASS","note":"scope clean vs 61a771d97d6c5d466562d69c01c6af78ef9fac67"},
+    {"consumer":"repos","test":"T-V10","result":"PASS","note":"scope clean vs 61a771d"},
     {"consumer":"(harness)","test":"T-V5","result":"PASS","note":"syntax + --check + --commit modes"},
     {"consumer":"(harness)","test":"T-V6","result":"PASS","note":"detected drift on hypeproof-studio; clean after restore"},
-    {"consumer":"(harness)","test":"T-V7","result":"PASS","note":"second apply produced no content drift (rsync -a)"}
+    {"consumer":"(harness)","test":"T-V7","result":"PASS","note":"second apply no drift; consumers.txt atomically swapped"}
   ]
 }

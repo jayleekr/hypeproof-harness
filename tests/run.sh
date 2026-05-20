@@ -216,44 +216,42 @@ else
   mark "(harness)" T-V6 FAIL "subshell produced no output"
 fi
 
-# ---- T-V7 idempotency (CR-1: non-destructive — temp consumer) ----
+# ---- T-V7 idempotency (CR-1 + HIGH-1: atomic, race-free consumers.txt swap) ----
+# Atomic swap pattern: backup the original via hardlink (or copy if hardlink fails),
+# install temp consumer list via mv (atomic), then restore via mv. Outer-scope trap
+# guarantees restoration regardless of how the subshell terminates (incl. SIGKILL).
 TMPDIR_T7="$(mktemp -d)"
 TMP_CONSUMER="$TMPDIR_T7/fake-consumer"
+ORIG_BACKUP="$TMPDIR_T7/consumers.orig"
 mkdir -p "$TMP_CONSUMER/.claude/skills"
-# Use a throwaway consumers.txt for this test
-TMP_CONS_LIST="$TMPDIR_T7/consumers.txt"
-echo "$TMP_CONSUMER" > "$TMP_CONS_LIST"
-( cp tests/consumers.txt "$TMPDIR_T7/_orig_cons.txt"
-  cp "$TMP_CONS_LIST" tests/consumers.txt
-  trap 'cp "$TMPDIR_T7/_orig_cons.txt" tests/consumers.txt; rm -rf "$TMPDIR_T7"' EXIT INT TERM
-  # first apply
-  bash scripts/sync.sh >/dev/null 2>&1
-  # snapshot mtimes
-  m1="$(find "$TMP_CONSUMER" -type f -exec stat -f '%m %N' {} \; 2>/dev/null | sort)"
-  sleep 1
-  # second apply should be a no-op for content (rsync -a updates only changed)
-  bash scripts/sync.sh >/dev/null 2>&1
-  m2="$(find "$TMP_CONSUMER" -type f -exec stat -f '%m %N' {} \; 2>/dev/null | sort)"
-  # And --check should be clean
-  bash scripts/sync.sh --check >/dev/null 2>&1; rcheck=$?
-  changed="$(diff <(echo "$m1") <(echo "$m2") | head -3)"
-  if [ "$rcheck" -eq 0 ]; then
-    echo "(harness)|T-V7|PASS|second apply produced no content drift (rsync -a)"
-  else
-    echo "(harness)|T-V7|FAIL|--check after sync returned $rcheck"
-  fi
-) > /tmp/t-v7-result.$$ 2>&1
-T7LINE="$(grep '^(harness)|T-V7|' /tmp/t-v7-result.$$ | head -1)"
-rm -f /tmp/t-v7-result.$$
-if [ -n "$T7LINE" ]; then
-  IFS='|' read -r tc tt ts tn <<<"$T7LINE"
-  mark "$tc" "$tt" "$ts" "$tn"
+cp -p tests/consumers.txt "$ORIG_BACKUP"
+echo "$TMP_CONSUMER" > "$TMPDIR_T7/temp-list.txt"
+
+# OUTER-scope trap: fires on any exit path (incl. signals) before sub-tests of T-V7
+_t7_restore() {
+  [ -f "$ORIG_BACKUP" ] && mv -f "$ORIG_BACKUP" tests/consumers.txt 2>/dev/null
+  rm -rf "$TMPDIR_T7" 2>/dev/null
+}
+trap _t7_restore EXIT INT TERM
+
+# Atomic swap-in (mv is atomic on the same filesystem)
+mv -f "$TMPDIR_T7/temp-list.txt" tests/consumers.txt
+
+# First apply
+bash scripts/sync.sh >/dev/null 2>&1; rc1=$?
+# Second apply should be no-op for content
+bash scripts/sync.sh >/dev/null 2>&1; rc2=$?
+# And --check should be clean
+bash scripts/sync.sh --check >/dev/null 2>&1; rcheck=$?
+
+# Restore (atomic) before recording result — trap also covers abnormal exits
+mv -f "$ORIG_BACKUP" tests/consumers.txt
+trap - EXIT INT TERM  # disarm trap; we're done with the swap
+
+if [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] && [ "$rcheck" -eq 0 ]; then
+  mark "(harness)" T-V7 PASS "second apply no drift; consumers.txt atomically swapped"
 else
-  mark "(harness)" T-V7 FAIL "T-V7 subshell produced no output"
-fi
-# defensive: restore consumers.txt if subshell trap didn't fire
-if [ -f "$TMPDIR_T7/_orig_cons.txt" ]; then
-  cp "$TMPDIR_T7/_orig_cons.txt" tests/consumers.txt 2>/dev/null || true
+  mark "(harness)" T-V7 FAIL "rc1=$rc1 rc2=$rc2 rcheck=$rcheck"
 fi
 rm -rf "$TMPDIR_T7" 2>/dev/null || true
 

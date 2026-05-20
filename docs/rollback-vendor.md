@@ -62,14 +62,35 @@ Verify `.harness/skills/skill-creator/SKILL.md` exists and resolves.
 ### 5. Re-create the symlink
 
 The revert restored a regular-file symlink commit, but if it didn't (or
-if revert was clean only), force a real symlink in `.claude/skills/`:
+if revert was clean only), force a real symlink in `.claude/skills/`.
+**Use the repo-root–anchored relative path** so it works correctly in
+both regular clones and worktrees (the `repos` worktree consumer has a
+deeper directory layout where a naive `../../` would resolve wrong):
 
 ```bash
-[ -L .claude/skills/skill-creator ] || \
-  (rm -rf .claude/skills/skill-creator && \
-   ln -s ../../.harness/skills/skill-creator .claude/skills/skill-creator)
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+TARGET="$REPO_ROOT/.harness/skills/skill-creator"
+LINK="$REPO_ROOT/.claude/skills/skill-creator"
+if [ ! -L "$LINK" ]; then
+  rm -rf "$LINK"
+  # Compute correct relative path from $LINK's parent dir to $TARGET
+  cd "$(dirname "$LINK")"
+  REL="$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))" \
+    "$TARGET" "$(pwd)")"
+  ln -s "$REL" "$(basename "$LINK")"
+  cd - >/dev/null
+fi
 git add .claude/skills/skill-creator .gitmodules .harness
 ```
+
+> Why: for `hypeproof-studio` and `sediment`, `.claude/skills/` is two
+> levels below the repo root, so `../../.harness/...` works. For the
+> `hypeprooflab` worktree at `~/CodeWorkspace/hypeproof/.claude/worktrees/repos`,
+> the symlink lives at `repos/.claude/skills/` and `.harness` is at
+> `repos/.harness` — but `../../` from `repos/.claude/skills/` resolves
+> two levels up the **filesystem** to `hypeproof/`, NOT to `repos/`.
+> Using `git rev-parse --show-toplevel` + `os.path.relpath` produces
+> the correct relative path in all cases.
 
 ### 6. Commit and push
 

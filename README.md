@@ -235,6 +235,21 @@ No secrets · no direct main push · `human-needed` label · skills via
 
 ## 7. 멤버 / Team
 
+### 이 repo 접근 권한 (vendor 아키텍처 이후 최소화)
+
+| Name | GitHub | harness 권한 | 사유 |
+|---|---|---|---|
+| Jae Won (Jay) Lee | [@jayleekr](https://github.com/jayleekr) | admin | Maintainer |
+| Shin Jehyeong | [@JeHyeong2](https://github.com/JeHyeong2) | admin (pending) | Co-maintainer · 비상 액세스 |
+
+**다른 멤버는 이 repo에 접근하지 않는다 — vendor 아키텍처의 핵심 이점.**
+2026-05-19에 submodule 시대에 발송된 컬래보레이터 초대(JinyongShin·
+xoqhdgh1002·TJ-kr·ico1036)는 2026-05-20에 회수됨. 멤버들은 자기 consumer
+repo(`studio`/`sediment`/`lab`)에 접근 권한만 있으면 vendored skill을 그대로
+사용 가능.
+
+### 전체 컨트리뷰터 (consumer repo 기준)
+
 | Name | GitHub | Note |
 |---|---|---|
 | Jae Won (Jay) Lee | [@jayleekr](https://github.com/jayleekr) | Maintainer |
