@@ -45,22 +45,68 @@ Non-skill conventions are prose in §3–§6.
 
 ---
 
-## 2. 동기화 / Sync (vendor 운영)
+## 2. 셋업 / Setup (하이브리드 모델)
 
-### 멤버 입장 — 그냥 clone하면 끝
+### 2a. 신규 멤버 — 1회성 온보딩 (이 harness를 쓰는 유일한 시점)
 
 ```bash
-git clone git@github.com:jayleekr/<repo>.git
-cd <repo>
-# 별도 셋업 필요 없음. .claude/skills/skill-creator/ 가 이미 실파일로 존재.
+git clone git@github.com:jayleekr/hypeproof-harness.git
+cd hypeproof-harness
+claude   # Claude Code 세션 시작
+# 세션에서:
+/onboard-member            # 또는 "온보딩"
 ```
 
-서브모듈 init 같은 거 없다. `git submodule update --init` 결과도 no-op
-(서브모듈 자체가 없음). Vercel/CI도 영향 없음.
+`/onboard-member` 스킬이 인터랙티브하게:
+1. 어느 consumer repo 멤버인지 물음 (studio/sediment/lab)
+2. `~/CodeWorkspace/<repo>`에 clone (이미 있으면 git pull)
+3. git hooks 설치 (studio의 pre-push 등)
+4. Claude Code 설정·MCP 서버 검증
+5. 자기 consumer repo의 `docs/MEMBER-GUIDE.ko.md`로 안내
 
-> **이 README는 메인테이너용**. 일반 멤버를 위한 한글 가이드는 자기
-> consumer repo의 [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)에 있다
-> (이 harness에서 vendoring된 사본). 멤버들은 harness에 접근할 필요 없다.
+자세한 한글 가이드는 [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)
+— 멤버에게 vendoring된다.
+
+### 2b. 일상 작업 — harness는 시야에서 사라진다
+
+온보딩 이후엔 **자기 consumer repo에서만 일한다**. harness clone은 다시
+필요 없다. shared 콘텐츠(`skill-creator`, `MEMBER-GUIDE.ko.md`)는 이미
+consumer repo 안에 실파일로 vendoring돼 있다.
+
+```bash
+cd ~/CodeWorkspace/<your-consumer-repo>
+claude
+# 일상 워크플로 — issue → branch → PR → merge (MEMBER-GUIDE §4 참조)
+```
+
+### 2c. 메인테이너 — shared 콘텐츠 업데이트
+
+harness에서 `skills/skill-creator/` 또는 `docs/MEMBER-GUIDE.ko.md`를 고친 뒤:
+
+```bash
+bash scripts/sync.sh --check        # 어느 consumer가 drift하는지 (read-only)
+bash scripts/sync.sh                # apply: rsync 캐노니컬→ 각 consumer
+bash scripts/sync.sh --commit       # apply + 각 consumer main에 커밋
+# 그 다음 각 consumer에서 git push (또는 PR)
+```
+
+가드: `--commit`은 main 위 + skill 외 변경 없을 때만 (CR-10).
+신원은 그 repo의 ambient git config (CR-4).
+rsync `--delete`가 consumer-only 파일 노릴 때 abort (CR-8).
+
+<details><summary>English</summary>
+
+**2a. New members — one-time onboarding**: `git clone hypeproof-harness`, run
+Claude Code, invoke `/onboard-member`. The skill clones your consumer repo,
+sets git hooks, validates Claude Code config, points you at your repo's
+vendored `docs/MEMBER-GUIDE.ko.md`.
+
+**2b. Day-to-day**: harness becomes invisible. Work happens in
+`~/CodeWorkspace/<consumer-repo>/`. Shared content is already vendored.
+
+**2c. Maintainers — sync vendored content**: edit canonical here, run
+`scripts/sync.sh --check / --apply / --commit`.
+</details>
 
 ### 운영자 입장 — skill-creator를 업데이트할 때
 
