@@ -36,7 +36,8 @@ esac
 # Second-arg form: sync.sh --commit --force-delete (allowed)
 [ "${2:-}" = "--force-delete" ] && FORCE_DELETE=1
 
-SKILLS=(skill-creator)  # extend as the harness grows
+SKILLS=(skill-creator)        # vendored to consumer/.claude/skills/<name>/
+DOCS=(MEMBER-GUIDE.ko.md)     # vendored to consumer/docs/<file>; single files in harness/docs/
 
 # --- consumer resolution ---
 expand_path() {
@@ -158,6 +159,38 @@ for C in "${CONSUMERS[@]}"; do
       fi
     else
       echo "SYNC   $CNAME/$S @ ${HARNESS_SHA:0:7}"
+    fi
+  done
+
+  # --- docs vendoring (sidecar, single files into consumer/docs/) ---
+  for D in "${DOCS[@]:-}"; do
+    [ -z "$D" ] && continue
+    DSRC="$HARNESS_ROOT/docs/$D"
+    DDST="$C/docs/$D"
+    [ -f "$DSRC" ] || { echo "[!] missing doc source: $DSRC" >&2; continue; }
+
+    if [ "$MODE" = "check" ]; then
+      if [ ! -f "$DDST" ] || ! cmp -s "$DSRC" "$DDST"; then
+        echo "DRIFT  $CNAME/docs/$D"; overall_drift=1
+      else
+        echo "OK     $CNAME/docs/$D"
+      fi
+      continue
+    fi
+
+    mkdir -p "$(dirname "$DDST")"
+    cp -p "$DSRC" "$DDST"
+
+    if [ "$MODE" = "commit" ]; then
+      if git -C "$C" diff --quiet -- "docs/$D"; then
+        echo "NOOP   $CNAME/docs/$D (already current)"
+      else
+        git -C "$C" add "docs/$D"
+        git -C "$C" commit -q -m "docs: sync $D from hypeproof-harness@${HARNESS_SHA:0:7}"
+        echo "COMMIT $CNAME/docs/$D @ ${HARNESS_SHA:0:7}"
+      fi
+    else
+      echo "SYNC   $CNAME/docs/$D @ ${HARNESS_SHA:0:7}"
     fi
   done
 done
