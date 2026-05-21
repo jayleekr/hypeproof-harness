@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 멤버 온보딩 가이드
+    url: https://github.com/jayleekr/hypeproof-harness/blob/main/docs/MEMBER-GUIDE.ko.md
+    about: 워크플로·브랜치·PR·라벨 룰은 여기 §4 참고

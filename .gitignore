@@ -2,3 +2,6 @@
 *.log
 __pycache__/
 node_modules/
+
+# Per-machine vendor-gate output (run.sh writes this; do not commit)
+tests/last-report.json

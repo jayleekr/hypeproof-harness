@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <code>private</code> · <code>macOS · Linux · WSL2</code>
+  <code>macOS · Linux · WSL2</code>
 </p>
 
 ---
@@ -190,5 +190,5 @@ Vendor를 고른 이유는 [migration report][migration]에.
 ---
 
 <p align="center"><sub>
-Maintained by <a href="https://github.com/jayleekr">@jayleekr</a> · HypeProof Lab · Internal use only
+Maintained by <a href="https://github.com/jayleekr">@jayleekr</a> · HypeProof Lab
 </sub></p>
