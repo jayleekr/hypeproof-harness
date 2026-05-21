@@ -16,6 +16,13 @@ set -uo pipefail
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HARNESS_ROOT"
 
+# Workspace base for ${HYPEPROOF_WORKSPACE} entries in tests/consumers.txt.
+# Default to the parent of this repo (mirrors sync.sh) so sibling clones
+# resolve with zero config. Override by exporting the var.
+if [ -z "${HYPEPROOF_WORKSPACE:-}" ]; then
+  HYPEPROOF_WORKSPACE="$(cd "$HARNESS_ROOT/.." && pwd)"
+fi
+
 # ----- consumer resolution (mirrors sync.sh) -----
 expand_path() {
   local p="$1"
@@ -269,6 +276,16 @@ done
 echo
 echo "Totals: PASS=$PASS · FAIL=$FAIL · DEFER=$DEFER · SKIP=$SKIP · N/A=$NA"
 echo "Consumers found: $N_CONSUMERS_FOUND / ${#CONSUMERS[@]}"
+
+if [ "$N_CONSUMERS_FOUND" -eq 0 ]; then
+  {
+    echo ""
+    echo "✗ No consumer repos found — every path in tests/consumers.txt was missing."
+    echo "  Resolve one of: clone consumers as siblings of hypeproof-harness (zero-config),"
+    echo "  export HYPEPROOF_WORKSPACE=/abs/path, or set CONSUMER_<repo>=/abs/path."
+    echo "  HYPEPROOF_WORKSPACE currently resolves to: $HYPEPROOF_WORKSPACE"
+  } >&2
+fi
 
 # JSON
 {
