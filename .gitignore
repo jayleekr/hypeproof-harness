@@ -5,3 +5,13 @@ node_modules/
 
 # Per-machine vendor-gate output (run.sh writes this; do not commit)
 tests/last-report.json
+
+# Claude Code per-machine state under .claude/
+# Tracked here: .claude/skills/ (symlinks to canonical skills/), .claude/settings.json (shared, if added)
+.claude/settings.local.json
+.claude/state/
+.claude/worktrees/
+.claude/failures/
+.claude/shell-snapshots/
+.claude/projects/
+.claude/agents.log
