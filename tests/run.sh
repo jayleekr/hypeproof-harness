@@ -33,6 +33,14 @@ _sanitize() { echo "$1" | tr '-' '_'; }
 get_env_override() { local v="CONSUMER_$(_sanitize "$1")"; echo "${!v:-}"; }
 get_t_v10_base()   { local v="T_V10_BASE_$(_sanitize "$1")"; echo "${!v:-}"; }
 
+# Per-machine override: tests/consumers.local.txt (gitignored) wins over
+# tests/consumers.txt if present (mirrors sync.sh).
+CONSUMERS_FILE="tests/consumers.txt"
+if [ -f "tests/consumers.local.txt" ]; then
+  CONSUMERS_FILE="tests/consumers.local.txt"
+  echo "Using local consumer list: $CONSUMERS_FILE" >&2
+fi
+
 CONSUMERS=()
 while IFS= read -r raw; do
   raw="${raw%%#*}"; raw="${raw#"${raw%%[![:space:]]*}"}"; raw="${raw%"${raw##*[![:space:]]}"}"
@@ -42,7 +50,7 @@ while IFS= read -r raw; do
   o="$(get_env_override "$bn")"
   [ -n "$o" ] && e="$o"
   CONSUMERS+=("$e")
-done < tests/consumers.txt
+done < "$CONSUMERS_FILE"
 
 RESULTS=()   # "consumer|tid|status|note"
 PASS=0; FAIL=0; DEFER=0; SKIP=0; NA=0
@@ -230,13 +238,24 @@ fi
 TMPDIR_T7="$(mktemp -d)"
 TMP_CONSUMER="$TMPDIR_T7/fake-consumer"
 ORIG_BACKUP="$TMPDIR_T7/consumers.orig"
+LOCAL_STASH="$TMPDIR_T7/consumers.local.stash"
 mkdir -p "$TMP_CONSUMER/.claude/skills"
 cp -p tests/consumers.txt "$ORIG_BACKUP"
+# Stash any developer-local override so the consumers.txt swap actually drives
+# sync.sh during the test. Without this, T-V7 reads .local.txt and the swap is
+# a no-op — false PASS on machines with a local list.
+HAD_LOCAL_T7=0
+if [ -f tests/consumers.local.txt ]; then
+  HAD_LOCAL_T7=1
+  mv -f tests/consumers.local.txt "$LOCAL_STASH"
+fi
 echo "$TMP_CONSUMER" > "$TMPDIR_T7/temp-list.txt"
 
 # OUTER-scope trap: fires on any exit path (incl. signals) before sub-tests of T-V7
 _t7_restore() {
   [ -f "$ORIG_BACKUP" ] && mv -f "$ORIG_BACKUP" tests/consumers.txt 2>/dev/null
+  [ "$HAD_LOCAL_T7" -eq 1 ] && [ -f "$LOCAL_STASH" ] && \
+    mv -f "$LOCAL_STASH" tests/consumers.local.txt 2>/dev/null
   rm -rf "$TMPDIR_T7" 2>/dev/null
 }
 trap _t7_restore EXIT INT TERM
@@ -253,6 +272,9 @@ bash scripts/sync.sh --check >/dev/null 2>&1; rcheck=$?
 
 # Restore (atomic) before recording result — trap also covers abnormal exits
 mv -f "$ORIG_BACKUP" tests/consumers.txt
+if [ "$HAD_LOCAL_T7" -eq 1 ] && [ -f "$LOCAL_STASH" ]; then
+  mv -f "$LOCAL_STASH" tests/consumers.local.txt
+fi
 trap - EXIT INT TERM  # disarm trap; we're done with the swap
 
 if [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] && [ "$rcheck" -eq 0 ]; then

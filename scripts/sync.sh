@@ -67,6 +67,15 @@ get_override() {
   echo "${!var:-}"
 }
 
+# Per-machine override: tests/consumers.local.txt (gitignored) wins over
+# tests/consumers.txt if present. Same syntax. Members typically list only
+# the consumers they have cloned locally; the .example file ships in-tree.
+CONSUMERS_FILE="tests/consumers.txt"
+if [ -f "tests/consumers.local.txt" ]; then
+  CONSUMERS_FILE="tests/consumers.local.txt"
+  echo "Using local consumer list: $CONSUMERS_FILE" >&2
+fi
+
 CONSUMERS=()
 while IFS= read -r raw; do
   raw="${raw%%#*}"; raw="${raw#"${raw%%[![:space:]]*}"}"; raw="${raw%"${raw##*[![:space:]]}"}"
@@ -76,8 +85,8 @@ while IFS= read -r raw; do
   ovr="$(get_override "$bn")"
   [ -n "$ovr" ] && expanded="$ovr"
   CONSUMERS+=("$expanded")
-done < tests/consumers.txt
-[ "${#CONSUMERS[@]}" -gt 0 ] || { echo "no consumers in tests/consumers.txt" >&2; exit 2; }
+done < "$CONSUMERS_FILE"
+[ "${#CONSUMERS[@]}" -gt 0 ] || { echo "no consumers in $CONSUMERS_FILE" >&2; exit 2; }
 
 HARNESS_SHA="$(git rev-parse HEAD)"
 
