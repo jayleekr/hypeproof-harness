@@ -23,10 +23,23 @@ HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HARNESS_ROOT"
 
 # Workspace base for ${HYPEPROOF_WORKSPACE} entries in tests/consumers.txt.
-# Default to the parent of this repo so consumers cloned as siblings of
-# hypeproof-harness resolve with zero config. Override by exporting the var.
+# Default to the parent of the MAIN checkout, so consumers cloned as siblings
+# of hypeproof-harness resolve with zero config — even when this script is
+# invoked from a linked git worktree (where HARNESS_ROOT/.. would otherwise
+# point at .git/worktrees/ or .claude/worktrees/, not the user workspace).
+# Override by exporting the var.
 if [ -z "${HYPEPROOF_WORKSPACE:-}" ]; then
-  HYPEPROOF_WORKSPACE="$(cd "$HARNESS_ROOT/.." && pwd)"
+  _common_dir="$(git -C "$HARNESS_ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$_common_dir" ]; then
+    case "$_common_dir" in
+      /*) ;;
+      *)  _common_dir="$HARNESS_ROOT/$_common_dir" ;;
+    esac
+    HYPEPROOF_WORKSPACE="$(cd "$_common_dir/../.." && pwd)"
+  else
+    HYPEPROOF_WORKSPACE="$(cd "$HARNESS_ROOT/.." && pwd)"
+  fi
+  unset _common_dir
 fi
 
 MODE="apply"
