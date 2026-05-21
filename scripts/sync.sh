@@ -77,7 +77,7 @@ while IFS= read -r raw; do
   [ -n "$ovr" ] && expanded="$ovr"
   CONSUMERS+=("$expanded")
 done < tests/consumers.txt
-[ "${#CONSUMERS[@]:-0}" -gt 0 ] || { echo "no consumers in tests/consumers.txt" >&2; exit 2; }
+[ "${#CONSUMERS[@]}" -gt 0 ] || { echo "no consumers in tests/consumers.txt" >&2; exit 2; }
 
 HARNESS_SHA="$(git rev-parse HEAD)"
 
@@ -128,7 +128,7 @@ for C in "${CONSUMERS[@]}"; do
         [ -f "$SRC/$rel" ] || will_delete+=("$rel")
       done < <(find "$DST" -type f -print0)
     fi
-    if [ "${#will_delete[@]:-0}" -gt 0 ]; then
+    if [ "${#will_delete[@]}" -gt 0 ]; then
       echo "   ⚠ $CNAME/$S — rsync --delete will remove:"
       for w in "${will_delete[@]}"; do echo "     - $w"; done
       if [ "$FORCE_DELETE" -ne 1 ]; then
