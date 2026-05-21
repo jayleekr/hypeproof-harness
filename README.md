@@ -83,15 +83,24 @@ bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 - Git 신원은 각 consumer의 ambient config 그대로 — 스크립트가 override하지 않는다
 - `rsync --delete`가 consumer-only 파일을 지우려 하면 abort — `--force-delete`로 명시 우회
 
-### 🔁 다른 머신에서 운영 — `CONSUMER_*` env override
+### 🔁 다른 머신에서 운영 — 워크스페이스 경로 해석
 
-```bash
-CONSUMER_hypeproof_studio=/abs/path/to/local/clone \
-CONSUMER_sediment=/abs/path/to/sediment \
-  bash scripts/sync.sh --check
-```
+`tests/consumers.txt`는 머신 의존 절대경로를 담지 않는다. consumer 경로는
+세 단계로 해석된다(우선순위 순):
 
-Env 변수명에서 dash는 underscore로 정규화된다 (`hypeproof-studio` → `hypeproof_studio`).
+1. **`CONSUMER_<repo>` env** — 특정 repo를 임의 경로로 지정(최우선 override).
+   ```bash
+   CONSUMER_hypeproof_studio=/abs/path/to/clone bash scripts/sync.sh --check
+   ```
+   변수명에서 dash는 underscore로 정규화된다 (`hypeproof-studio` → `hypeproof_studio`).
+2. **`${HYPEPROOF_WORKSPACE}`** — `consumers.txt`의 `${HYPEPROOF_WORKSPACE}/<repo>`
+   기준 베이스. `export HYPEPROOF_WORKSPACE=/abs/path/to/workspace`로 머신별 지정.
+3. **기본값(zero-config)** — `HYPEPROOF_WORKSPACE` 미설정 시 **이 repo의 부모
+   디렉토리**로 자동 설정된다. consumer를 hypeproof-harness의 형제로 clone하면
+   (`<ws>/hypeproof-harness`, `<ws>/hypeproof-studio`, …) 추가 설정 없이 동작한다.
+
+매칭된 consumer가 하나도 없으면 `sync.sh`/`tests/run.sh`는 조용히 통과하지 않고
+위 세 방법을 안내하는 힌트를 출력한다.
 
 ---
 

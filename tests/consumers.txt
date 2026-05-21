@@ -1,15 +1,24 @@
 # Consumer repos that vendor this harness. One path per line. Lines starting
-# with # are ignored. Paths can use ~ (HOME expansion) and ${VAR} substitution.
+# with # are ignored. Paths support ~ (HOME) and ${VAR} expansion.
 #
-# This file is **maintainer-side only** (sync.sh reads it). The paths below
-# reflect Jay's local convention (~/CodeWorkspace/...) and are NOT a
-# constraint on members — each member chooses their own workspace path
-# (the /onboard-member skill asks them).
+# Portable by default — no machine-specific absolute paths live here:
+#   • ${HYPEPROOF_WORKSPACE} is the workspace base. If you don't set it,
+#     sync.sh / tests/run.sh default it to the PARENT of this repo, so
+#     cloning the consumers as siblings of hypeproof-harness just works
+#     with zero config:
+#         <workspace>/hypeproof-harness   (this repo)
+#         <workspace>/hypeproof-studio
+#         <workspace>/sediment
+#   • To use a different base on a given machine:
+#         export HYPEPROOF_WORKSPACE=/abs/path/to/workspace
+#   • To point a single repo somewhere unrelated, override per-repo
+#     (dashes in the basename become underscores in the env var name):
+#         CONSUMER_hypeproof_studio=/abs/path/to/clone bash scripts/sync.sh
 #
-# To override per-machine for the maintainer running sync.sh:
-#   CONSUMER_hypeproof_studio=/abs/path/to/local/clone bash tests/run.sh
-# (dashes in repo basename become underscores in env var name)
+${HYPEPROOF_WORKSPACE}/hypeproof-studio
+${HYPEPROOF_WORKSPACE}/sediment
+${HYPEPROOF_WORKSPACE}/hypeprooflab
 #
-~/CodeWorkspace/hypeproof-studio
-~/CodeWorkspace/sediment
-~/CodeWorkspace/hypeproof/.claude/worktrees/repos
+# hypeprooflab note: if your lab checkout is a git worktree at a non-standard
+# path (e.g. ~/CodeWorkspace/hypeproof/.claude/worktrees/repos), override it:
+#     CONSUMER_hypeprooflab=~/CodeWorkspace/hypeproof/.claude/worktrees/repos

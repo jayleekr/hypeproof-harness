@@ -22,6 +22,13 @@ set -euo pipefail
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HARNESS_ROOT"
 
+# Workspace base for ${HYPEPROOF_WORKSPACE} entries in tests/consumers.txt.
+# Default to the parent of this repo so consumers cloned as siblings of
+# hypeproof-harness resolve with zero config. Override by exporting the var.
+if [ -z "${HYPEPROOF_WORKSPACE:-}" ]; then
+  HYPEPROOF_WORKSPACE="$(cd "$HARNESS_ROOT/.." && pwd)"
+fi
+
 MODE="apply"
 FORCE_DELETE=0
 case "${1:-}" in
@@ -77,6 +84,7 @@ HARNESS_SHA="$(git rev-parse HEAD)"
 # --- main loop ---
 overall_drift=0
 skipped=0
+found=0
 for C in "${CONSUMERS[@]}"; do
   CNAME="$(basename "$C")"
   if [ ! -d "$C" ]; then
@@ -84,6 +92,7 @@ for C in "${CONSUMERS[@]}"; do
     skipped=$((skipped+1))
     continue
   fi
+  found=$((found+1))
   for S in "${SKILLS[@]}"; do
     SRC="$HARNESS_ROOT/skills/$S"
     DST="$C/.claude/skills/$S"
@@ -194,6 +203,18 @@ for C in "${CONSUMERS[@]}"; do
     fi
   done
 done
+
+if [ "$found" -eq 0 ]; then
+  {
+    echo ""
+    echo "✗ No consumer repos found — every path in tests/consumers.txt was missing."
+    echo "  Resolve one of:"
+    echo "    • clone consumers as siblings of hypeproof-harness (zero-config), or"
+    echo "    • export HYPEPROOF_WORKSPACE=/abs/path/to/workspace, or"
+    echo "    • set CONSUMER_<repo>=/abs/path per repo (e.g. CONSUMER_hypeproof_studio=...)."
+    echo "  HYPEPROOF_WORKSPACE currently resolves to: $HYPEPROOF_WORKSPACE"
+  } >&2
+fi
 
 if [ "$MODE" = "check" ]; then
   if [ "$overall_drift" -eq 0 ] && [ "$skipped" -eq 0 ]; then

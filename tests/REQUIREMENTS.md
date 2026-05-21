@@ -46,15 +46,22 @@ harness repo against any consumer path.
 
 ## Portability (CR-2 fixed)
 
-`tests/consumers.txt` lines support `~` and `${VAR}` expansion. Per-machine
-override: set `CONSUMER_<basename>=<absolute-path>` in env, e.g.
+`tests/consumers.txt` lines support `~` and `${VAR}` expansion and carry no
+machine-specific absolute paths. Resolution order:
 
-```bash
-CONSUMER_hypeproof-studio=/Users/x/work/hps bash tests/run.sh
-```
+1. `CONSUMER_<basename>=<absolute-path>` env — per-repo override, e.g.
+   ```bash
+   CONSUMER_hypeproof-studio=/Users/x/work/hps bash tests/run.sh
+   ```
+2. `${HYPEPROOF_WORKSPACE}` — base for `${HYPEPROOF_WORKSPACE}/<repo>` entries;
+   `export` it to point at your workspace.
+3. Default (zero-config): if `HYPEPROOF_WORKSPACE` is unset, both `sync.sh` and
+   `tests/run.sh` set it to the **parent of this repo**, so consumers cloned as
+   siblings of hypeproof-harness resolve without any env.
 
 Missing consumer paths are reported as `SKIP` (counted as fail), never
-silent-pass.
+silent-pass; when *no* consumer resolves at all, a hint naming the three
+options above is printed.
 
 ## T-V10 usage (CR-5)
 
