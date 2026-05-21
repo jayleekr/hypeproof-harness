@@ -1,0 +1,23 @@
+# Per-machine override for tests/consumers.txt.
+#
+# Copy this file to tests/consumers.local.txt and edit. tests/consumers.local.txt
+# is gitignored. If present, scripts/sync.sh and tests/run.sh use it INSTEAD
+# of tests/consumers.txt — list only the consumers you actually have cloned.
+#
+# Same syntax as consumers.txt: one path per line. Comments start with #.
+# Tilde (~) and ${VAR} expansion supported. Empty/comment lines ignored.
+#
+# Typical uses:
+#   • member with only 1-2 consumers cloned — list just those, gate runs
+#     green on the partial set without modifying the canonical consumers.txt
+#   • machine with a non-standard checkout location (e.g. git worktree at an
+#     unrelated path) — list the actual paths
+#
+# Per-repo CONSUMER_<name>=... env vars still work on top of this file and
+# take highest priority.
+
+# Examples (uncomment + edit):
+#
+# ${HYPEPROOF_WORKSPACE}/hypeproof-studio
+# ${HYPEPROOF_WORKSPACE}/sediment
+# /Users/me/work/hypeprooflab

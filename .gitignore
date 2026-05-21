@@ -6,6 +6,9 @@ node_modules/
 # Per-machine vendor-gate output (run.sh writes this; do not commit)
 tests/last-report.json
 
+# Per-machine consumer list override (see tests/consumers.local.example)
+tests/consumers.local.txt
+
 # Claude Code per-machine state under .claude/
 # Tracked here: .claude/skills/ (symlinks to canonical skills/), .claude/settings.json (shared, if added)
 .claude/settings.local.json

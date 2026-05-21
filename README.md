@@ -86,16 +86,20 @@ bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 ### 🔁 다른 머신에서 운영 — 워크스페이스 경로 해석
 
 `tests/consumers.txt`는 머신 의존 절대경로를 담지 않는다. consumer 경로는
-세 단계로 해석된다(우선순위 순):
+다음 우선순위로 해석된다:
 
-1. **`CONSUMER_<repo>` env** — 특정 repo를 임의 경로로 지정(최우선 override).
+1. **`tests/consumers.local.txt`** — 존재하면 `consumers.txt` 를 대체하는
+   머신별 consumer 목록. gitignore. `tests/consumers.local.example` 를 복사해서
+   본인이 가진 consumer 만 적으면 partial gate 가 그린으로 돈다. (`.env` 패턴)
+2. **`CONSUMER_<repo>` env** — 특정 repo를 임의 경로로 지정. 어떤 목록이 로드되든
+   그 위에 덧씌워진다.
    ```bash
    CONSUMER_hypeproof_studio=/abs/path/to/clone bash scripts/sync.sh --check
    ```
    변수명에서 dash는 underscore로 정규화된다 (`hypeproof-studio` → `hypeproof_studio`).
-2. **`${HYPEPROOF_WORKSPACE}`** — `consumers.txt`의 `${HYPEPROOF_WORKSPACE}/<repo>`
+3. **`${HYPEPROOF_WORKSPACE}`** — `consumers.txt`의 `${HYPEPROOF_WORKSPACE}/<repo>`
    기준 베이스. `export HYPEPROOF_WORKSPACE=/abs/path/to/workspace`로 머신별 지정.
-3. **기본값(zero-config)** — `HYPEPROOF_WORKSPACE` 미설정 시 **이 repo의 부모
+4. **기본값(zero-config)** — `HYPEPROOF_WORKSPACE` 미설정 시 **이 repo의 부모
    디렉토리**로 자동 설정된다. consumer를 hypeproof-harness의 형제로 clone하면
    (`<ws>/hypeproof-harness`, `<ws>/hypeproof-studio`, …) 추가 설정 없이 동작한다.
 
