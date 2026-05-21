@@ -45,7 +45,7 @@ jobs:
           fi
 
   pr-policy:
-    name: pr-policy (branch name + Closes #)
+    name: "pr-policy (branch name + Closes #)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -59,7 +59,7 @@ jobs:
             exit 1
           fi
 
-      - name: Closes # in body
+      - name: "Closes # in body"
         env:
           BODY: ${{ github.event.pull_request.body }}
         run: |
