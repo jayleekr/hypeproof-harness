@@ -127,7 +127,7 @@ for C in "${CONSUMERS[@]}"; do
   done < <(find "$C/.claude/skills" -maxdepth 2 -type l -print0 2>/dev/null)
   # skill-creator itself must be a real dir, not a symlink
   if [ -L "$CONSUMER_SKILL" ]; then fails+=("skill-creator is a symlink"); fi
-  if [ "${#fails[@]:-0}" -eq 0 ]; then
+  if [ "${#fails[@]}" -eq 0 ]; then
     mark "$CN" T-V3 PASS "clean"
   else
     mark "$CN" T-V3 FAIL "$(IFS=,;echo "${fails[*]}")"

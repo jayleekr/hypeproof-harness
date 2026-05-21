@@ -1,0 +1,97 @@
+name: test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lint:
+    name: lint (bash -n + path hygiene)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n
+        run: |
+          set -e
+          bash -n scripts/sync.sh
+          bash -n tests/run.sh
+
+      - name: shellcheck (warnings only, non-blocking)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          shellcheck -S warning scripts/sync.sh tests/run.sh || true
+
+      - name: No hardcoded user-specific paths
+        run: |
+          set -e
+          # Catch ~/CodeWorkspace, ~/code, ~/dev, ~/projects in maintainer scripts.
+          # consumers.txt is allowed to mention them inside comments (not active lines).
+          if grep -rnE '(^|[^_])~/(CodeWorkspace|code|dev|projects)/' scripts/ 2>/dev/null; then
+            echo "Hardcoded user-specific path found in scripts/ — use \${HYPEPROOF_WORKSPACE} or CONSUMER_<repo>" >&2
+            exit 1
+          fi
+          # Active (non-comment) lines in consumers.txt must not hardcode user paths.
+          if grep -vE '^\s*(#|$)' tests/consumers.txt | grep -nE '~/(CodeWorkspace|code|dev|projects)/' ; then
+            echo "Active line in tests/consumers.txt hardcodes a user-specific path" >&2
+            exit 1
+          fi
+
+  pr-policy:
+    name: pr-policy (branch name + Closes #)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if [[ ! "$BRANCH" =~ ^(fix|feat|docs|chore)/ ]]; then
+            echo "Branch '$BRANCH' must start with fix/, feat/, docs/, or chore/" >&2
+            echo "See MEMBER-GUIDE.ko.md §4.2" >&2
+            exit 1
+          fi
+
+      - name: Closes # in body
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if ! printf '%s' "$BODY" | grep -qE '(Closes|Fixes|Resolves) #[0-9]+'; then
+            echo "PR body must include 'Closes #<n>', 'Fixes #<n>', or 'Resolves #<n>'" >&2
+            echo "See MEMBER-GUIDE.ko.md §4.4" >&2
+            exit 1
+          fi
+
+  gate:
+    name: gate (tests/run.sh against mock consumers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up mock consumer repos
+        run: |
+          set -e
+          mkdir -p /tmp/ws/hypeproof-studio /tmp/ws/sediment /tmp/ws/hypeprooflab
+          for d in /tmp/ws/*/; do
+            cd "$d"
+            git init -q -b main
+            git -c user.email=ci@example.com -c user.name=CI commit --allow-empty -q -m init
+            cd - >/dev/null
+          done
+
+      - name: Vendor harness → mock consumers
+        env:
+          HYPEPROOF_WORKSPACE: /tmp/ws
+        run: bash scripts/sync.sh
+
+      - name: Run vendor gate
+        env:
+          HYPEPROOF_WORKSPACE: /tmp/ws
+        run: bash tests/run.sh
