@@ -57,8 +57,8 @@ esac
 [ "${2:-}" = "--force-delete" ] && FORCE_DELETE=1
 
 SKILLS=(skill-creator)                    # vendored to consumer/.claude/skills/<name>/
-DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md) # vendored to consumer/docs/<file>
-SCRIPTS=(notify)                          # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md) # vendored to consumer/docs/<file>
+SCRIPTS=(notify docs-harness)             # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root
 
 # --- consumer resolution ---

@@ -28,8 +28,10 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
 | `docs/AGENT-GUIDE.ko.md` | Claude Code · Codex · OpenClaw 공통 에이전트 규약 | 3 consumers `docs/` |
+| `docs/DOCS-CONTRACT.ko.md` | 제품 repo가 유지해야 하는 dev docs 계약 | 3 consumers `docs/` |
 | `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
+| `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
 | `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V11) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
@@ -137,6 +139,11 @@ bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 
 3개 repo가 같은 스킬, 에이전트 진입점, 가이드를 쓰고, 도메인 코드만 각자
 다르다. 멤버는 자기 consumer repo만 보면 된다 — 갱신은 메인테이너가 한다.
+
+제품 개발 문서는 각 consumer repo가 원천이다. Studio/Sediment는
+`hypeproof.docs.yaml`과 `docs/dev/*`, `docs/adr/*`를 유지하고, vendored
+`scripts/docs-harness/check.py`로 95점 이상을 통과해야 한다. `hypeprooflab`은
+이 검증된 문서를 멤버용으로 호스팅한다.
 
 Vendor를 고른 이유는 [migration report][migration]에.
 
