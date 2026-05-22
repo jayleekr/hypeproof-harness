@@ -35,7 +35,7 @@ harness repo against any consumer path.
 | **T-V8** | No leaked artifacts | Vendored tree contains no `.git`, `.DS_Store`, `__pycache__`, `*.pyc`. |
 | **T-V9** | No regression (CI) | Each consumer's existing test gate (studio main-guard / sediment validator / lab ci.yml) does not fail because of the migration. Always reported as DEFER from the harness; check the PR's CI status manually. |
 | **T-V10** | Atomic PR scope (per-consumer, env-gated) | When `T_V10_BASE_<consumer>` env var is set to a ref (e.g. pre-migration HEAD), `git diff --name-only $BASE..HEAD` in that consumer contains only paths under `.gitmodules`, `.harness`, or `.claude/skills/skill-creator`. If env var unset, reported as N/A (not gated). |
-| **T-V11** | Shared agent guidance | `docs/MEMBER-GUIDE.ko.md`, `docs/AGENT-GUIDE.ko.md`, `CLAUDE.md`, `AGENTS.md`, and `OPENCLAW.md` are present in each consumer and byte-identical to harness canonical sources. |
+| **T-V11** | Shared agent guidance | `docs/MEMBER-GUIDE.ko.md` and `docs/AGENT-GUIDE.ko.md` are byte-identical to harness canonical sources. `CLAUDE.md`, `AGENTS.md`, and `OPENCLAW.md` are present and reference `docs/AGENT-GUIDE.ko.md`; existing consumer-specific content is preserved. |
 
 ## Pass/fail aggregation (CR-5 fixed)
 
