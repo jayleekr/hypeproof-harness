@@ -58,6 +58,7 @@ esac
 
 SKILLS=(skill-creator)        # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md)     # vendored to consumer/docs/<file>; single files in harness/docs/
+SCRIPTS=(notify)              # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
 
 # --- consumer resolution ---
 expand_path() {
@@ -190,6 +191,84 @@ for C in "${CONSUMERS[@]}"; do
       fi
     else
       echo "SYNC   $CNAME/$S @ ${HARNESS_SHA:0:7}"
+    fi
+  done
+
+  # --- scripts vendoring (directory trees into consumer/scripts/<name>/) ---
+  # Same pattern as SKILLS, but lands under scripts/ (not .claude/skills/).
+  # Used for cross-product Python modules like notify/.
+  for SC in "${SCRIPTS[@]:-}"; do
+    [ -z "$SC" ] && continue
+    SCSRC="$HARNESS_ROOT/scripts/$SC"
+    SCDST="$C/scripts/$SC"
+    [ -d "$SCSRC" ] || { echo "[!] missing script source: $SCSRC" >&2; continue; }
+
+    if [ "$MODE" = "check" ]; then
+      d=0
+      while IFS= read -r -d '' f; do
+        rel="${f#$SCSRC/}"
+        b="$SCDST/$rel"
+        if [ ! -f "$b" ] || ! cmp -s "$f" "$b"; then
+          echo "DRIFT  $CNAME/scripts/$SC/$rel"; d=1; overall_drift=1
+        fi
+      done < <(find "$SCSRC" -type f -print0)
+      if [ -d "$SCDST" ]; then
+        while IFS= read -r -d '' f; do
+          rel="${f#$SCDST/}"
+          [ "$rel" = "HARNESS_VERSION" ] && continue
+          [ -f "$SCSRC/$rel" ] || { echo "EXTRA  $CNAME/scripts/$SC/$rel"; d=1; overall_drift=1; }
+        done < <(find "$SCDST" -type f -print0)
+      fi
+      [ "$d" -eq 0 ] && echo "OK     $CNAME/scripts/$SC"
+      continue
+    fi
+
+    # deletion preview
+    will_delete=()
+    if [ -d "$SCDST" ]; then
+      while IFS= read -r -d '' f; do
+        rel="${f#$SCDST/}"
+        [ "$rel" = "HARNESS_VERSION" ] && continue
+        [ -f "$SCSRC/$rel" ] || will_delete+=("$rel")
+      done < <(find "$SCDST" -type f -print0)
+    fi
+    if [ "${#will_delete[@]}" -gt 0 ]; then
+      echo "   ⚠ $CNAME/scripts/$SC — rsync --delete will remove:"
+      for w in "${will_delete[@]}"; do echo "     - $w"; done
+      if [ "$FORCE_DELETE" -ne 1 ]; then
+        echo "   ABORT: refusing to delete consumer-side files without --force-delete." >&2
+        exit 3
+      fi
+    fi
+
+    # commit-mode pre-flight
+    if [ "$MODE" = "commit" ]; then
+      branch="$(git -C "$C" rev-parse --abbrev-ref HEAD)"
+      if [ "$branch" != "main" ] && [ "${ALLOW_ANY_BRANCH:-0}" != "1" ]; then
+        echo "ABORT  $CNAME on branch '$branch' (not main). Set ALLOW_ANY_BRANCH=1 to override." >&2
+        exit 4
+      fi
+      stray="$(git -C "$C" status --porcelain | awk -v p="scripts/$SC" '$2!~ p {print}' | head -1)"
+      if [ -n "$stray" ]; then
+        echo "ABORT  $CNAME has unrelated changes staged/modified: $stray" >&2
+        exit 5
+      fi
+    fi
+
+    mkdir -p "$SCDST"
+    rsync -a --delete --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
+    echo "$HARNESS_SHA" > "$SCDST/HARNESS_VERSION"
+
+    if [ "$MODE" = "commit" ]; then
+      if git -C "$C" diff --quiet -- "scripts/$SC"; then
+        echo "NOOP   $CNAME/scripts/$SC (already current)"
+      else
+        git -C "$C" add "scripts/$SC"
+        git -C "$C" commit -q -m "chore(scripts): sync $SC from hypeproof-harness@${HARNESS_SHA:0:7}"
+        echo "COMMIT $CNAME/scripts/$SC @ ${HARNESS_SHA:0:7}"
+      fi
+    else
+      echo "SYNC   $CNAME/scripts/$SC @ ${HARNESS_SHA:0:7}"
     fi
   done
 
