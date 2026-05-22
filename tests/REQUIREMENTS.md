@@ -1,4 +1,4 @@
-# Vendor Migration — Test Requirements (T-V1 ... T-V10)
+# Vendor Migration — Test Requirements (T-V1 ... T-V11)
 
 Acceptance criteria for migrating the three HypeProof consumer repos from
 `.harness` submodule + symlink to **vendored real files** for the shared
@@ -16,6 +16,10 @@ harness repo against any consumer path.
   (read-only drift), `--commit` (apply + branch/clean-tree-guarded git
   commit in each consumer). Identity comes from the consumer repo's own
   git config — the script never overrides `user.name` / `user.email`.
+- **Agent guidance**: `docs/AGENT-GUIDE.ko.md` is the canonical shared
+  agent policy. Root `CLAUDE.md`, `AGENTS.md`, and `OPENCLAW.md` are thin
+  entrypoints vendored to consumers so Claude Code, Codex, OpenClaw, and
+  future agents read the same rules.
 
 ## Test IDs
 
@@ -31,6 +35,7 @@ harness repo against any consumer path.
 | **T-V8** | No leaked artifacts | Vendored tree contains no `.git`, `.DS_Store`, `__pycache__`, `*.pyc`. |
 | **T-V9** | No regression (CI) | Each consumer's existing test gate (studio main-guard / sediment validator / lab ci.yml) does not fail because of the migration. Always reported as DEFER from the harness; check the PR's CI status manually. |
 | **T-V10** | Atomic PR scope (per-consumer, env-gated) | When `T_V10_BASE_<consumer>` env var is set to a ref (e.g. pre-migration HEAD), `git diff --name-only $BASE..HEAD` in that consumer contains only paths under `.gitmodules`, `.harness`, or `.claude/skills/skill-creator`. If env var unset, reported as N/A (not gated). |
+| **T-V11** | Shared agent guidance | `docs/MEMBER-GUIDE.ko.md`, `docs/AGENT-GUIDE.ko.md`, `CLAUDE.md`, `AGENTS.md`, and `OPENCLAW.md` are present in each consumer and byte-identical to harness canonical sources. |
 
 ## Pass/fail aggregation (CR-5 fixed)
 
@@ -38,9 +43,9 @@ harness repo against any consumer path.
 
 - `FAIL = 0`, AND
 - `SKIP = 0` (every consumer path resolves), AND
-- `PASS >= 5N + 3 + [T-V6 if applicable]`
+- `PASS >= 6N + 3 + [T-V6 if applicable]`
   - N = number of consumers found
-  - 5 per-consumer required PASSes: T-V1, T-V2, T-V3, T-V4, T-V8
+  - 6 per-consumer required PASSes: T-V1, T-V2, T-V3, T-V4, T-V8, T-V11
   - 3 harness PASSes: T-V5, T-V7, T-V6-if-not-N/A
 - DEFER (T-V9, T-V10 unconfigured) does **not** count as PASS.
 
