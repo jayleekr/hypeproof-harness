@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/run.sh — execute T-V1..T-V10 (T-V10 partial) against each consumer.
+# tests/run.sh — execute T-V1..T-V11 (T-V10 partial) against each consumer.
 # Outputs a markdown table to stdout and writes tests/last-report.json.
 #
 # Exit code:
@@ -78,6 +78,8 @@ mark() {
 }
 
 SKILL_SRC="$HARNESS_ROOT/skills/skill-creator"
+DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md)
+ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md)
 N_CONSUMERS_FOUND=0
 
 # ============================================================
@@ -95,6 +97,7 @@ for C in "${CONSUMERS[@]}"; do
     mark "$CN" T-V8  SKIP "path absent"
     mark "$CN" T-V9  SKIP "path absent"
     mark "$CN" T-V10 SKIP "path absent"
+    mark "$CN" T-V11 SKIP "path absent"
     continue
   fi
   N_CONSUMERS_FOUND=$((N_CONSUMERS_FOUND+1))
@@ -187,6 +190,24 @@ for C in "${CONSUMERS[@]}"; do
     fi
   else
     mark "$CN" T-V10 N/A "set T_V10_BASE_$CN=<ref> to gate"
+  fi
+
+  # ---- T-V11 shared agent guidance ----
+  agent_miss=0
+  for D in "${DOCS[@]}"; do
+    if [ ! -f "$C/docs/$D" ] || ! cmp -s "$HARNESS_ROOT/docs/$D" "$C/docs/$D"; then
+      agent_miss=$((agent_miss+1))
+    fi
+  done
+  for F in "${ROOT_AGENT_FILES[@]}"; do
+    if [ ! -f "$C/$F" ] || ! cmp -s "$HARNESS_ROOT/$F" "$C/$F"; then
+      agent_miss=$((agent_miss+1))
+    fi
+  done
+  if [ "$agent_miss" -eq 0 ]; then
+    mark "$CN" T-V11 PASS "agent guide + root entrypoints current"
+  else
+    mark "$CN" T-V11 FAIL "missing_or_drifted=$agent_miss"
   fi
 done
 
@@ -341,12 +362,12 @@ fi
 
 # ============================================================
 # Gate (CR-5: DEFER alone must not exit 0)
-# Required: 5 per-consumer PASSes (T-V1..T-V4, T-V8) × N_CONSUMERS_FOUND
+# Required: 6 per-consumer PASSes (T-V1..T-V4, T-V8, T-V11) × N_CONSUMERS_FOUND
 #         + 3 harness PASSes (T-V5, T-V6 if applicable, T-V7)
 # T-V6 may be N/A if no consumer is vendored yet — relax in that case.
 # T-V9 always DEFER (consumer CI), T-V10 may be N/A (no base ref).
 # ============================================================
-required=$(( N_CONSUMERS_FOUND * 5 ))
+required=$(( N_CONSUMERS_FOUND * 6 ))
 # T-V5 always counts
 required=$((required + 1))
 # T-V6 only counts if it produced PASS/FAIL (not N/A)

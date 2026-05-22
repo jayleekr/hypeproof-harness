@@ -56,9 +56,10 @@ esac
 # Second-arg form: sync.sh --commit --force-delete (allowed)
 [ "${2:-}" = "--force-delete" ] && FORCE_DELETE=1
 
-SKILLS=(skill-creator)        # vendored to consumer/.claude/skills/<name>/
-DOCS=(MEMBER-GUIDE.ko.md)     # vendored to consumer/docs/<file>; single files in harness/docs/
-SCRIPTS=(notify)              # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+SKILLS=(skill-creator)                    # vendored to consumer/.claude/skills/<name>/
+DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md) # vendored to consumer/docs/<file>
+SCRIPTS=(notify)                          # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root
 
 # --- consumer resolution ---
 expand_path() {
@@ -301,6 +302,40 @@ for C in "${CONSUMERS[@]}"; do
       fi
     else
       echo "SYNC   $CNAME/docs/$D @ ${HARNESS_SHA:0:7}"
+    fi
+  done
+
+  # --- agent entrypoint vendoring (single files into consumer repo root) ---
+  # These are intentionally thin adapters. The common policy lives in
+  # docs/AGENT-GUIDE.ko.md so Claude, Codex, OpenClaw, and future agents do
+  # not fork the same team rules into different filenames.
+  for F in "${ROOT_AGENT_FILES[@]:-}"; do
+    [ -z "$F" ] && continue
+    FSRC="$HARNESS_ROOT/$F"
+    FDST="$C/$F"
+    [ -f "$FSRC" ] || { echo "[!] missing agent entrypoint source: $FSRC" >&2; continue; }
+
+    if [ "$MODE" = "check" ]; then
+      if [ ! -f "$FDST" ] || ! cmp -s "$FSRC" "$FDST"; then
+        echo "DRIFT  $CNAME/$F"; overall_drift=1
+      else
+        echo "OK     $CNAME/$F"
+      fi
+      continue
+    fi
+
+    cp -p "$FSRC" "$FDST"
+
+    if [ "$MODE" = "commit" ]; then
+      if git -C "$C" diff --quiet -- "$F"; then
+        echo "NOOP   $CNAME/$F (already current)"
+      else
+        git -C "$C" add "$F"
+        git -C "$C" commit -q -m "docs(agents): sync $F from hypeproof-harness@${HARNESS_SHA:0:7}"
+        echo "COMMIT $CNAME/$F @ ${HARNESS_SHA:0:7}"
+      fi
+    else
+      echo "SYNC   $CNAME/$F @ ${HARNESS_SHA:0:7}"
     fi
   done
 done

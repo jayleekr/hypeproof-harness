@@ -11,11 +11,13 @@
 ---
 
 3개 product repo — `hypeproof-studio` · `sediment` · `hypeprooflab` — 가
-여기서 공유 스킬과 가이드를 vendor로 가져간다. 도메인 코드는 각자,
-공통 규약은 한 군데.
+여기서 공유 스킬, 에이전트 가이드, 운영 스크립트를 vendor로 가져간다.
+도메인 코드는 각자, 공통 규약은 한 군데.
 
-현재 콘텐츠는 Claude Code 스킬 위주지만 Codex · OpenClaw 등 다른 AI 에이전트용
-자원도 같은 vendoring 메커니즘으로 여기 추가할 수 있다.
+Claude Code 전용 스킬은 계속 `.claude/skills/`로 배포하되, Codex · OpenClaw
+등 다른 코딩 에이전트가 읽어야 하는 팀 규약은 `docs/AGENT-GUIDE.ko.md`를
+canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
+그 공통 문서를 가리키는 얇은 진입점이다.
 
 ## What's in here
 
@@ -24,8 +26,11 @@
 | `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | 3 consumers `.claude/skills/` |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
+| `docs/AGENT-GUIDE.ko.md` | Claude Code · Codex · OpenClaw 공통 에이전트 규약 | 3 consumers `docs/` |
+| `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 | 3 consumers repo root |
+| `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
-| `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V10) | (maintainer) |
+| `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V11) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
 
 **Not shared here**: studio-only 규칙(`branding-swap`, `build-pipeline`,
@@ -67,7 +72,7 @@ Claude Code 세션에서:
 
 ```bash
 # 1. canonical 편집
-vim skills/skill-creator/SKILL.md     # 또는 docs/MEMBER-GUIDE.ko.md
+vim skills/skill-creator/SKILL.md     # 또는 docs/AGENT-GUIDE.ko.md
 git commit && git push origin main
 
 # 2. 모든 consumer로 동기
@@ -129,8 +134,8 @@ bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
        워크숍 도구          / SaaS          콘텐츠/운영         
 ```
 
-3개 repo가 같은 스킬과 가이드를 쓰고, 도메인 코드만 각자 다르다. 멤버는
-자기 consumer repo만 보면 된다 — 갱신은 메인테이너가 한다.
+3개 repo가 같은 스킬, 에이전트 진입점, 가이드를 쓰고, 도메인 코드만 각자
+다르다. 멤버는 자기 consumer repo만 보면 된다 — 갱신은 메인테이너가 한다.
 
 Vendor를 고른 이유는 [migration report][migration]에.
 
@@ -184,6 +189,7 @@ Vendor를 고른 이유는 [migration report][migration]에.
 ## Documentation
 
 - 📘 **한글 멤버 가이드** — [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)
+- 🤖 **공통 에이전트 가이드** — [`docs/AGENT-GUIDE.ko.md`](docs/AGENT-GUIDE.ko.md)
 - 🧪 Vendor 테스트 합격선 — [`tests/REQUIREMENTS.md`](tests/REQUIREMENTS.md)
 - 🔄 롤백 런북 (vendor → submodule) — [`docs/rollback-vendor.md`](docs/rollback-vendor.md)
 - 📊 Vendor 마이그레이션 보고서 — `hypeprooflab:jay/reports/2026-05-20-vendor-migration.html`
