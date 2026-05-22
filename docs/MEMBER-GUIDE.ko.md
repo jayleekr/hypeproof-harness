@@ -123,7 +123,9 @@ consumer repo 루트에는 에이전트별 얇은 진입점이 들어간다.
 | `OPENCLAW.md` | OpenClaw | OpenClaw용 repo 진입점 |
 
 세 파일 모두 공통 규칙을 복사하지 않고 `docs/AGENT-GUIDE.ko.md`를 가리킨다.
-repo별 세부 규칙은 각 consumer의 `README.md`, `DEV-GUIDE.md`, `docs/`에 둔다.
+기존 repo별 지침이 있으면 그 내용은 보존하고, 공통 가이드 링크만 추가한다.
+repo별 세부 규칙은 각 consumer의 `README.md`, `DEV-GUIDE.md`, `docs/` 또는
+해당 에이전트 진입점에 둔다.
 
 ---
 

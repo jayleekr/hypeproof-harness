@@ -17,7 +17,8 @@
 Claude Code 전용 스킬은 계속 `.claude/skills/`로 배포하되, Codex · OpenClaw
 등 다른 코딩 에이전트가 읽어야 하는 팀 규약은 `docs/AGENT-GUIDE.ko.md`를
 canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
-그 공통 문서를 가리키는 얇은 진입점이다.
+없으면 seed하고, 이미 repo별 규칙이 있으면 보존한 채 공통 문서 참조만
+검증한다.
 
 ## What's in here
 
@@ -27,7 +28,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
 | `docs/AGENT-GUIDE.ko.md` | Claude Code · Codex · OpenClaw 공통 에이전트 규약 | 3 consumers `docs/` |
-| `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 | 3 consumers repo root |
+| `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
 | `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V11) | (maintainer) |

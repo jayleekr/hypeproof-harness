@@ -200,12 +200,12 @@ for C in "${CONSUMERS[@]}"; do
     fi
   done
   for F in "${ROOT_AGENT_FILES[@]}"; do
-    if [ ! -f "$C/$F" ] || ! cmp -s "$HARNESS_ROOT/$F" "$C/$F"; then
+    if [ ! -f "$C/$F" ] || ! grep -q 'docs/AGENT-GUIDE\.ko\.md' "$C/$F"; then
       agent_miss=$((agent_miss+1))
     fi
   done
   if [ "$agent_miss" -eq 0 ]; then
-    mark "$CN" T-V11 PASS "agent guide + root entrypoints current"
+    mark "$CN" T-V11 PASS "agent guide current + root entrypoints reference it"
   else
     mark "$CN" T-V11 FAIL "missing_or_drifted=$agent_miss"
   fi

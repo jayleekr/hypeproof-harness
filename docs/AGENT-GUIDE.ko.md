@@ -44,13 +44,14 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 - `scripts/notify/`
 - `docs/MEMBER-GUIDE.ko.md`
 - `docs/AGENT-GUIDE.ko.md`
-- `CLAUDE.md`
-- `AGENTS.md`
-- `OPENCLAW.md`
+- `CLAUDE.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
+- `AGENTS.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
+- `OPENCLAW.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
 
-consumer repo 안에서 이 파일들을 직접 고치지 않는다. 고쳐야 하면
-`hypeproof-harness`에서 PR을 만들고, 메인테이너가 `scripts/sync.sh`로
-consumer에 반영한다.
+consumer repo 안에서 vendored 디렉토리와 문서는 직접 고치지 않는다. 루트
+에이전트 파일은 repo별 규칙을 담을 수 있으므로 기존 내용을 보존하되, 반드시
+이 공통 가이드를 참조하게 한다. 공통 규칙을 고쳐야 하면 `hypeproof-harness`에서
+PR을 만들고, 메인테이너가 `scripts/sync.sh`로 consumer에 반영한다.
 
 ## 4. 에이전트별 역할
 

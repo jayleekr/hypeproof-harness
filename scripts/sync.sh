@@ -305,10 +305,9 @@ for C in "${CONSUMERS[@]}"; do
     fi
   done
 
-  # --- agent entrypoint vendoring (single files into consumer repo root) ---
-  # These are intentionally thin adapters. The common policy lives in
-  # docs/AGENT-GUIDE.ko.md so Claude, Codex, OpenClaw, and future agents do
-  # not fork the same team rules into different filenames.
+  # --- agent entrypoint seeding (single files into consumer repo root) ---
+  # These files often carry repo-specific instructions. Seed a missing file
+  # from harness, but never overwrite an existing consumer entrypoint.
   for F in "${ROOT_AGENT_FILES[@]:-}"; do
     [ -z "$F" ] && continue
     FSRC="$HARNESS_ROOT/$F"
@@ -316,10 +315,21 @@ for C in "${CONSUMERS[@]}"; do
     [ -f "$FSRC" ] || { echo "[!] missing agent entrypoint source: $FSRC" >&2; continue; }
 
     if [ "$MODE" = "check" ]; then
-      if [ ! -f "$FDST" ] || ! cmp -s "$FSRC" "$FDST"; then
+      if [ ! -f "$FDST" ]; then
         echo "DRIFT  $CNAME/$F"; overall_drift=1
+      elif ! grep -q 'docs/AGENT-GUIDE\.ko\.md' "$FDST"; then
+        echo "DRIFT  $CNAME/$F missing docs/AGENT-GUIDE.ko.md reference"; overall_drift=1
       else
         echo "OK     $CNAME/$F"
+      fi
+      continue
+    fi
+
+    if [ -f "$FDST" ]; then
+      if grep -q 'docs/AGENT-GUIDE\.ko\.md' "$FDST"; then
+        echo "NOOP   $CNAME/$F (consumer-specific entrypoint already references AGENT-GUIDE)"
+      else
+        echo "MANUAL $CNAME/$F exists but does not reference docs/AGENT-GUIDE.ko.md; preserving consumer file" >&2
       fi
       continue
     fi
