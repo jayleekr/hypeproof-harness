@@ -1,0 +1,17 @@
+version: 1
+
+members:
+  admins:
+    - jayleekr
+    - JeHyeong2
+  writers:
+    - ico1036
+    - xoqhdgh1002
+    - JinyongShin
+    - TJ-kr
+
+roles:
+  maintainer:
+    github_permission: admin
+  contributor:
+    github_permission: push

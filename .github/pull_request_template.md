@@ -19,4 +19,11 @@ MEMBER-GUIDE §4.4 — PR 본문 필수: What & why · Tested · Closes #
 
 <!-- 리뷰어가 알아야 할 가정/제약/후속 이슈 링크. -->
 
+## Security / governance
+
+- [ ] No secrets or credentials in the diff
+- [ ] Governance policy changes include audit/test coverage
+- [ ] Repo apply/create tooling remains dry-run or manually approved
+- [ ] Branch protection / required checks remain compatible with this change
+
 Closes #

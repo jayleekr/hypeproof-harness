@@ -1,0 +1,108 @@
+version: 1
+
+repositories:
+  - owner: jayleekr
+    name: hypeproof-harness
+    visibility: public
+    profile: harness-core
+    lifecycle: governance
+    default_branch: main
+    products: [governance]
+    required_status_checks:
+      - lint (bash -n + path hygiene)
+      - gate (tests/run.sh against mock consumers)
+      - "pr-policy (branch name + Closes #)"
+      - repo-governance (policy validation)
+
+  - owner: jayleekr
+    name: hypeproof-studio
+    visibility: public
+    profile: public-product
+    lifecycle: product
+    default_branch: main
+    products: [studio]
+    required_status_checks:
+      - repo-governance (repo files)
+      - worker / test
+      - worker / typecheck
+      - extension / typecheck
+    required_secrets:
+      actions:
+        - ANTHROPIC_API_KEY
+        - DISCORD_WEBHOOK_HYPEPROOF_STUDIO
+        - DISCORD_WEBHOOK_SEDIMENT
+    release_repos:
+      - jayleekr/hypeproof-studio-releases
+    exceptions:
+      - id: studio-ci-checks-not-yet-created
+        owner: jayleekr
+        reason: Add PR CI workflow before making all expected checks required.
+        expires_at: 2026-07-01
+
+  - owner: jayleekr
+    name: sediment
+    visibility: public
+    profile: public-product
+    lifecycle: product
+    default_branch: main
+    products: [sediment]
+    required_status_checks:
+      - repo-governance (repo files)
+      - Rust CLI unit + edges
+      - Backend + shim + rate-limit UT
+      - Cross-tenant RLS gate (blocks merge)
+      - Lint :NAME::TYPE SQL cast
+      - Scan PR diff for secrets / credentials / private keys
+      - Python smoke tests (JWT, fixer 4-tier, search_utils, chunker, ...)
+    required_secrets:
+      actions:
+        - FLY_API_TOKEN
+        - VERCEL_TOKEN
+        - VERCEL_ORG_ID
+        - VERCEL_PROJECT_ID
+        - DISCORD_WEBHOOK_SEDIMENT
+        - RELEASE_MIRROR_TOKEN
+    release_repos:
+      - jayleekr/sediment-cli-releases
+
+  - owner: jayleekr
+    name: hypeprooflab
+    visibility: private
+    profile: content-vault
+    lifecycle: product
+    default_branch: main
+    products: [lab, vault]
+    required_status_checks:
+      - repo-governance (repo files)
+      - CI & Deploy / build
+      - Verify Members in Build / verify
+    required_secrets:
+      actions:
+        - VERCEL_TOKEN
+        - SEDIMENT_INGEST_URL
+        - SEDIMENT_WEBHOOK_SECRET
+        - DISCORD_WEBHOOK_HYPEPROOFLAB_PAGE
+        - DISCORD_WEBHOOK_SEDIMENT
+    exceptions:
+      - id: private-branch-protection-plan-limit
+        owner: jayleekr
+        reason: Personal private repo branch protection requires GitHub Pro/Team.
+        expires_at: 2026-12-31
+
+  - owner: jayleekr
+    name: hypeproof-studio-releases
+    visibility: public
+    profile: release-artifact
+    lifecycle: release
+    default_branch: main
+    products: [studio]
+    source_repo: jayleekr/hypeproof-studio
+
+  - owner: jayleekr
+    name: sediment-cli-releases
+    visibility: public
+    profile: release-artifact
+    lifecycle: release
+    default_branch: main
+    products: [sediment]
+    source_repo: jayleekr/sediment

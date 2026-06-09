@@ -200,6 +200,7 @@ Vendor를 고른 이유는 [migration report][migration]에.
 - 🤖 **공통 에이전트 가이드** — [`docs/AGENT-GUIDE.ko.md`](docs/AGENT-GUIDE.ko.md)
 - 🧪 Vendor 테스트 합격선 — [`tests/REQUIREMENTS.md`](tests/REQUIREMENTS.md)
 - 🔄 롤백 런북 (vendor → submodule) — [`docs/rollback-vendor.md`](docs/rollback-vendor.md)
+- 🔐 Repo governance 설계 — [`docs/REPO-GOVERNANCE.ko.md`](docs/REPO-GOVERNANCE.ko.md)
 - 📊 Vendor 마이그레이션 보고서 — `hypeprooflab:jay/reports/2026-05-20-vendor-migration.html`
 - 🗺 토폴로지 · 시퀀스 — `hypeprooflab:jay/reports/2026-05-19-repo-structure-diagram.html`
 - 🏗 Studio 페이즈/게이트 — `hypeproof-studio:METAPLAN.md`

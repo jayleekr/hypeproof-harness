@@ -95,3 +95,18 @@ jobs:
         env:
           HYPEPROOF_WORKSPACE: /tmp/ws
         run: bash tests/run.sh
+
+  repo-governance:
+    name: repo-governance (policy validation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install policy test deps
+        run: python -m pip install --quiet pyyaml pytest
+      - name: Validate policy offline
+        run: python scripts/repo-governance/audit.py --offline
+      - name: Run repo governance tests
+        run: python -m pytest tests/repo_governance
