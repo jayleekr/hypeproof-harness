@@ -32,7 +32,6 @@ def apply_repo_settings(full: str, profile: dict, repo: dict, dry_run: bool) -> 
     merge = repository.get("merge_methods", {})
     features = repository.get("features", {})
     body = {
-        "allow_forking": repository.get("allow_forking"),
         "delete_branch_on_merge": repository.get("delete_branch_on_merge"),
         "allow_auto_merge": repository.get("allow_auto_merge"),
         "allow_squash_merge": merge.get("squash"),
