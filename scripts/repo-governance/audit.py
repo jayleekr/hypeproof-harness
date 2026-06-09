@@ -196,7 +196,16 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any]) -> list[Findi
     compare_map["allow_rebase_merge"] = merge_methods.get("rebase")
     for field, expected in compare_map.items():
         if expected is not None and meta.get(field) != expected:
-            findings.append(Finding(full, "repo_settings", "medium", field, expected, meta.get(field)))
+            findings.append(Finding(
+                full,
+                "repo_settings",
+                "medium",
+                field,
+                expected,
+                meta.get(field),
+                apply_supported=(field != "allow_forking"),
+                message="GitHub only exposes allow_forking mutations for org-owned private repositories" if field == "allow_forking" else "",
+            ))
 
     findings.extend(_audit_security(full, meta, profile))
     findings.extend(_audit_actions(full, repo, profile))
@@ -259,7 +268,17 @@ def _audit_branch(full: str, repo: dict[str, Any], profile: dict[str, Any]) -> l
     if code != 0:
         return [Finding(full, "branch_protection", "high", branch, "reachable", branch_meta, False)]
     if not branch_meta.get("protected"):
-        findings.append(Finding(full, "branch_protection", "high", "protected", True, False))
+        private_plan_limited = repo.get("visibility") == "private"
+        findings.append(Finding(
+            full,
+            "branch_protection",
+            "high",
+            "protected",
+            True,
+            False,
+            apply_supported=not private_plan_limited,
+            message="Private repo branch protection requires GitHub Pro/Team or an org plan" if private_plan_limited else "",
+        ))
         return findings
 
     code, protection = gh_json(f"repos/{full}/branches/{branch}/protection")
