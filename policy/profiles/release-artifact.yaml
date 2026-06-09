@@ -6,7 +6,7 @@ repository:
   delete_branch_on_merge: true
   allow_auto_merge: false
   merge_methods:
-    squash: false
+    squash: true
     merge_commit: false
     rebase: false
   features:
