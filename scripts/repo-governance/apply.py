@@ -82,7 +82,7 @@ def apply_actions(full: str, repo: dict, profile: dict, dry_run: bool) -> list[s
             full,
             "actions.fork_pr_approval",
             f"repos/{full}/actions/permissions/fork-pr-contributor-approval",
-            "PATCH",
+            "PUT",
             {"approval_policy": desired["fork_pr_approval"]},
             dry_run,
             soft=True,
