@@ -225,6 +225,10 @@ branch_protection:
 `checks`는 profile 기본값을 비워두고 repo별로 선언한다. check 이름은 workflow
 변경에 민감하므로 inventory에서 명시해야 drift가 보인다.
 
+CODEOWNERS catch-all은 `policy/members.yaml`의 `admins`와 `writers` 전체를
+포함한다. PR 생성 시 모든 HypeProof 멤버가 reviewer로 요청되게 하는 것이
+기본값이며, 필요한 approval 수는 branch protection profile에서 별도로 정한다.
+
 ## Policy Modules
 
 Audit/apply 엔진은 작은 module로 나뉜다.
