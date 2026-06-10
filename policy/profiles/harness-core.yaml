@@ -25,6 +25,15 @@ actions:
   require_pinned_actions: warn
   allow_pull_request_target: false
 
+review_request:
+  active_members: all
+  exclude_author: true
+
+deployment:
+  production_authority: none
+  provider_git_auto_deploy: disabled
+  manual_cli_deploy: prohibited
+
 branch_protection:
   branch: main
   enforce_admins: true

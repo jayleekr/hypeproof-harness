@@ -25,6 +25,16 @@ actions:
   require_pinned_actions: warn
   allow_pull_request_target: false
 
+review_request:
+  active_members: all
+  exclude_author: true
+
+deployment:
+  production_authority: github-actions
+  provider_git_auto_deploy: disabled_by_default
+  preview_deploys: repo_override
+  manual_cli_deploy: maintainer_approved_incident_only
+
 branch_protection:
   branch: main
   enforce_admins: true

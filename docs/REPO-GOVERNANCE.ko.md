@@ -12,9 +12,11 @@ Status: proposed
 - `hypeproof-harness`가 repo 생성, 권한, branch protection, Actions 보안,
   secret scanning, 템플릿, release repo 정책의 canonical source가 된다.
 - 정책은 선언형 YAML로 두고, GitHub의 실제 상태는 audit/apply 스크립트가
-비교한다.
+  비교한다.
+- PR reviewer 요청과 production 배포 권한도 정책으로 선언한다. 개인별 기억이나
+  provider dashboard의 숨은 설정에 의존하지 않는다.
 - public repo는 코드가 공개되는 것을 전제로 운영하되, merge/write 권한은
-멤버와 승인된 automation으로 제한한다.
+  멤버와 승인된 automation으로 제한한다.
 - private repo는 멤버만 접근하게 유지하되, GitHub 플랜 한계 때문에 적용할 수
 없는 보호 정책은 "미지원 drift"로 명확히 드러낸다.
 - 새 repo는 GitHub UI에서 임의로 만들지 않고, harness의 profile을 통해
@@ -37,7 +39,12 @@ Status: proposed
    - public repo는 외부 PR/comment를 완전히 막을 수 없다는 전제로 설계한다.
      핵심은 main 유입, secret 접근, deploy 권한을 통제하는 것이다.
 
-5. Exceptions expire
+5. Deploy authority is explicit
+   - production deploy는 repo inventory에 선언된 trusted workflow가 담당한다.
+     provider Git 자동 배포는 기본 비활성화이며, 허용하려면 repo-level override와
+     보안 근거가 있어야 한다.
+
+6. Exceptions expire
    - 임시 예외는 `expires_at`, owner, 이유를 가져야 한다. 만료된 예외는 audit
      실패로 처리한다.
 
@@ -61,6 +68,7 @@ policy/
     workflows/
       repo-policy-audit.yml
       secret-diff-scan.yml
+      deploy-policy-check.yml
 scripts/
   repo-governance/
     audit.py
@@ -130,6 +138,13 @@ repositories:
         - VERCEL_TOKEN
         - SEDIMENT_INGEST_URL
         - SEDIMENT_WEBHOOK_SECRET
+    deployment:
+      production_authority: github-actions
+      workflow: .github/workflows/ci.yml
+      job: deploy
+      provider: vercel
+      provider_git_auto_deploy: disabled
+      provider_config: vercel.json
 
   - name: hypeproof-harness
     owner: jayleekr
@@ -174,7 +189,7 @@ Profile은 repo 유형별 기본 정책이다. 각 repo는 하나의 profile을 
 | `harness-core` | `hypeproof-harness` | 가장 엄격. 2 approvals, CODEOWNERS required, admins enforced, direct push 금지 |
 | `public-product` | `hypeproof-studio`, `sediment` | public 유지, 외부 PR 허용, main은 PR/CI/review로만 유입, Actions read-only |
 | `private-product` | private 제품 repo | 멤버만 접근, main PR 강제, 가능한 경우 branch protection 적용 |
-| `content-vault` | `hypeprooflab` | private 유지, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
+| `content-vault` | `hypeprooflab` | private 유지, 콘텐츠 ingest secret 보호, provider Git 자동 배포 비활성화 |
 | `release-artifact` | release mirror/artifact repo | 사람 개발 금지, CI bot만 release/tag 생성, issues/wiki/projects off |
 
 예시:
@@ -207,6 +222,16 @@ actions:
   allow_pull_request_target: false
   require_pinned_actions: warn
 
+review_request:
+  active_members: all
+  exclude_author: true
+
+deployment:
+  production_authority: github-actions
+  provider_git_auto_deploy: disabled_by_default
+  preview_deploys: repo_override
+  manual_cli_deploy: maintainer_approved_incident_only
+
 branch_protection:
   branch: main
   enforce_admins: true
@@ -237,10 +262,12 @@ Audit/apply 엔진은 작은 module로 나뉜다.
 | `rulesets` | org/repo ruleset | 가능, 플랜 미지원은 unsupported |
 | `actions` | token permission, fork approval, allowed actions | 가능 |
 | `security` | secret scanning, push protection, Dependabot | 가능, repo visibility/plan 의존 |
+| `review_request` | 활성 멤버 전원 review request 기준 | 템플릿/CODEOWNERS 생성, API 요청은 PR tooling |
 | `templates` | CODEOWNERS, SECURITY, PR template | PR 생성 또는 patch |
 | `workflows` | required workflow 존재와 위험 패턴 | PR 생성 또는 warning |
 | `secrets` | required secret 이름 존재 여부 | audit only |
 | `environments` | production deploy environment와 reviewer | 가능 |
+| `deployment` | production authority, provider auto-deploy, manual deploy 예외 | audit first, provider API는 수동 승인 |
 | `labels` | 표준 labels | 가능 |
 
 ## Scripts
@@ -320,6 +347,19 @@ Harness 자체에는 두 가지 workflow를 둔다.
 - `secret-diff-scan.yml`
 - repo별 unit/build/test workflow
 - `repo-policy-audit.yml`는 선택 사항. canonical audit는 harness에서 돈다.
+- `CODEOWNERS`와 PR template은 활성 멤버 전원 review request 기준을 반영한다.
+
+## Review Request 기준
+
+HypeProof repo의 기본값은 "작성자를 제외한 활성 멤버 전원에게 review request"다.
+이는 모든 사람이 같은 변경 맥락을 보게 만드는 notification 정책이며, required approval
+count와는 별개다.
+
+- 활성 멤버 목록은 `policy/members.yaml`이 원천이다.
+- `CODEOWNERS` 템플릿은 모든 활성 멤버를 catch-all owner로 둔다.
+- GitHub가 PR 작성자 본인을 reviewer로 받을 수 없으면 예외로 본다.
+- release repo처럼 사람이 직접 개발하지 않는 repo도 정책상 reviewer request 기준은
+  유지하되, 실제 변경은 source repo release workflow나 maintainer PR에서만 발생한다.
 
 ## Public Repo 보안 기준
 
@@ -340,6 +380,10 @@ Public repo는 다음을 전제로 한다.
 - issue/comment trigger workflow가 secret 또는 write permission을 쓰면
   collaborator permission check 필수
 - deploy secret은 protected environment에 묶고, main push 또는 manual approval만 허용
+- provider Git 자동 preview/deploy는 기본 비활성화한다. public repo에서 허용하려면
+  외부 PR secret 접근 차단, 비용 영향, commit author 권한 모델을 PR에 명시한다.
+- production 배포는 `main` merge 후 trusted GitHub Actions 또는 승인된 manual
+  workflow로만 수행한다.
 
 `hypeproof-studio`의 Claude Solver 같은 workflow는 다음 패턴만 허용한다.
 
@@ -356,6 +400,8 @@ if: |
 ## Private Repo 기준
 
 Private repo는 접근 자체가 멤버에게만 허용된다. 그래도 main 보호 원칙은 같다.
+개인 계정/private repo와 provider 개인 scope가 결합되면 contributor commit 배포가
+막히거나 비용 플랜을 요구할 수 있으므로, provider Git 자동 배포는 disabled가 기본이다.
 
 문제는 personal account private repo에서 branch protection이 플랜에 따라 막힐 수
 있다는 점이다. 이 경우 audit은 실패를 숨기지 않고 다음처럼 보고한다.
@@ -368,6 +414,8 @@ unsupported: branch_protection requires GitHub Pro/Team for private repo
 
 - GitHub Pro/Team 또는 Organization으로 이전해서 정책을 실제 적용한다.
 - 그 전까지 `main-guard` workflow와 멤버 운영 규칙으로만 soft enforce한다.
+- Vercel 같은 provider는 repo-local config(`vercel.json` 등)로 Git 자동 배포를
+  끄고, production deploy는 GitHub Actions secret을 가진 trusted workflow가 맡는다.
 
 ## Release Artifact Repo 기준
 
@@ -379,6 +427,7 @@ Release repo는 개발 repo가 아니다.
 - branch protection은 main direct push 금지.
 - release/tag 생성은 source repo의 release workflow 또는 bot token만 허용한다.
 - release asset은 immutable로 취급한다. 교체가 필요하면 새 tag를 만든다.
+- provider auto-deploy와 preview deploy는 없다.
 
 ## Drift Report 형식
 

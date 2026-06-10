@@ -170,10 +170,11 @@ Vendor를 고른 이유는 [migration report][migration]에.
 5단계 lifecycle(이슈 → 브랜치 → 커밋·테스트 → PR → merge)은
 [`MEMBER-GUIDE §4`](docs/MEMBER-GUIDE.ko.md). 모든 repo가 지키는 5가지:
 
-- **PR-first, review optional** — `main` 직접 push 금지 (메인테이너 제외)
+- **PR-first, all-member review request** — `main` 직접 push 금지. PR은 작성자를 제외한 활성 멤버 전원을 reviewer로 요청한다
 - **`human-needed` 라벨**로 AI 자동처리 vs 사람 필요를 명시 (policy owner: 지용)
 - **스킬은 `/skill-creator`로만** 만들고 고친다 — SKILL.md를 손으로 쓰지 않는다
 - **이 repo 변경은 항상 피어리뷰** — 3 consumer가 공유한다
+- **배포 권한은 정책에 선언** — production은 `main` merge 후 trusted workflow가 담당하고, provider Git 자동 배포는 명시적으로 허용된 repo만 쓴다
 - **시크릿 절대 커밋 금지** — 새면 즉시 Jay에게 알리고 로테이션
 
 ---

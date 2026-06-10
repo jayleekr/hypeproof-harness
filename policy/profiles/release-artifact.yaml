@@ -25,6 +25,16 @@ actions:
   default_workflow_permissions: read
   can_approve_pull_request_reviews: false
 
+review_request:
+  active_members: all
+  exclude_author: true
+
+deployment:
+  production_authority: source_repo_release_workflow
+  provider_git_auto_deploy: disabled
+  preview_deploys: disabled
+  manual_cli_deploy: prohibited
+
 branch_protection:
   branch: main
   enforce_admins: true

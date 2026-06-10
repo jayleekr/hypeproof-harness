@@ -72,6 +72,13 @@ repositories:
     lifecycle: product
     default_branch: main
     products: [lab, vault]
+    deployment:
+      production_authority: github-actions
+      workflow: .github/workflows/ci.yml
+      job: deploy
+      provider: vercel
+      provider_git_auto_deploy: disabled
+      provider_config: vercel.json
     required_status_checks:
       - repo-governance (repo files)
       - CI & Deploy / build
