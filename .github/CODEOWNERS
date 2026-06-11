@@ -1,3 +1,3 @@
-# Default: all HypeProof members auto-requested on every PR.
+# Default — both admins auto-requested on every PR.
 # Honors MEMBER-GUIDE §4.3 "harness 변경은 항상 피어리뷰".
-*                       @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr
+*                       @jayleekr @JeHyeong2
