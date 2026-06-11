@@ -67,8 +67,8 @@ repositories:
 
   - owner: jayleekr
     name: hypeprooflab
-    visibility: private
-    profile: content-vault
+    visibility: public
+    profile: public-product
     lifecycle: product
     default_branch: main
     products: [lab, vault]
@@ -90,12 +90,6 @@ repositories:
         - SEDIMENT_WEBHOOK_SECRET
         - DISCORD_WEBHOOK_HYPEPROOFLAB_PAGE
         - DISCORD_WEBHOOK_SEDIMENT
-    exceptions:
-      - id: private-branch-protection-plan-limit
-        owner: jayleekr
-        reason: Personal private repo branch protection requires GitHub Pro/Team.
-        expires_at: 2026-12-31
-
   - owner: jayleekr
     name: hypeproof-studio-releases
     visibility: public
