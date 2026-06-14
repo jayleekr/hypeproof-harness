@@ -1,0 +1,95 @@
+[
+  {
+    "id": "fixture-adult-warn-s1",
+    "version": 1,
+    "display_name": "Fixture Adult (PASS)",
+    "audience": {
+      "age_range": [
+        20,
+        60
+      ],
+      "language": "ko",
+      "parent_coaching": false
+    },
+    "model": {
+      "default": "hypeproof-default"
+    },
+    "system_prompt": "짧은 프롬프트. 이번엔 우리끼리만 봐요. 결과물은 이 화면 안에서만 보여집니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩 바꾸고, 바뀐 화면을 함께 확인합니다. 막히면 더 작은 단계로 쪼개고, 자녀가 직접 결정하도록 질문으로 이끕니다. 주인공·움직임·점수 같은 요소를 구체적으로 말하도록 자녀를 도와주세요. 한 번에 한 가지씩",
+    "welcome": {
+      "greeting_md": "안녕하세요!",
+      "example_prompts": []
+    },
+    "sandbox": {
+      "file_write": true,
+      "execute_shell": false,
+      "mcp_tools_enabled": []
+    },
+    "preview": {
+      "type": "live_server",
+      "auto_start": false
+    },
+    "game": {
+      "template_tier": "search-webapp"
+    },
+    "publishing": {
+      "enabled": false,
+      "strategy": "local_only"
+    },
+    "assets_focus": [
+      "taste",
+      "intent_clarity",
+      "context_design",
+      "verification_reflex",
+      "delegation_judgment",
+      "iteration_reflex",
+      "ownership"
+    ],
+    "session": {
+      "cohort_id": "fixture-warn-a",
+      "series_total": 1,
+      "series_index": 1,
+      "hours": 3
+    },
+    "analytics": {
+      "log_user_messages": false,
+      "log_metadata": true
+    },
+    "ux": {
+      "coach": {
+        "naming_mode": "fixed",
+        "fallback_name": "코치",
+        "naming_prompt_md": "",
+        "personality_prompt_md": ""
+      },
+      "suggestions": {
+        "initial": [
+          {
+            "text": "좋은 칩",
+            "style": "good"
+          },
+          {
+            "text": "막연한 칩",
+            "style": "weak"
+          }
+        ],
+        "follow_up": []
+      },
+      "hints": {
+        "short_input": {
+          "enabled": true,
+          "min_chars": 5,
+          "message_md": "더 구체적으로"
+        },
+        "roll_input_button": {
+          "enabled": true,
+          "label": "✨",
+          "probe_md": "결정은 뭔가요?"
+        }
+      },
+      "retry_button": {
+        "enabled": true,
+        "show_counter": false
+      }
+    }
+  }
+]

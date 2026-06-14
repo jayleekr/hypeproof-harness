@@ -36,6 +36,7 @@ harness repo against any consumer path.
 | **T-V9** | No regression (CI) | Each consumer's existing test gate (studio main-guard / sediment validator / lab ci.yml) does not fail because of the migration. Always reported as DEFER from the harness; check the PR's CI status manually. |
 | **T-V10** | Atomic PR scope (per-consumer, env-gated) | When `T_V10_BASE_<consumer>` env var is set to a ref (e.g. pre-migration HEAD), `git diff --name-only $BASE..HEAD` in that consumer contains only paths under `.gitmodules`, `.harness`, or `.claude/skills/skill-creator`. If env var unset, reported as N/A (not gated). |
 | **T-V11** | Shared agent guidance | `docs/MEMBER-GUIDE.ko.md` and `docs/AGENT-GUIDE.ko.md` are byte-identical to harness canonical sources. `CLAUDE.md`, `AGENTS.md`, and `OPENCLAW.md` are present and reference `docs/AGENT-GUIDE.ko.md`; existing consumer-specific content is preserved. |
+| **T-V12** | Cohort-harness validator (harness-side, self-contained) | `tests/cohort-harness.sh` drives `scripts/cohort-harness/validate.py` against `tests/fixtures/cohort/`: `pass.json`/`warn.json` → exit 0 (WARN passes), `fail.json` → exit 1 with the safety-critical FAIL checks firing, `malformed.json` → exit 2. No consumer repo involved, so it is green independent of consumer vendoring state. |
 
 ## Pass/fail aggregation (CR-5 fixed)
 
@@ -43,10 +44,10 @@ harness repo against any consumer path.
 
 - `FAIL = 0`, AND
 - `SKIP = 0` (every consumer path resolves), AND
-- `PASS >= 6N + 3 + [T-V6 if applicable]`
+- `PASS >= 6N + 4 + [T-V6 if applicable]`
   - N = number of consumers found
   - 6 per-consumer required PASSes: T-V1, T-V2, T-V3, T-V4, T-V8, T-V11
-  - 3 harness PASSes: T-V5, T-V7, T-V6-if-not-N/A
+  - 4 harness PASSes: T-V5, T-V7, T-V12, T-V6-if-not-N/A
 - DEFER (T-V9, T-V10 unconfigured) does **not** count as PASS.
 
 ## Portability (CR-2 fixed)

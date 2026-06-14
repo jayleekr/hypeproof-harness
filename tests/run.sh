@@ -315,6 +315,22 @@ else
 fi
 rm -rf "$TMPDIR_T7" 2>/dev/null || true
 
+# ---- T-V12 cohort-harness validator (self-contained; no consumer dependency) ----
+# Delegates to tests/cohort-harness.sh, which drives scripts/cohort-harness/
+# validate.py against tests/fixtures/cohort/{pass,warn,fail,malformed}.json and
+# asserts exit codes + key findings. Green regardless of consumer vendoring.
+if [ -f tests/cohort-harness.sh ]; then
+  if bash tests/cohort-harness.sh >/tmp/t-v12-result.$$ 2>&1; then
+    mark "(harness)" T-V12 PASS "validate.py fixtures: pass/warn→0, fail→1, malformed→2"
+  else
+    t12tail="$(tail -1 /tmp/t-v12-result.$$ 2>/dev/null | tr -d '|')"
+    mark "(harness)" T-V12 FAIL "${t12tail:-cohort-harness.sh failed}"
+  fi
+  rm -f /tmp/t-v12-result.$$
+else
+  mark "(harness)" T-V12 FAIL "tests/cohort-harness.sh missing"
+fi
+
 # ============================================================
 # Output
 # ============================================================
@@ -375,6 +391,8 @@ if grep -q '^(harness)|T-V6|PASS$\|^(harness)|T-V6|FAIL' <(printf '%s\n' "${RESU
   required=$((required + 1))
 fi
 # T-V7 always counts
+required=$((required + 1))
+# T-V12 (cohort-harness) always counts — self-contained, never N/A
 required=$((required + 1))
 
 echo "Gate: PASS=$PASS required>=$required FAIL=$FAIL SKIP=$SKIP"
