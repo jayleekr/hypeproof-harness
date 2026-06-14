@@ -1,0 +1,100 @@
+# rules.yaml — cohort profile guardrails, expressed as data.
+#
+# validate.py holds the check *logic*; this file holds the *parameters* every
+# check reads — the 7-asset enum, thresholds, keyword lists, allowed strategy
+# values, and the per-check severity. Edit guardrails here without touching
+# Python. Mirrors the docs-harness pattern: data and engine kept apart so the
+# rules are auditable by non-engineers.
+#
+# Parsed by validate.py's small stdlib YAML reader. Keep to this subset:
+#   - 2-space indentation, no tabs
+#   - `key: scalar`, `key:` + nested block, and `- scalar` list items
+#   - scalars: bare words, ints, true/false, or single/double-quoted strings
+#   - no list-of-maps, no anchors, no multiline scalars
+version: 1
+
+# The 7 AI Native Assets. A profile's `assets_focus` must be a non-empty,
+# duplicate-free subset of these. Keep in sync with worker/src/profiles/types.ts
+# (AssetFocus union) — this list is the canonical guardrail copy.
+assets:
+  - taste
+  - intent_clarity
+  - context_design
+  - verification_reflex
+  - delegation_judgment
+  - iteration_reflex
+  - ownership
+
+thresholds:
+  # system_prompt length band (characters). Empty is a hard FAIL; outside the
+  # band is a WARN (too short → model drifts; too long → cache cost ↑).
+  system_prompt_min_chars: 2000
+  system_prompt_max_chars: 5000
+  # A cohort is treated as a "child" cohort when audience.age_range max is at
+  # or below this age. Drives the stricter child guardrails below.
+  child_age_max: 12
+
+publishing:
+  # Allowed publishing.strategy values (mirrors Profile.publishing.strategy).
+  strategies:
+    - per_user_github_pages
+    - shared_repo
+    - local_only
+  # Phrases in system_prompt that PROMISE active publishing/sharing in THIS
+  # session. Only flagged when publishing.enabled is false — i.e. the prompt
+  # tells the participant their work goes public but the profile says it won't.
+  promise_phrases:
+    - "인터넷에 공개"
+    - "온라인에 공개"
+    - "공개해서"
+    - "공유해서"
+    - "링크를 공유"
+    - "URL을 공유"
+    - "전 세계"
+    - "퍼블리시"
+  # If the same sentence/line also carries one of these deferral or negation
+  # markers, the phrase is read as a future-session reference ("next time you'll
+  # learn to publish") rather than a contradiction, and is NOT flagged.
+  deferral_markers:
+    - "다음 시간"
+    - "다음 회차"
+    - "아직"
+    - "나중에"
+    - "없어요"
+    - "없다"
+    - "없습니다"
+    - "할 수 없"
+    - "배울 거예요"
+
+child:
+  # Optional escape hatch. If this dotted profile key is truthy, a child cohort
+  # MAY use per_user_github_pages — downgraded from FAIL to WARN (parental
+  # consent + no-real-name design assumed handled out of band). Absent → FAIL.
+  publish_consent_key: publishing.child_publish_consent
+  # A child cohort's system_prompt MUST contain this exact phrase (no external
+  # URL fetches from generated code — a flaky room wifi must not break a game,
+  # and it blocks accidental data exfil). See COHORT-AUTHORING.md §보안/가드레일.
+  required_prompt_phrase: "외부 URL 호출 금지"
+
+# Per-check severity. "fail" → counts toward non-zero exit; "warn" → reported
+# but still passes. Flip a check's strictness here without editing validate.py.
+severity:
+  id_unique: fail
+  asset_enum_unknown: fail
+  assets_focus_empty: fail
+  assets_focus_duplicate: fail
+  series_index_range: fail
+  hours_positive: fail
+  cohort_series_total_consistent: fail
+  example_prompts_empty: warn
+  suggestions_no_good: fail
+  weak_chip_no_caption: warn
+  naming_prompt_missing: fail
+  publishing_strategy_unknown: fail
+  publishing_promise_contradiction: fail
+  publishing_enabled_local_only: fail
+  system_prompt_empty: fail
+  system_prompt_length: warn
+  child_log_user_messages: fail
+  child_per_user_pages: fail
+  child_missing_url_ban: fail

@@ -58,7 +58,7 @@ esac
 
 SKILLS=(skill-creator)                    # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md) # vendored to consumer/docs/<file>
-SCRIPTS=(notify docs-harness)             # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+SCRIPTS=(notify docs-harness cohort-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root
 
 # --- consumer resolution ---
