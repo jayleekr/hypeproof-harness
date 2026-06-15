@@ -32,6 +32,8 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 - 이슈가 없으면 먼저 만든다.
 - 브랜치는 `fix/`, `feat/`, `docs/`, `chore/` 중 하나로 시작한다.
 - PR 본문에는 `Closes #<issue-number>` 또는 동등한 자동 close 문구를 넣는다.
+- PR 생성 전 `scripts/hype-pr/pr.py plan`으로 작성자를 제외한 active 멤버 reviewer와
+  auto-merge eligibility를 확인한다.
 - `main` 직접 push는 메인테이너가 명시한 경우에만 한다.
 - harness 변경은 세 consumer repo에 영향을 줄 수 있으므로 더 좁고 검증 가능한
   변경으로 유지한다.
@@ -42,8 +44,10 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 
 - `.claude/skills/skill-creator/`
 - `scripts/notify/`
+- `scripts/hype-pr/`
 - `docs/MEMBER-GUIDE.ko.md`
 - `docs/AGENT-GUIDE.ko.md`
+- `docs/HYPE-PR.ko.md`
 - `CLAUDE.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
 - `AGENTS.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
 - `OPENCLAW.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
