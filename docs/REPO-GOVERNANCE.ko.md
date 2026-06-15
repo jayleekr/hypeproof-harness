@@ -137,6 +137,20 @@ repositories:
     profile: harness-core
     lifecycle: governance
     default_branch: main
+
+  - name: Claude-Code-Remote
+    owner: jayleekr
+    visibility: public
+    profile: public-product
+    lifecycle: tool
+    default_branch: main
+
+  - name: jayleekr.github.io
+    owner: jayleekr
+    visibility: public
+    profile: public-product
+    lifecycle: site
+    default_branch: main
 ```
 
 `policy/members.yaml`은 사람과 역할을 분리한다.
@@ -172,7 +186,7 @@ Profile은 repo 유형별 기본 정책이다. 각 repo는 하나의 profile을 
 | Profile | 대상 | 핵심 정책 |
 | --- | --- | --- |
 | `harness-core` | `hypeproof-harness` | 가장 엄격. 2 approvals, CODEOWNERS required, admins enforced, direct push 금지 |
-| `public-product` | `hypeproof-studio`, `sediment` | public 유지, 외부 PR 허용, main은 PR/CI/review로만 유입, Actions read-only |
+| `public-product` | `hypeproof-studio`, `sediment`, public tool/site repo | public 유지, 외부 PR 허용, main은 PR/CI/review로만 유입, Actions read-only |
 | `private-product` | private 제품 repo | 멤버만 접근, main PR 강제, 가능한 경우 branch protection 적용 |
 | `content-vault` | `hypeprooflab` | private 유지, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
 | `release-artifact` | release mirror/artifact repo | 사람 개발 금지, CI bot만 release/tag 생성, issues/wiki/projects off |
@@ -430,6 +444,8 @@ Severity 기준:
 | `jayleekr/hypeproof-studio` | public | `public-product` | main protection 추가, Claude Solver collaborator-only |
 | `jayleekr/sediment` | public | `public-product` | required checks와 review count 적용 |
 | `jayleekr/hypeprooflab` | private | `content-vault` | Pro/Team 전까지 unsupported drift로 추적 |
+| `jayleekr/Claude-Code-Remote` | public | `public-product` | collaborator-only contribution, module/CI blocker 추적 |
+| `jayleekr/jayleekr.github.io` | public | `public-product` | collaborator-only contribution, PR CI 추가 |
 
 이 구조를 쓰면 repo가 늘어나도 새 정책을 복사하지 않는다. repo는 inventory에
 추가되고, profile은 재사용되며, 예외만 명시적으로 기록된다.

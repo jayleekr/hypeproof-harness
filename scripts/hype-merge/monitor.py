@@ -135,7 +135,7 @@ def rollup_checks_ok(pr: dict[str, Any]) -> bool:
     return True
 
 
-def classify_pr(pr: dict[str, Any]) -> MergeAssessment:
+def classify_pr(pr: dict[str, Any], *, required_non_author_approvals: int = 0) -> MergeAssessment:
     labels = label_names(pr)
     review_decision = str(pr.get("reviewDecision") or "")
     merge_state = str(pr.get("mergeStateStatus") or "")
@@ -161,6 +161,9 @@ def classify_pr(pr: dict[str, Any]) -> MergeAssessment:
 
     if HUMAN_NEEDED in labels and not approvals:
         blockers.append("human_needed_without_non_author_approval")
+    if required_non_author_approvals and len(approvals) < required_non_author_approvals:
+        if HUMAN_NEEDED not in labels or approvals:
+            blockers.append(f"policy_required_non_author_approvals:{len(approvals)}/{required_non_author_approvals}")
     if review_decision == "REVIEW_REQUIRED":
         blockers.append("branch_review_required")
     elif review_decision == "CHANGES_REQUESTED":
@@ -174,7 +177,10 @@ def classify_pr(pr: dict[str, Any]) -> MergeAssessment:
             "human_needed_without_non_author_approval",
             "branch_review_required",
         }
-        status = "waiting" if set(blockers) <= review_only else "blocked"
+        status = "waiting" if all(
+            blocker in review_only or blocker.startswith("policy_required_non_author_approvals:")
+            for blocker in blockers
+        ) else "blocked"
 
     return MergeAssessment(
         repo=repo_name(pr),
@@ -191,23 +197,49 @@ def classify_pr(pr: dict[str, Any]) -> MergeAssessment:
     )
 
 
-def load_policy_repos() -> list[str]:
+def load_policy_scope() -> tuple[list[str], dict[str, int]]:
     try:
         import yaml  # type: ignore
     except ImportError:
-        return DEFAULT_REPOS
+        return DEFAULT_REPOS, {}
 
     path = ROOT / "policy" / "repos.yaml"
     if not path.exists():
-        return DEFAULT_REPOS
+        return DEFAULT_REPOS, {}
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    profiles: dict[str, dict[str, Any]] = {}
+    for profile_path in sorted((ROOT / "policy" / "profiles").glob("*.yaml")):
+        profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
+        if profile.get("profile"):
+            profiles[str(profile["profile"])] = profile
+
     repos = []
+    required_approvals: dict[str, int] = {}
     for item in doc.get("repositories", []):
         owner = item.get("owner")
         name = item.get("name")
         if owner and name and item.get("lifecycle") != "release":
-            repos.append(f"{owner}/{name}")
-    return repos or DEFAULT_REPOS
+            full = f"{owner}/{name}"
+            repos.append(full)
+            profile = profiles.get(str(item.get("profile") or ""), {})
+            reviews = (
+                profile.get("branch_protection", {})
+                .get("required_pull_request_reviews", {})
+            )
+            count = int(reviews.get("required_approving_review_count") or 0)
+            if count > 0:
+                required_approvals[full] = count
+    return repos or DEFAULT_REPOS, required_approvals
+
+
+def load_policy_repos() -> list[str]:
+    repos, _required_approvals = load_policy_scope()
+    return repos
+
+
+def load_policy_review_requirements() -> dict[str, int]:
+    _repos, required_approvals = load_policy_scope()
+    return required_approvals
 
 
 def fetch_open_prs(repo: str, limit: int) -> list[dict[str, Any]]:
@@ -238,7 +270,11 @@ def fetch_open_prs(repo: str, limit: int) -> list[dict[str, Any]]:
 
 def build_queue(prs: list[dict[str, Any]]) -> list[MergeAssessment]:
     repo_order = {repo: index for index, repo in enumerate(load_policy_repos())}
-    assessed = [classify_pr(pr) for pr in prs]
+    review_requirements = load_policy_review_requirements()
+    assessed = [
+        classify_pr(pr, required_non_author_approvals=review_requirements.get(repo_name(pr), 0))
+        for pr in prs
+    ]
     return sorted(
         assessed,
         key=lambda item: (

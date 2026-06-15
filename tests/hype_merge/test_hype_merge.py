@@ -116,6 +116,31 @@ def test_branch_review_required_stays_waiting_after_one_approval() -> None:
     assert "branch_review_required" in item.blockers
 
 
+def test_policy_profile_requires_non_author_approval_without_label() -> None:
+    module = load_module()
+
+    items = module.build_queue([pr(labels=[], review_decision="")])
+
+    assert items[0].status == "waiting"
+    assert "policy_required_non_author_approvals:0/1" in items[0].blockers
+
+
+def test_policy_profile_required_approval_count_can_exceed_one() -> None:
+    module = load_module()
+    item = pr(
+        author="JinyongShin",
+        labels=[],
+        reviews=[review("jayleekr", "APPROVED")],
+        review_decision="",
+    )
+    item["repository"] = {"nameWithOwner": "jayleekr/hypeproof-harness"}
+
+    items = module.build_queue([item])
+
+    assert items[0].status == "waiting"
+    assert "policy_required_non_author_approvals:1/2" in items[0].blockers
+
+
 def test_changes_requested_and_failed_checks_are_blocked() -> None:
     module = load_module()
 

@@ -90,6 +90,34 @@ repositories:
         expires_at: 2026-12-31
 
   - owner: jayleekr
+    name: Claude-Code-Remote
+    visibility: public
+    profile: public-product
+    lifecycle: tool
+    default_branch: main
+    products: [automation]
+    required_status_checks: []
+    exceptions:
+      - id: claude-code-remote-ci-not-yet-created
+        owner: jayleekr
+        reason: Add stable PR checks before requiring named status contexts.
+        expires_at: 2026-07-15
+
+  - owner: jayleekr
+    name: jayleekr.github.io
+    visibility: public
+    profile: public-product
+    lifecycle: site
+    default_branch: main
+    products: [personal-site]
+    required_status_checks: []
+    exceptions:
+      - id: github-io-ci-not-yet-created
+        owner: jayleekr
+        reason: Add stable PR checks before requiring named status contexts.
+        expires_at: 2026-07-15
+
+  - owner: jayleekr
     name: hypeproof-studio-releases
     visibility: public
     profile: release-artifact
