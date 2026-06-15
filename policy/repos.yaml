@@ -67,8 +67,8 @@ repositories:
 
   - owner: jayleekr
     name: hypeprooflab
-    visibility: public
-    profile: public-product
+    visibility: private
+    profile: content-vault
     lifecycle: product
     default_branch: main
     products: [lab, vault]
@@ -90,6 +90,27 @@ repositories:
         - SEDIMENT_WEBHOOK_SECRET
         - DISCORD_WEBHOOK_HYPEPROOFLAB_PAGE
         - DISCORD_WEBHOOK_SEDIMENT
+    exceptions:
+      - id: lab-public-readiness-oauth-history-purge
+        owner: jayleekr
+        reason: Keep private until hypeprooflab#96 confirms Google OAuth secret rotation and GitHub historical commit purge.
+        expires_at: 2026-12-31
+      - id: lab-public-readiness-pii-sweep
+        owner: jayleekr
+        reason: Keep private until hypeprooflab#100 confirms current-tree PII/email cleanup.
+        expires_at: 2026-12-31
+      - id: private-branch-protection-plan-limit
+        owner: jayleekr
+        reason: Personal private repo branch protection requires GitHub Pro/Team or Organization before hard enforcement.
+        expires_at: 2026-12-31
+      - id: private-forking-api-limit
+        owner: jayleekr
+        reason: GitHub only exposes allow_forking mutation for org-owned private repositories.
+        expires_at: 2026-12-31
+      - id: private-secret-scanning-api-limit
+        owner: jayleekr
+        reason: Personal private repo security_and_analysis API is unavailable until GitHub Pro/Team or org migration.
+        expires_at: 2026-12-31
   - owner: jayleekr
     name: hypeproof-studio-releases
     visibility: public
