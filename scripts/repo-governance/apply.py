@@ -94,7 +94,7 @@ def apply_branch_protection(full: str, repo: dict, profile: dict, dry_run: bool)
     desired = profile.get("branch_protection", {})
     if not desired:
         return []
-    branch = desired.get("branch", repo.get("default_branch", "main"))
+    branch = repo.get("protected_branch") or desired.get("branch") or repo.get("default_branch", "main")
     reviews = desired.get("required_pull_request_reviews", {})
     checks = repo.get("required_status_checks", [])
     body = {

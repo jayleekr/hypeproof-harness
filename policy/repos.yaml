@@ -94,7 +94,8 @@ repositories:
     visibility: public
     profile: public-product
     lifecycle: tool
-    default_branch: main
+    default_branch: master
+    protected_branch: master
     products: [automation]
     required_status_checks: []
     exceptions:
@@ -108,7 +109,8 @@ repositories:
     visibility: public
     profile: public-product
     lifecycle: site
-    default_branch: main
+    default_branch: master
+    protected_branch: master
     products: [personal-site]
     required_status_checks: []
     exceptions:

@@ -143,14 +143,16 @@ repositories:
     visibility: public
     profile: public-product
     lifecycle: tool
-    default_branch: main
+    default_branch: master
+    protected_branch: master
 
   - name: jayleekr.github.io
     owner: jayleekr
     visibility: public
     profile: public-product
     lifecycle: site
-    default_branch: main
+    default_branch: master
+    protected_branch: master
 ```
 
 `policy/members.yaml`은 사람과 역할을 분리한다.

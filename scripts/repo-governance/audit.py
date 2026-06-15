@@ -263,7 +263,7 @@ def _audit_branch(full: str, repo: dict[str, Any], profile: dict[str, Any]) -> l
     if not desired:
         return findings
 
-    branch = desired.get("branch", repo.get("default_branch", "main"))
+    branch = repo.get("protected_branch") or desired.get("branch") or repo.get("default_branch", "main")
     code, branch_meta = gh_json(f"repos/{full}/branches/{branch}")
     if code != 0:
         return [Finding(full, "branch_protection", "high", branch, "reachable", branch_meta, False)]
