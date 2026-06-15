@@ -118,6 +118,9 @@ repositories:
     lifecycle: product
     default_branch: main
     products: [sediment]
+    release_repos:
+      - jayleekr/sediment-cli-releases
+      - jayleekr/homebrew-sediment
     required_secrets:
       actions:
         - FLY_API_TOKEN
@@ -446,6 +449,8 @@ unsupported: branch_protection requires GitHub Pro/Team for private repo
 Release repo는 개발 repo가 아니다.
 
 - visibility는 artifact 공개 여부에 따라 public/private를 선택한다.
+- `source_repo`는 필수다. 예를 들어 `sediment-cli-releases`와
+  `homebrew-sediment`는 모두 `jayleekr/sediment`에서 발행된다.
 - collaborators는 maintainer와 release bot만 둔다.
 - issues, projects, wiki는 끈다.
 - branch protection은 main direct push 금지.

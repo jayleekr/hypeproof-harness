@@ -64,6 +64,7 @@ repositories:
         - RELEASE_MIRROR_TOKEN
     release_repos:
       - jayleekr/sediment-cli-releases
+      - jayleekr/homebrew-sediment
 
   - owner: jayleekr
     name: hypeprooflab
@@ -122,6 +123,15 @@ repositories:
 
   - owner: jayleekr
     name: sediment-cli-releases
+    visibility: public
+    profile: release-artifact
+    lifecycle: release
+    default_branch: main
+    products: [sediment]
+    source_repo: jayleekr/sediment
+
+  - owner: jayleekr
+    name: homebrew-sediment
     visibility: public
     profile: release-artifact
     lifecycle: release
