@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tests/run.sh — execute T-V1..T-V11 (T-V10 partial) against each consumer.
+# tests/run.sh — execute T-V1..T-V12 (T-V10 partial) against each consumer
+#                plus harness-side checks (T-V5..T-V7, T-V12).
 # Outputs a markdown table to stdout and writes tests/last-report.json.
 #
 # Exit code:
@@ -315,6 +316,17 @@ else
 fi
 rm -rf "$TMPDIR_T7" 2>/dev/null || true
 
+# ---- T-V12 harness-local skill registration ----
+# Every skills/<name>/ must have a correct .claude/skills/<name> symlink in THIS
+# repo. Delegates to scripts/register-skills.sh --check so the rule lives in one
+# place (the generator) and cannot drift from what apply produces. This is the
+# coverage gap that let #28 ship skills/hype-review/ with no symlink.
+if reg_out="$(bash scripts/register-skills.sh --check 2>&1)"; then
+  mark "(harness)" T-V12 PASS "every skills/ has a .claude/skills/ symlink"
+else
+  mark "(harness)" T-V12 FAIL "$(printf '%s' "$reg_out" | grep '^DRIFT' | tr '\n' ';' | head -c 200)"
+fi
+
 # ============================================================
 # Output
 # ============================================================
@@ -363,7 +375,7 @@ fi
 # ============================================================
 # Gate (CR-5: DEFER alone must not exit 0)
 # Required: 6 per-consumer PASSes (T-V1..T-V4, T-V8, T-V11) × N_CONSUMERS_FOUND
-#         + 3 harness PASSes (T-V5, T-V6 if applicable, T-V7)
+#         + 3 harness PASSes always (T-V5, T-V7, T-V12) + T-V6 if applicable
 # T-V6 may be N/A if no consumer is vendored yet — relax in that case.
 # T-V9 always DEFER (consumer CI), T-V10 may be N/A (no base ref).
 # ============================================================
@@ -375,6 +387,8 @@ if grep -q '^(harness)|T-V6|PASS$\|^(harness)|T-V6|FAIL' <(printf '%s\n' "${RESU
   required=$((required + 1))
 fi
 # T-V7 always counts
+required=$((required + 1))
+# T-V12 always counts
 required=$((required + 1))
 
 echo "Gate: PASS=$PASS required>=$required FAIL=$FAIL SKIP=$SKIP"
