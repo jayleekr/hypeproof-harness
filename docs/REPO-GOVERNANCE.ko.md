@@ -138,14 +138,6 @@ repositories:
     lifecycle: governance
     default_branch: main
 
-  - name: Claude-Code-Remote
-    owner: jayleekr
-    visibility: public
-    profile: public-product
-    lifecycle: tool
-    default_branch: master
-    protected_branch: master
-
   - name: jayleekr.github.io
     owner: jayleekr
     visibility: public
@@ -446,7 +438,6 @@ Severity 기준:
 | `jayleekr/hypeproof-studio` | public | `public-product` | main protection 추가, Claude Solver collaborator-only |
 | `jayleekr/sediment` | public | `public-product` | required checks와 review count 적용 |
 | `jayleekr/hypeprooflab` | private | `content-vault` | Pro/Team 전까지 unsupported drift로 추적 |
-| `jayleekr/Claude-Code-Remote` | public | `public-product` | collaborator-only contribution, module/CI blocker 추적 |
 | `jayleekr/jayleekr.github.io` | public | `public-product` | collaborator-only contribution, PR CI 추가 |
 
 이 구조를 쓰면 repo가 늘어나도 새 정책을 복사하지 않는다. repo는 inventory에

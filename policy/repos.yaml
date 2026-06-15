@@ -90,21 +90,6 @@ repositories:
         expires_at: 2026-12-31
 
   - owner: jayleekr
-    name: Claude-Code-Remote
-    visibility: public
-    profile: public-product
-    lifecycle: tool
-    default_branch: master
-    protected_branch: master
-    products: [automation]
-    required_status_checks: []
-    exceptions:
-      - id: claude-code-remote-ci-not-yet-created
-        owner: jayleekr
-        reason: Add stable PR checks before requiring named status contexts.
-        expires_at: 2026-07-15
-
-  - owner: jayleekr
     name: jayleekr.github.io
     visibility: public
     profile: public-product
