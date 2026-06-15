@@ -15,3 +15,11 @@ roles:
     github_permission: admin
   contributor:
     github_permission: push
+
+review_lenses:
+  jayleekr: [maintainer, product, security, deploy, docs]
+  JeHyeong2: [maintainer, backend, security]
+  ico1036: [contributor, docs]
+  xoqhdgh1002: [contributor, product]
+  JinyongShin: [backend, deploy]
+  TJ-kr: [frontend, product]

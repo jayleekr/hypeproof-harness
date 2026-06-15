@@ -25,13 +25,16 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | 자산 | 무엇 | Vendored to |
 |---|---|---|
 | `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | 3 consumers `.claude/skills/` |
+| `skills/hype-review/` | PR 리뷰 요청 확인 + 역할별 리뷰 워크시트 스킬 | 3 consumers `.claude/skills/` |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
 | `docs/AGENT-GUIDE.ko.md` | Claude Code · Codex · OpenClaw 공통 에이전트 규약 | 3 consumers `docs/` |
 | `docs/DOCS-CONTRACT.ko.md` | 제품 repo가 유지해야 하는 dev docs 계약 | 3 consumers `docs/` |
+| `docs/HYPE-REVIEW.ko.md` | `hype-review` 역할별 PR 리뷰 질문·답변 가이드 | 3 consumers `docs/` |
 | `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
+| `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
 | `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V11) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
@@ -90,6 +93,26 @@ bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 - `--commit`은 `main` 위 + skill 외 변경 없을 때만 실행 (`ALLOW_ANY_BRANCH=1`로 우회)
 - Git 신원은 각 consumer의 ambient config 그대로 — 스크립트가 override하지 않는다
 - `rsync --delete`가 consumer-only 파일을 지우려 하면 abort — `--force-delete`로 명시 우회
+
+### 🔎 리뷰어 — 내게 온 PR 확인
+
+Claude Code에서:
+
+```text
+/hype-review
+/hype-review https://github.com/jayleekr/hypeproof-harness/pull/28
+```
+
+CLI fallback:
+
+```bash
+python3 scripts/hype-review/review.py --mine
+python3 scripts/hype-review/review.py --repo jayleekr/sediment --pr 87 --reviewer TJ-kr
+```
+
+리뷰 요청은 모든 active 멤버에게 보내되, merge는 branch protection과 CODEOWNERS가
+요구하는 quorum을 따른다. 하네스는 역할별 질문과 작성자에게 남길 답변 초안을
+만들어준다. 자세한 운영 규칙은 [`docs/HYPE-REVIEW.ko.md`](docs/HYPE-REVIEW.ko.md).
 
 ### 🔁 다른 머신에서 운영 — 워크스페이스 경로 해석
 
@@ -198,6 +221,7 @@ Vendor를 고른 이유는 [migration report][migration]에.
 
 - 📘 **한글 멤버 가이드** — [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)
 - 🤖 **공통 에이전트 가이드** — [`docs/AGENT-GUIDE.ko.md`](docs/AGENT-GUIDE.ko.md)
+- 🔎 **hype-review** — [`docs/HYPE-REVIEW.ko.md`](docs/HYPE-REVIEW.ko.md)
 - 🧪 Vendor 테스트 합격선 — [`tests/REQUIREMENTS.md`](tests/REQUIREMENTS.md)
 - 🔄 롤백 런북 (vendor → submodule) — [`docs/rollback-vendor.md`](docs/rollback-vendor.md)
 - 🔐 Repo governance 설계 — [`docs/REPO-GOVERNANCE.ko.md`](docs/REPO-GOVERNANCE.ko.md)

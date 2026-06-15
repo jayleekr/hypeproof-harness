@@ -109,4 +109,4 @@ jobs:
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
       - name: Run Python tests
-        run: python -m pytest tests/repo_governance tests/skill_creator
+        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review
