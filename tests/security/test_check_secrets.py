@@ -60,6 +60,19 @@ def test_real_looking_secret_in_example_file_is_still_blocked(tmp_path: Path) ->
     assert secret not in proc.stderr
 
 
+def test_runbook_secret_is_not_excluded(tmp_path: Path) -> None:
+    secret = "GOCSPX-" + "C" * 32
+    runbook = tmp_path / "docs" / "runbooks" / "oauth.md"
+    runbook.parent.mkdir(parents=True)
+    runbook.write_text(f"Do not paste real secrets: {secret}\n", encoding="utf-8")
+
+    proc = run_scan(runbook)
+
+    assert proc.returncode == 1
+    assert "Google OAuth client secret" in proc.stderr
+    assert secret not in proc.stderr
+
+
 def test_dangerous_credential_path_is_blocked(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("SAFE_PLACEHOLDER=1\n", encoding="utf-8")

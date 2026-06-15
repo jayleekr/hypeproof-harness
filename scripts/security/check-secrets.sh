@@ -28,7 +28,6 @@ EXCLUDED_PATHS=(
   '.gitignore'
   'scripts/security/check-secrets.sh'
   'tests/security/test_check_secrets.py'
-  'docs/runbooks/**'
 )
 
 SECRET_PATTERNS=(
