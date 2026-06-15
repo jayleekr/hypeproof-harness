@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             "seed default branch",
             "render common templates",
             "apply collaborators",
+            "apply common labels",
             "apply security/actions settings",
             "apply branch protection",
             "open required-secrets checklist issue",

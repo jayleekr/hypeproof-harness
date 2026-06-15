@@ -220,6 +220,11 @@ repository:
     merge_commit: false
     rebase: false
 
+labels:
+  human-needed:
+    color: fbca04
+    description: 사람 직접 리뷰/처리가 필요한 PR 또는 이슈
+
 security:
   dependabot_security_updates: enabled
   secret_scanning: enabled
