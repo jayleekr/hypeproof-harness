@@ -62,6 +62,10 @@ python3 scripts/hype-pr/pr.py create \
 eligibility가 통과하면 생성 직후 `gh pr merge --auto --squash --delete-branch`도
 실행한다.
 
+reviewer 요청은 PR 생성 후 1명씩 시도한다. 특정 repo에서 아직 write 권한이 없거나
+초대를 수락하지 않은 멤버가 있으면 PR 생성 자체를 막지 않고, 해당 reviewer 요청
+실패를 JSON 결과에 남긴다.
+
 ---
 
 ## Auto-Merge 판정

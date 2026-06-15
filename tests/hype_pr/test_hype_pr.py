@@ -146,8 +146,10 @@ def test_create_is_dry_run_by_default_and_includes_reviewers() -> None:
     assert data["apply"] is False
     command = data["create_command"]
     assert command[:4] == ["gh", "pr", "create", "--repo"]
-    assert "--reviewer" in command
-    reviewers_arg = command[command.index("--reviewer") + 1]
-    assert "jayleekr" not in reviewers_arg
-    assert "JeHyeong2" in reviewers_arg
-    assert "TJ-kr" in reviewers_arg
+    assert "--reviewer" not in command
+
+    reviewer_commands = data["reviewer_commands"]
+    reviewer_args = [cmd[cmd.index("--add-reviewer") + 1] for cmd in reviewer_commands]
+    assert "jayleekr" not in reviewer_args
+    assert "JeHyeong2" in reviewer_args
+    assert "TJ-kr" in reviewer_args

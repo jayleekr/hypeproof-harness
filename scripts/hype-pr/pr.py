@@ -220,25 +220,48 @@ def command_request_reviewers(args: argparse.Namespace, policy: dict[str, Any]) 
         auto_merge=False,
     )
     reviewers = planned["reviewers"]
-    cmd = ["gh", "pr", "edit", str(args.pr), "--repo", parse_repo(args.repo)]
-    for reviewer in reviewers:
-        cmd.extend(["--add-reviewer", reviewer])
     result = {
         "plan": planned,
-        "command": cmd,
+        "reviewer_commands": reviewer_commands(args.repo, args.pr, reviewers),
         "apply": args.apply,
     }
     if not args.apply:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    gh_result = run(cmd)
-    result["gh"] = {
-        "returncode": gh_result.returncode,
-        "stdout": gh_result.stdout.strip(),
-        "stderr": gh_result.stderr.strip(),
-    }
+    result["reviewer_results"] = apply_reviewer_requests(args.repo, str(args.pr), reviewers)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return gh_result.returncode
+    return 1 if any(item["returncode"] != 0 for item in result["reviewer_results"]) else 0
+
+
+def reviewer_commands(repo: str, pr_ref: str, reviewers: list[str]) -> list[list[str]]:
+    return [
+        [
+            "gh",
+            "pr",
+            "edit",
+            str(pr_ref),
+            "--repo",
+            parse_repo(repo),
+            "--add-reviewer",
+            reviewer,
+        ]
+        for reviewer in reviewers
+    ]
+
+
+def apply_reviewer_requests(repo: str, pr_ref: str, reviewers: list[str]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for reviewer, cmd in zip(reviewers, reviewer_commands(repo, pr_ref, reviewers)):
+        gh_result = run(cmd)
+        results.append(
+            {
+                "reviewer": reviewer,
+                "returncode": gh_result.returncode,
+                "stdout": gh_result.stdout.strip(),
+                "stderr": gh_result.stderr.strip(),
+            }
+        )
+    return results
 
 
 def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
@@ -273,14 +296,13 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
     ]
     if args.draft:
         cmd.append("--draft")
-    if planned["reviewers"]:
-        cmd.extend(["--reviewer", ",".join(planned["reviewers"])])
     for label in labels:
         cmd.extend(["--label", label])
 
     result: dict[str, Any] = {
         "plan": planned,
         "create_command": cmd,
+        "reviewer_commands": reviewer_commands(args.repo, "<created-pr>", planned["reviewers"]),
         "apply": args.apply,
     }
     if not args.apply:
@@ -298,6 +320,7 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
         return created.returncode
 
     pr_ref = created.stdout.strip().splitlines()[-1]
+    result["reviewer_results"] = apply_reviewer_requests(args.repo, pr_ref, planned["reviewers"])
     if planned["auto_merge"]["eligible"]:
         merge_cmd = [
             "gh",
