@@ -108,6 +108,8 @@ CLI fallback:
 ```bash
 python3 scripts/hype-review/review.py --mine
 python3 scripts/hype-review/review.py --repo jayleekr/sediment --pr 87 --reviewer TJ-kr
+python3 scripts/hype-review/request_reviewers.py            # dry-run audit
+python3 scripts/hype-review/request_reviewers.py --apply    # send missing requests
 ```
 
 리뷰 요청은 모든 active 멤버에게 보내되, merge는 branch protection과 CODEOWNERS가

@@ -62,6 +62,25 @@ python3 scripts/hype-review/review.py \
   --risk governance
 ```
 
+메인테이너가 PR을 만들었거나 Dependabot PR이 새로 생겼을 때는 reviewer 요청이
+누락되지 않았는지 별도 audit을 먼저 돌린다. 기본은 read-only다.
+
+```bash
+# open PR 전체에서 누락된 reviewer 요청 보기
+python3 scripts/hype-review/request_reviewers.py
+
+# 특정 repo만 보기
+python3 scripts/hype-review/request_reviewers.py --repo jayleekr/sediment
+
+# 누락된 요청 실제 전송
+python3 scripts/hype-review/request_reviewers.py --apply
+```
+
+이 스크립트는 `policy/members.yaml`의 active 멤버를 기준으로 author, 이미 요청된
+사람, 이미 review를 남긴 사람을 제외하고 누락된 reviewer만 요청한다. 초대가
+pending이라 GitHub가 reviewer로 인식하지 못하는 사용자는 `failed`로 남기고,
+그 PR에는 멘션 코멘트로 fallback한다.
+
 `--mine`은 로컬 `gh` 인증 사용자를 읽고 GitHub 검색으로
 `review-requested:@me` PR을 찾는다. 팀원에게 `gh auth login`이 되어 있지 않으면
 GitHub UI에서 PR URL을 복사한 뒤 `--repo`, `--pr`로 먼저 연습해도 된다.
