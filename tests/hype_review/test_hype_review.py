@@ -164,6 +164,7 @@ def test_request_reviewers_plan_skips_author_requested_and_reviewed() -> None:
         "author": {"login": "jayleekr"},
         "reviewRequests": [{"login": "JeHyeong2"}],
         "latestReviews": [{"author": {"login": "JinyongShin"}, "state": "APPROVED"}],
+        "_pendingInvites": [{"invitee": {"login": "TJ-kr"}}],
     }
 
     actions = module.plan_actions(
@@ -179,8 +180,8 @@ def test_request_reviewers_plan_skips_author_requested_and_reviewed() -> None:
     assert by_reviewer["JeHyeong2"].reason == "already_requested"
     assert by_reviewer["JinyongShin"].status == "skipped"
     assert by_reviewer["JinyongShin"].reason == "already_reviewed"
-    assert by_reviewer["TJ-kr"].status == "would_request"
-    assert by_reviewer["TJ-kr"].reason == "missing_review_request"
+    assert by_reviewer["TJ-kr"].status == "pending_invitation"
+    assert by_reviewer["TJ-kr"].reason == "member_invitation_pending"
 
 
 def test_request_reviewers_offline_json(tmp_path: Path) -> None:

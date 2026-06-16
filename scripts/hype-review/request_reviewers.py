@@ -172,6 +172,25 @@ def fetch_review_detail(repo: str, number: int) -> dict[str, Any]:
     ]) or {}
 
 
+def pending_invite_logins(pr: dict[str, Any]) -> set[str]:
+    return {
+        login(invite.get("invitee") if isinstance(invite, dict) else invite).lower()
+        for invite in pr.get("_pendingInvites") or []
+        if login(invite.get("invitee") if isinstance(invite, dict) else invite)
+    }
+
+
+def fetch_pending_invitations(repo: str) -> list[dict[str, Any]]:
+    code, text = run_gh_text(["api", f"repos/{repo}/invitations"])
+    if code != 0:
+        return []
+    try:
+        data = json.loads(text) if text else []
+    except json.JSONDecodeError:
+        return []
+    return data if isinstance(data, list) else []
+
+
 def plan_actions(prs: list[dict[str, Any]], members: list[str], *, apply: bool = False) -> list[ReviewerAction]:
     actions: list[ReviewerAction] = []
     for pr in prs:
@@ -181,6 +200,7 @@ def plan_actions(prs: list[dict[str, Any]], members: list[str], *, apply: bool =
         author_key = author.lower()
         requested = request_logins(pr)
         reviewed = reviewed_logins(pr)
+        pending_invites = pending_invite_logins(pr)
         for reviewer in members:
             reviewer_key = reviewer.lower()
             status = "would_request"
@@ -194,6 +214,9 @@ def plan_actions(prs: list[dict[str, Any]], members: list[str], *, apply: bool =
             elif reviewer_key in reviewed:
                 status = "skipped"
                 reason = "already_reviewed"
+            elif reviewer_key in pending_invites:
+                status = "pending_invitation"
+                reason = "member_invitation_pending"
             elif apply:
                 code, detail = run_gh_text(["pr", "edit", str(number), "--repo", repo, "--add-reviewer", reviewer])
                 if code == 0:
@@ -218,23 +241,32 @@ def plan_actions(prs: list[dict[str, Any]], members: list[str], *, apply: bool =
 
 def enrich_prs(prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
+    invites_by_repo: dict[str, list[dict[str, Any]]] = {}
     for pr in prs:
         repo = repo_name(pr)
         number = int(pr.get("number") or 0)
+        if repo not in invites_by_repo:
+            invites_by_repo[repo] = fetch_pending_invitations(repo)
         detail = fetch_review_detail(repo, number)
-        enriched.append(normalize_pr(pr, detail))
+        normalized = normalize_pr(pr, detail)
+        normalized["_pendingInvites"] = invites_by_repo[repo]
+        enriched.append(normalized)
     return enriched
 
 
 def render_markdown(actions: list[ReviewerAction]) -> str:
     counts = {
         status: sum(1 for action in actions if action.status == status)
-        for status in ("would_request", "requested", "failed", "skipped")
+        for status in ("would_request", "requested", "failed", "pending_invitation", "skipped")
     }
     lines = [
         "# hype-review reviewer request audit",
         "",
-        f"would_request={counts['would_request']} requested={counts['requested']} failed={counts['failed']} skipped={counts['skipped']}",
+        (
+            f"would_request={counts['would_request']} requested={counts['requested']} "
+            f"failed={counts['failed']} pending_invitation={counts['pending_invitation']} "
+            f"skipped={counts['skipped']}"
+        ),
         "",
         "| Status | Repo | PR | Reviewer | Reason |",
         "|---|---|---:|---|---|",

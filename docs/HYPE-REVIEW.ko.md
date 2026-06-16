@@ -78,8 +78,10 @@ python3 scripts/hype-review/request_reviewers.py --apply
 
 이 스크립트는 `policy/members.yaml`의 active 멤버를 기준으로 author, 이미 요청된
 사람, 이미 review를 남긴 사람을 제외하고 누락된 reviewer만 요청한다. 초대가
-pending이라 GitHub가 reviewer로 인식하지 못하는 사용자는 `failed`로 남기고,
-그 PR에는 멘션 코멘트로 fallback한다.
+pending이라 GitHub가 reviewer로 인식하지 못하는 사용자는 dry-run에서
+`pending_invitation`으로 남기고, 그 PR에는 멘션 코멘트로 fallback한다.
+GitHub API가 pending invitation을 노출하지 못하는 repo에서는 `--apply` 결과가
+`failed`로 남을 수 있다.
 
 `--mine`은 로컬 `gh` 인증 사용자를 읽고 GitHub 검색으로
 `review-requested:@me` PR을 찾는다. 팀원에게 `gh auth login`이 되어 있지 않으면
