@@ -159,6 +159,22 @@ def test_changes_requested_and_failed_checks_are_blocked() -> None:
     assert "branch_changes_requested" in item.blockers
 
 
+def test_success_conclusion_beats_stale_in_progress_check_status() -> None:
+    module = load_module()
+
+    item = module.classify_pr(
+        pr(
+            labels=["human-needed"],
+            reviews=[review("JeHyeong2", "APPROVED")],
+            review_decision="",
+            checks=[check("gate", status="IN_PROGRESS", conclusion="SUCCESS")],
+        )
+    )
+
+    assert item.checks_ok is True
+    assert "checks_pending_or_failed" not in item.blockers
+
+
 def test_offline_file_json_renders_ready_first(tmp_path: Path) -> None:
     waiting = pr(labels=["human-needed"])
     ready = pr(

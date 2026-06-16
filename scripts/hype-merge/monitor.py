@@ -124,11 +124,12 @@ def rollup_checks_ok(pr: dict[str, Any]) -> bool:
             continue
         typename = check.get("__typename")
         if typename == "CheckRun" or "conclusion" in check:
+            conclusion = check.get("conclusion")
+            if conclusion in ("SUCCESS", "SKIPPED", "NEUTRAL"):
+                continue
             if check.get("status") != "COMPLETED":
                 return False
-            if check.get("conclusion") not in ("SUCCESS", "SKIPPED", "NEUTRAL"):
-                return False
-            continue
+            return False
         if typename == "StatusContext" or "state" in check:
             if check.get("state") != "SUCCESS":
                 return False
