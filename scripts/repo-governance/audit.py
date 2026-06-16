@@ -103,8 +103,29 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
             findings.append(_policy_error(full, "profile", f"one of {sorted(profiles)}", profile_name))
 
         visibility = repo.get("visibility")
-        if visibility not in ("public", "private", "internal"):
+        valid_visibilities = ("public", "private", "internal")
+        if visibility not in valid_visibilities:
             findings.append(_policy_error(full, "visibility", "public/private/internal", visibility))
+
+        target_visibility = repo.get("target_visibility")
+        if target_visibility is not None:
+            if target_visibility not in valid_visibilities:
+                findings.append(_policy_error(full, "target_visibility", "public/private/internal", target_visibility))
+            if target_visibility != visibility:
+                readiness = repo.get("public_readiness") or {}
+                blockers = readiness.get("blocked_by") or []
+                has_temporary_exception = any(
+                    exc.get("id") == "temporary-private-until-oauth-purge"
+                    for exc in repo.get("exceptions", []) or []
+                )
+                if not blockers:
+                    findings.append(_policy_error(full, "public_readiness.blocked_by", "present when target_visibility differs", blockers))
+                for index, blocker in enumerate(blockers):
+                    missing = [key for key in ("issue", "reason") if not blocker.get(key)]
+                    if missing:
+                        findings.append(_policy_error(full, f"public_readiness.blocked_by[{index}]", "issue/reason", missing))
+                if not has_temporary_exception:
+                    findings.append(_policy_error(full, "exceptions", "temporary-private-until-oauth-purge", None))
 
         checks = repo.get("required_status_checks", [])
         if checks is not None and not isinstance(checks, list):

@@ -30,6 +30,21 @@ def test_policy_validates_offline() -> None:
     assert data["findings"] == []
 
 
+def test_hypeprooflab_public_target_has_security_blocker() -> None:
+    proc = run_cmd(str(AUDIT), "--offline", "--json")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    import yaml
+
+    policy = yaml.safe_load((ROOT / "policy" / "repos.yaml").read_text(encoding="utf-8"))
+    lab = next(repo for repo in policy["repositories"] if repo["name"] == "hypeprooflab")
+    assert lab["visibility"] == "private"
+    assert lab["target_visibility"] == "public"
+    blocker_issues = {item["issue"] for item in lab["public_readiness"]["blocked_by"]}
+    assert "jayleekr/hypeprooflab#96" in blocker_issues
+    assert any(exc["id"] == "temporary-private-until-oauth-purge" for exc in lab["exceptions"])
+
+
 def test_create_plans_known_profile() -> None:
     proc = run_cmd(str(CREATE), "--repo", "jayleekr/example-product", "--profile", "public-product")
     assert proc.returncode == 0, proc.stdout + proc.stderr

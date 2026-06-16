@@ -68,10 +68,20 @@ repositories:
   - owner: jayleekr
     name: hypeprooflab
     visibility: private
+    target_visibility: public
     profile: content-vault
     lifecycle: product
     default_branch: main
     products: [lab, vault]
+    public_readiness:
+      blocked_by:
+        - issue: jayleekr/hypeprooflab#96
+          reason: Rotate/revoke the exposed Google OAuth client secret and verify the historical commit is no longer fetchable by SHA.
+        - issue: jayleekr/hypeprooflab#100
+          reason: Complete tracked text/PDF/image PII sweep before making the content repo public again.
+      verifier:
+        pr: jayleekr/hypeprooflab#120
+        workflow: OAuth purge verification
     required_status_checks:
       - repo-governance (repo files)
       - CI & Deploy / build
@@ -84,6 +94,10 @@ repositories:
         - DISCORD_WEBHOOK_HYPEPROOFLAB_PAGE
         - DISCORD_WEBHOOK_SEDIMENT
     exceptions:
+      - id: temporary-private-until-oauth-purge
+        owner: jayleekr
+        reason: Target visibility is public, but the repo must remain private until the exposed OAuth credential is rotated and the historical commit purge verifier passes.
+        expires_at: 2026-07-15
       - id: private-branch-protection-plan-limit
         owner: jayleekr
         reason: Personal private repo branch protection requires GitHub Pro/Team.

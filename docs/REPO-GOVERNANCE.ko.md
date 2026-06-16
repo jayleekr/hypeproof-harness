@@ -121,10 +121,20 @@ repositories:
   - name: hypeprooflab
     owner: jayleekr
     visibility: private
+    target_visibility: public
     profile: content-vault
     lifecycle: product
     default_branch: main
     products: [lab, vault]
+    public_readiness:
+      blocked_by:
+        - issue: jayleekr/hypeprooflab#96
+          reason: exposed Google OAuth credential rotation and history purge verification
+        - issue: jayleekr/hypeprooflab#100
+          reason: tracked content PII/email sweep
+      verifier:
+        pr: jayleekr/hypeprooflab#120
+        workflow: OAuth purge verification
     required_secrets:
       actions:
         - VERCEL_TOKEN
@@ -182,7 +192,7 @@ Profile은 repo 유형별 기본 정책이다. 각 repo는 하나의 profile을 
 | `harness-core` | `hypeproof-harness` | 가장 엄격. 2 approvals, CODEOWNERS required, admins enforced, direct push 금지 |
 | `public-product` | `hypeproof-studio`, `sediment`, public tool/site repo | public 유지, 외부 PR 허용, main은 PR/CI/review로만 유입, Actions read-only |
 | `private-product` | private 제품 repo | 멤버만 접근, main PR 강제, 가능한 경우 branch protection 적용 |
-| `content-vault` | `hypeprooflab` | private 유지, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
+| `content-vault` | `hypeprooflab` | public 전환 전까지 임시 private, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
 | `release-artifact` | release mirror/artifact repo | 사람 개발 금지, CI bot만 release/tag 생성, issues/wiki/projects off |
 
 예시:
@@ -250,6 +260,23 @@ Audit/apply 엔진은 작은 module로 나뉜다.
 | `secrets` | required secret 이름 존재 여부 | audit only |
 | `environments` | production deploy environment와 reviewer | 가능 |
 | `labels` | 표준 labels | 가능 |
+
+## Public Readiness Holds
+
+운영 기조는 public repo + member-only contribution이다. 다만 이미 노출된 secret,
+PII, 법무/계약 문서처럼 public 전환 자체가 위험을 키우는 경우에는 `visibility`를
+현재 안전 상태로 두고 `target_visibility`에 최종 상태를 적는다.
+
+`visibility`와 `target_visibility`가 다르면 repo에는 반드시 다음이 있어야 한다.
+
+- `public_readiness.blocked_by`: public 전환을 막는 issue와 이유
+- 만료일이 있는 임시 exception
+- 가능하면 public 전환을 증명할 verifier PR/workflow
+
+예: `hypeprooflab`은 최종 목표가 `public`이지만, #96의 OAuth credential
+rotation/history purge와 #100의 PII sweep이 끝나기 전까지는 private로 유지한다.
+이 상태는 policy drift가 아니라 명시적인 security hold이며, exception 만료 전
+재검토해야 한다.
 
 ## Scripts
 
@@ -437,7 +464,7 @@ Severity 기준:
 | `jayleekr/hypeproof-harness` | public | `harness-core` | secret scanning/push protection on, admins enforce |
 | `jayleekr/hypeproof-studio` | public | `public-product` | main protection 추가, Claude Solver collaborator-only |
 | `jayleekr/sediment` | public | `public-product` | required checks와 review count 적용 |
-| `jayleekr/hypeprooflab` | private | `content-vault` | Pro/Team 전까지 unsupported drift로 추적 |
+| `jayleekr/hypeprooflab` | private -> public target | `content-vault` | #96 OAuth purge, #100 PII sweep 완료 전까지 security hold |
 | `jayleekr/jayleekr.github.io` | public | `public-product` | collaborator-only contribution, PR CI 추가 |
 
 이 구조를 쓰면 repo가 늘어나도 새 정책을 복사하지 않는다. repo는 inventory에
