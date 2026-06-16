@@ -4,7 +4,7 @@ profile: public-product
 repository:
   allow_forking: true
   delete_branch_on_merge: true
-  allow_auto_merge: false
+  allow_auto_merge: true
   merge_methods:
     squash: true
     merge_commit: false

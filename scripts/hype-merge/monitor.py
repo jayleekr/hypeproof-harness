@@ -35,6 +35,8 @@ class MergeAssessment:
     checks_ok: bool
     review_decision: str
     merge_state: str
+    head_oid: str
+    auto_merge_enabled: bool
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +51,8 @@ class MergeAssessment:
             "checks_ok": self.checks_ok,
             "reviewDecision": self.review_decision,
             "mergeStateStatus": self.merge_state,
+            "headRefOid": self.head_oid,
+            "autoMergeEnabled": self.auto_merge_enabled,
         }
 
 
@@ -195,6 +199,8 @@ def classify_pr(pr: dict[str, Any], *, required_non_author_approvals: int = 0) -
         checks_ok=checks_ok,
         review_decision=review_decision,
         merge_state=merge_state,
+        head_oid=str(pr.get("headRefOid") or ""),
+        auto_merge_enabled=bool(pr.get("autoMergeRequest")),
     )
 
 
@@ -219,7 +225,7 @@ def load_policy_scope() -> tuple[list[str], dict[str, int]]:
     for item in doc.get("repositories", []):
         owner = item.get("owner")
         name = item.get("name")
-        if owner and name and item.get("lifecycle") != "release":
+        if owner and name and item.get("lifecycle") not in ("release", "retired"):
             full = f"{owner}/{name}"
             repos.append(full)
             profile = profiles.get(str(item.get("profile") or ""), {})
@@ -259,7 +265,7 @@ def fetch_open_prs(repo: str, limit: int) -> list[dict[str, Any]]:
     prs = []
     fields = (
         "author,headRefOid,isDraft,labels,latestReviews,mergeStateStatus,"
-        "mergeable,number,reviewDecision,reviewRequests,"
+        "mergeable,number,reviewDecision,reviewRequests,autoMergeRequest,"
         "statusCheckRollup,title,updatedAt,url"
     )
     for item in listed:

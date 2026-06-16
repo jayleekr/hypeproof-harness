@@ -11,6 +11,8 @@ ready인지, 어떤 PR이 사람 리뷰를 더 기다려야 하는지, 어떤 PR
 python3 scripts/hype-merge/monitor.py
 python3 scripts/hype-merge/monitor.py --repo jayleekr/hypeproof-harness
 python3 scripts/hype-merge/monitor.py --format json
+python3 scripts/hype-merge/automerge.py
+python3 scripts/hype-merge/automerge.py --apply
 ```
 
 기본 repo 목록은 `policy/repos.yaml`의 release가 아닌 모든 관리 대상 repo를
@@ -43,3 +45,20 @@ python3 scripts/hype-merge/monitor.py --format json
 이 도구의 출력은 merge 후보를 줄이는 보조 신호다. 실제 merge는 GitHub branch
 protection, CODEOWNERS, required checks, 그리고 PR의 최신 review state가 최종
 권위다.
+
+## Auto-Merge 예약
+
+`automerge.py`는 기본 dry-run이다. `--apply`를 붙였을 때만 GitHub에
+`gh pr merge --auto --squash --delete-branch --match-head-commit <sha>`를 보낸다.
+
+대상은 다음 조건을 모두 만족해야 한다.
+
+- `monitor.py` 기준 `waiting`
+- checks green
+- GitHub `reviewDecision`이 `REVIEW_REQUIRED`
+- blocker가 리뷰 대기 항목뿐임
+- 최신 head SHA가 확인됨
+
+따라서 failed check, conflict, changes requested, `do-not-merge`/`blocked`/`hold`
+라벨이 있는 PR은 auto-merge 예약 대상이 아니다. `ready` PR은 바로 merge 가능한
+상태이므로 auto-merge 예약 대신 운영자가 순서와 deploy 영향을 확인하고 merge한다.

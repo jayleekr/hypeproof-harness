@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "hype-merge" / "monitor.py"
+AUTOMERGE = ROOT / "scripts" / "hype-merge" / "automerge.py"
 
 
 def load_module():
@@ -52,6 +53,8 @@ def pr(
         "mergeStateStatus": "CLEAN",
         "mergeable": mergeable,
         "isDraft": is_draft,
+        "headRefOid": "abc123",
+        "autoMergeRequest": None,
     }
 
 
@@ -200,3 +203,62 @@ def test_offline_file_json_renders_ready_first(tmp_path: Path) -> None:
     items = json.loads(proc.stdout)
     assert [item["status"] for item in items] == ["ready", "waiting"]
     assert items[0]["number"] == 263
+    assert items[0]["autoMergeEnabled"] is False
+
+
+def test_policy_repos_exclude_release_and_retired_repositories() -> None:
+    module = load_module()
+    repos = module.load_policy_repos()
+
+    assert "jayleekr/sediment-cli-releases" not in repos
+    assert "jayleekr/Claude-Code-Remote" not in repos
+
+
+def test_automerge_dry_run_targets_review_only_waiting_prs(tmp_path: Path) -> None:
+    waiting = pr(labels=["human-needed"], review_decision="REVIEW_REQUIRED")
+    waiting["number"] = 39
+    blocked = pr(
+        labels=["human-needed"],
+        review_decision="REVIEW_REQUIRED",
+        checks=[check("build", conclusion="FAILURE")],
+    )
+    blocked["number"] = 40
+    data = tmp_path / "prs.json"
+    data.write_text(json.dumps([blocked, waiting]), encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, str(AUTOMERGE), "--offline-file", str(data), "--format", "json"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    actions = json.loads(proc.stdout)
+    by_number = {item["number"]: item for item in actions}
+    assert by_number[39]["status"] == "would_enable"
+    assert by_number[39]["reason"] == "waiting_for_required_review"
+    assert by_number[40]["status"] == "skipped"
+    assert by_number[40]["reason"].startswith("blocked:")
+
+
+def test_automerge_dry_run_reports_already_enabled(tmp_path: Path) -> None:
+    waiting = pr(labels=["human-needed"], review_decision="REVIEW_REQUIRED")
+    waiting["number"] = 39
+    waiting["autoMergeRequest"] = {"enabledAt": "2026-06-16T16:12:48Z"}
+    data = tmp_path / "prs.json"
+    data.write_text(json.dumps([waiting]), encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, str(AUTOMERGE), "--offline-file", str(data), "--format", "json"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    actions = json.loads(proc.stdout)
+    assert actions[0]["status"] == "already_enabled"
+    assert actions[0]["reason"] == "already_enabled"
