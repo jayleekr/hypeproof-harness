@@ -14,6 +14,9 @@ repository:
     wiki: false
     projects: false
 
+collaborators:
+  manage: admins
+
 security:
   dependabot_security_updates: enabled
   secret_scanning: enabled

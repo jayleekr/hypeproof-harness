@@ -10,6 +10,9 @@ repository:
     merge_commit: false
     rebase: false
 
+collaborators:
+  manage: members
+
 security:
   dependabot_security_updates: enabled
   secret_scanning: enabled

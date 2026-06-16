@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "repo-governance"))
-from audit import load_policy, repo_full_name, validate_policy  # noqa: E402
+from audit import desired_collaborators, load_policy, repo_full_name, validate_policy  # noqa: E402
 
 
 def gh_api(path: str, *, method: str = "GET", body: dict | None = None) -> tuple[int, str]:
@@ -54,6 +54,24 @@ def apply_security(full: str, profile: dict, dry_run: bool) -> list[str]:
         return []
     body = {"security_and_analysis": {key: {"status": value} for key, value in desired.items()}}
     return apply_call(full, "security", f"repos/{full}", "PATCH", body, dry_run, soft=True)
+
+
+def apply_collaborators(full: str, repo: dict, members: dict, profile: dict, dry_run: bool) -> list[str]:
+    logs: list[str] = []
+    owner = repo.get("owner")
+    for login, permission in sorted(desired_collaborators(members, profile).items()):
+        if login == owner:
+            continue
+        logs.extend(apply_call(
+            full,
+            "collaborators",
+            f"repos/{full}/collaborators/{login}",
+            "PUT",
+            {"permission": permission},
+            dry_run,
+            soft=True,
+        ))
+    return logs
 
 
 def apply_actions(full: str, repo: dict, profile: dict, dry_run: bool) -> list[str]:
@@ -173,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         full = repo_full_name(repo)
         profile = policy["profiles"][repo["profile"]]
         logs.extend(apply_repo_settings(full, profile, repo, dry_run))
+        logs.extend(apply_collaborators(full, repo, policy["members"], profile, dry_run))
         logs.extend(apply_security(full, profile, dry_run))
         logs.extend(apply_actions(full, repo, profile, dry_run))
         logs.extend(apply_branch_protection(full, repo, profile, dry_run))

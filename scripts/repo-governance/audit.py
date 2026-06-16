@@ -161,6 +161,9 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
         for section in ("repository", "actions"):
             if section not in profile:
                 findings.append(_policy_error(profile_name, section, "present", None))
+        collaborator_scope = profile.get("collaborators", {}).get("manage")
+        if collaborator_scope not in ("members", "admins"):
+            findings.append(_policy_error(profile_name, "collaborators.manage", "members/admins", collaborator_scope))
 
     return findings
 
@@ -196,7 +199,7 @@ def gh_json(path: str) -> tuple[int, Any]:
     return proc.returncode, data
 
 
-def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any]) -> list[Finding]:
+def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict[str, Any]) -> list[Finding]:
     full = repo_full_name(repo)
     findings: list[Finding] = []
 
@@ -229,8 +232,121 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any]) -> list[Findi
             ))
 
     findings.extend(_audit_security(full, meta, profile))
+    findings.extend(_audit_collaborators(full, repo, members, profile))
     findings.extend(_audit_actions(full, repo, profile))
     findings.extend(_audit_branch(full, repo, profile))
+    return findings
+
+
+PERMISSION_RANK = {
+    "none": 0,
+    "read": 1,
+    "triage": 2,
+    "write": 3,
+    "push": 3,
+    "maintain": 4,
+    "admin": 5,
+}
+
+
+def desired_collaborators(members: dict[str, Any], profile: dict[str, Any]) -> dict[str, str]:
+    scope = profile.get("collaborators", {}).get("manage", "members")
+    admins = set(members.get("members", {}).get("admins", []) or [])
+    writers = set(members.get("members", {}).get("writers", []) or []) if scope == "members" else set()
+    desired = {login: "admin" for login in admins}
+    for login in writers - admins:
+        desired[login] = "write"
+    return desired
+
+
+def _permission_from_collaborator(item: dict[str, Any]) -> str:
+    perms = item.get("permissions") or {}
+    if perms.get("admin"):
+        return "admin"
+    if perms.get("maintain"):
+        return "maintain"
+    if perms.get("push"):
+        return "write"
+    if perms.get("triage"):
+        return "triage"
+    if perms.get("pull"):
+        return "read"
+    return "none"
+
+
+def _permission_satisfies(actual: str | None, expected: str) -> bool:
+    return PERMISSION_RANK.get(actual or "none", 0) >= PERMISSION_RANK[expected]
+
+
+def _audit_collaborators(
+    full: str,
+    repo: dict[str, Any],
+    members: dict[str, Any],
+    profile: dict[str, Any],
+    gh=gh_json,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    desired = desired_collaborators(members, profile)
+    owner = repo.get("owner")
+
+    code, collaborators = gh(f"repos/{full}/collaborators")
+    if code != 0:
+        return [Finding(full, "collaborators", "high", "collaborators", "readable", collaborators, False)]
+
+    actual = {owner: "admin"} if owner else {}
+    for item in collaborators or []:
+        login = (item.get("login") or "").strip()
+        if login:
+            actual[login] = _permission_from_collaborator(item)
+
+    code, invitations = gh(f"repos/{full}/invitations")
+    pending: dict[str, str] = {}
+    if code == 0:
+        for item in invitations or []:
+            invitee = item.get("invitee") or {}
+            login = (invitee.get("login") or "").strip()
+            permission = item.get("permissions") or item.get("permission") or "write"
+            if login:
+                pending[login] = permission
+
+    for login, expected in sorted(desired.items()):
+        current = actual.get(login)
+        if _permission_satisfies(current, expected):
+            continue
+        invited = pending.get(login)
+        if invited and _permission_satisfies(invited, expected):
+            findings.append(Finding(
+                full,
+                "collaborators",
+                "high",
+                login,
+                expected,
+                f"pending:{invited}",
+                apply_supported=False,
+                message="Invitation is pending; official reviewer requests may fail until the member accepts it",
+            ))
+            continue
+        if invited:
+            findings.append(Finding(
+                full,
+                "collaborators",
+                "high",
+                login,
+                expected,
+                f"pending:{invited}",
+                apply_supported=True,
+                message="Pending invitation has lower permission than policy requires",
+            ))
+            continue
+        findings.append(Finding(
+            full,
+            "collaborators",
+            "high",
+            login,
+            expected,
+            current or "missing",
+            apply_supported=True,
+        ))
     return findings
 
 
@@ -384,7 +500,7 @@ def main(argv: list[str] | None = None) -> int:
                 selected.append(repo)
         for repo in selected:
             profile = policy["profiles"][repo["profile"]]
-            findings.extend(live_audit_repo(repo, profile))
+            findings.extend(live_audit_repo(repo, profile, policy["members"]))
 
     status = "pass" if not findings else "drift"
     if args.json:
