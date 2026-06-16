@@ -16,7 +16,7 @@ jobs:
     name: lint (bash -n + path hygiene)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: bash -n
         run: |
@@ -74,7 +74,7 @@ jobs:
     name: gate (tests/run.sh against mock consumers)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up mock consumer repos
         run: |
@@ -101,8 +101,8 @@ jobs:
     name: repo-governance (policy validation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install policy test deps
