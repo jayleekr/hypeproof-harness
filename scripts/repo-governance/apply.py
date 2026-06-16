@@ -47,6 +47,8 @@ def apply_repo_settings(full: str, profile: dict, repo: dict, dry_run: bool) -> 
         body["has_wiki"] = features["wiki"]
     if "projects" in features:
         body["has_projects"] = features["projects"]
+    if "archived" in repository:
+        body["archived"] = repository["archived"]
     body = {k: v for k, v in body.items() if v is not None}
     return apply_call(full, "repo_settings", f"repos/{full}", "PATCH", body, dry_run)
 

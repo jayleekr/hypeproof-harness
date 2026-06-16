@@ -157,3 +157,51 @@ def test_release_artifact_collaborators_are_maintainer_only_for_personal_repos()
     profile = policy["profiles"]["release-artifact"]
     desired = module.desired_collaborators(policy["members"], profile, repo)
     assert desired == {"jayleekr": "admin", "JeHyeong2": "write"}
+
+
+def test_retired_repository_tracks_deletion_and_owner_only_access() -> None:
+    module = load_audit_module()
+    policy = module.load_policy()
+    repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "Claude-Code-Remote")
+    profile = policy["profiles"]["retired-repository"]
+    desired = module.desired_collaborators(policy["members"], profile, repo)
+
+    assert repo["lifecycle"] == "retired"
+    assert repo["retirement"]["issue"] == "jayleekr/hypeproof-harness#40"
+    assert "delete_repo" in repo["retirement"]["reason"]
+    assert desired == {"jayleekr": "admin"}
+
+
+def test_retired_repository_audit_checks_archive_and_disabled_features(monkeypatch) -> None:
+    module = load_audit_module()
+    policy = module.load_policy()
+    repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "Claude-Code-Remote")
+    profile = policy["profiles"]["retired-repository"]
+
+    def fake_gh(path: str):
+        if path == "repos/jayleekr/Claude-Code-Remote":
+            return 0, {
+                "visibility": "public",
+                "default_branch": "master",
+                "archived": False,
+                "has_issues": True,
+                "has_wiki": True,
+                "has_projects": False,
+            }
+        if path.endswith("/collaborators") or path.endswith("/invitations"):
+            return 0, []
+        if path.endswith("/actions/permissions/workflow"):
+            return 0, {}
+        if path.endswith("/actions/permissions"):
+            return 0, {"enabled": True}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(module, "gh_json", fake_gh)
+    findings = module.live_audit_repo(repo, profile, policy["members"])
+    by_field = {finding.field: finding for finding in findings}
+
+    assert by_field["archived"].expected is True
+    assert by_field["archived"].actual is False
+    assert by_field["has_issues"].expected is False
+    assert by_field["has_wiki"].expected is False
+    assert by_field["enabled"].module == "actions"

@@ -194,6 +194,7 @@ Profile은 repo 유형별 기본 정책이다. 각 repo는 하나의 profile을 
 | `private-product` | private 제품 repo | 멤버만 접근, main PR 강제, 가능한 경우 branch protection 적용 |
 | `content-vault` | `hypeprooflab` | public 전환 전까지 임시 private, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
 | `release-artifact` | release mirror/artifact repo | 사람 개발 금지, admin만 직접 collaborator, CI bot만 release/tag 생성, issues/wiki/projects off |
+| `retired-repository` | 더 이상 쓰지 않는 repo | archived 유지, issues/wiki/projects off, Actions off, 삭제 이슈로 추적 |
 
 예시:
 
@@ -451,6 +452,34 @@ Release repo는 개발 repo가 아니다.
 - branch protection은 main direct push 금지.
 - release/tag 생성은 source repo의 release workflow 또는 bot token만 허용한다.
 - release asset은 immutable로 취급한다. 교체가 필요하면 새 tag를 만든다.
+
+## Retired Repo 기준
+
+쓰지 않는 repo는 삭제가 최종 상태다. 다만 GitHub repository 삭제에는 일반
+`repo` scope만으로는 부족하고 `delete_repo` OAuth scope가 필요하므로, 삭제가
+바로 되지 않으면 harness inventory에 `lifecycle: retired`로 남긴다.
+
+Retired repo는 다음 상태를 목표로 한다.
+
+- `profile: retired-repository`
+- `archived: true`
+- issues, projects, wiki off
+- Actions off
+- collaborator 관리는 owner만 기대하고, 팀 전체 contributor 권한은 강제하지 않음
+- `retirement.issue`에 삭제 추적 이슈를 남김
+- `retirement.delete_when`에 삭제 가능 조건과 검증 명령을 남김
+
+삭제 절차:
+
+```bash
+gh auth refresh -h github.com -s delete_repo
+gh repo delete jayleekr/<repo> --yes
+gh repo view jayleekr/<repo>
+```
+
+마지막 명령이 not found를 반환하면 inventory에서 retired repo 항목을 제거하는
+PR을 열고 삭제 추적 이슈를 닫는다. 삭제 전까지는 archived 상태와 feature off가
+유지되는지 `repo-governance` audit가 drift로 확인한다.
 
 ## Drift Report 형식
 

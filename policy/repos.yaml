@@ -135,3 +135,18 @@ repositories:
     default_branch: main
     products: [sediment]
     source_repo: jayleekr/sediment
+
+  - owner: jayleekr
+    name: Claude-Code-Remote
+    visibility: public
+    profile: retired-repository
+    lifecycle: retired
+    default_branch: master
+    products: [retired]
+    retirement:
+      issue: jayleekr/hypeproof-harness#40
+      reason: Unused repository should be deleted after the local GitHub token is refreshed with delete_repo scope.
+      delete_when:
+        - active gh token has delete_repo OAuth scope
+        - gh repo delete jayleekr/Claude-Code-Remote --yes succeeds
+        - gh repo view jayleekr/Claude-Code-Remote returns not found

@@ -162,6 +162,16 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
                     message="Expired policy exception",
                 ))
 
+        if repo.get("lifecycle") == "retired":
+            if profile_name != "retired-repository":
+                findings.append(_policy_error(full, "profile", "retired-repository for retired lifecycle", profile_name))
+            retirement = repo.get("retirement") or {}
+            missing = [key for key in ("issue", "reason", "delete_when") if not retirement.get(key)]
+            if missing:
+                findings.append(_policy_error(full, "retirement", "issue/reason/delete_when", missing))
+            if retirement.get("delete_when") is not None and not isinstance(retirement.get("delete_when"), list):
+                findings.append(_policy_error(full, "retirement.delete_when", "list", type(retirement.get("delete_when")).__name__))
+
     for profile_name, profile in profiles.items():
         if profile.get("version") != 1:
             findings.append(_policy_error(profile_name, "profile.version", 1, profile.get("version")))
@@ -171,8 +181,8 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
             if section not in profile:
                 findings.append(_policy_error(profile_name, section, "present", None))
         collaborator_scope = profile.get("collaborators", {}).get("manage")
-        if collaborator_scope not in ("members", "admins"):
-            findings.append(_policy_error(profile_name, "collaborators.manage", "members/admins", collaborator_scope))
+        if collaborator_scope not in ("members", "admins", "owner"):
+            findings.append(_policy_error(profile_name, "collaborators.manage", "members/admins/owner", collaborator_scope))
         for field in ("admin_permission", "writer_permission"):
             permission = profile.get("collaborators", {}).get(field)
             if permission is not None and permission not in PERMISSION_RANK:
@@ -220,17 +230,28 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict
     if code != 0:
         return [Finding(full, "github", "critical", "repo", "reachable", meta, False)]
 
+    repository_policy = profile.get("repository", {})
     compare_map = {
         "visibility": repo.get("visibility"),
         "default_branch": repo.get("default_branch"),
-        "allow_forking": profile.get("repository", {}).get("allow_forking"),
-        "allow_auto_merge": profile.get("repository", {}).get("allow_auto_merge"),
-        "delete_branch_on_merge": profile.get("repository", {}).get("delete_branch_on_merge"),
+        "archived": repository_policy.get("archived"),
+        "allow_forking": repository_policy.get("allow_forking"),
+        "allow_auto_merge": repository_policy.get("allow_auto_merge"),
+        "delete_branch_on_merge": repository_policy.get("delete_branch_on_merge"),
     }
-    merge_methods = profile.get("repository", {}).get("merge_methods", {})
+    merge_methods = repository_policy.get("merge_methods", {})
     compare_map["allow_squash_merge"] = merge_methods.get("squash")
     compare_map["allow_merge_commit"] = merge_methods.get("merge_commit")
     compare_map["allow_rebase_merge"] = merge_methods.get("rebase")
+    features = repository_policy.get("features", {})
+    feature_fields = {
+        "issues": "has_issues",
+        "wiki": "has_wiki",
+        "projects": "has_projects",
+    }
+    for policy_field, api_field in feature_fields.items():
+        if policy_field in features:
+            compare_map[api_field] = features[policy_field]
     for field, expected in compare_map.items():
         if expected is not None and meta.get(field) != expected:
             findings.append(Finding(
@@ -245,7 +266,7 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict
             ))
 
     findings.extend(_audit_security(full, meta, profile))
-    findings.extend(_audit_collaborators(full, repo, members, profile))
+    findings.extend(_audit_collaborators(full, repo, members, profile, gh_json))
     findings.extend(_audit_actions(full, repo, profile))
     findings.extend(_audit_branch(full, repo, profile))
     return findings
@@ -256,6 +277,8 @@ def desired_collaborators(members: dict[str, Any], profile: dict[str, Any], repo
     admin_permission = profile.get("collaborators", {}).get("admin_permission", "admin")
     writer_permission = profile.get("collaborators", {}).get("writer_permission", "write")
     owner = (repo or {}).get("owner")
+    if scope == "owner":
+        return {owner: "admin"} if owner else {}
     admins = set(members.get("members", {}).get("admins", []) or [])
     writers = set(members.get("members", {}).get("writers", []) or []) if scope == "members" else set()
     desired = {login: ("admin" if login == owner else admin_permission) for login in admins}
