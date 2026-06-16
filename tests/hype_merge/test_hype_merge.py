@@ -262,3 +262,23 @@ def test_automerge_dry_run_reports_already_enabled(tmp_path: Path) -> None:
     actions = json.loads(proc.stdout)
     assert actions[0]["status"] == "already_enabled"
     assert actions[0]["reason"] == "already_enabled"
+
+
+def test_monitor_markdown_shows_auto_merge_status(tmp_path: Path) -> None:
+    waiting = pr(labels=["human-needed"], review_decision="REVIEW_REQUIRED")
+    waiting["autoMergeRequest"] = {"enabledAt": "2026-06-16T16:12:48Z"}
+    data = tmp_path / "prs.json"
+    data.write_text(json.dumps([waiting]), encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--offline-file", str(data)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| Status | Repo | PR | Author | Checks | Auto-merge |" in proc.stdout
+    assert "| waiting | `jayleekr/hypeprooflab` | [#119]" in proc.stdout
+    assert " | ok | enabled | " in proc.stdout

@@ -299,15 +299,16 @@ def render_markdown(items: list[MergeAssessment]) -> str:
         "",
         f"ready={counts['ready']} waiting={counts['waiting']} blocked={counts['blocked']}",
         "",
-        "| Status | Repo | PR | Author | Checks | Non-author approvals | Blockers |",
-        "|---|---|---:|---|---|---|---|",
+        "| Status | Repo | PR | Author | Checks | Auto-merge | Non-author approvals | Blockers |",
+        "|---|---|---:|---|---|---|---|---|",
     ]
     for item in items:
         pr = f"[#{item.number}]({item.url})" if item.url else f"#{item.number}"
         blockers = ", ".join(item.blockers) if item.blockers else "-"
         approvals = ", ".join(f"@{name}" for name in item.non_author_approvals) or "-"
         checks = "ok" if item.checks_ok else "not-ok"
-        lines.append(f"| {item.status} | `{item.repo}` | {pr} | @{item.author} | {checks} | {approvals} | {blockers} |")
+        auto_merge = "enabled" if item.auto_merge_enabled else "-"
+        lines.append(f"| {item.status} | `{item.repo}` | {pr} | @{item.author} | {checks} | {auto_merge} | {approvals} | {blockers} |")
     return "\n".join(lines) + "\n"
 
 
