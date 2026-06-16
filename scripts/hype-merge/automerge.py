@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from monitor import MergeAssessment, build_queue, fetch_open_prs, load_policy_repos
+from monitor import MergeAssessment, build_queue, fetch_open_prs, load_auto_merge_policy_repos
 
 
 REVIEW_ONLY_BLOCKERS = {
@@ -146,7 +146,7 @@ def render_markdown(actions: list[AutoMergeAction]) -> str:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Enable auto-merge for PRs only waiting on required review.")
-    parser.add_argument("--repo", action="append", default=[], help="Repository in owner/name form. Defaults to policy product repos.")
+    parser.add_argument("--repo", action="append", default=[], help="Repository in owner/name form. Defaults to policy auto-merge repos.")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--offline-file", help="JSON file containing a PR object or PR object list.")
     parser.add_argument("--apply", action="store_true", help="Mutate GitHub by enabling auto-merge.")
@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
             prs = data if isinstance(data, list) else [data]
         else:
             prs = []
-            for repo in args.repo or load_policy_repos():
+            for repo in args.repo or load_auto_merge_policy_repos():
                 prs.extend(fetch_open_prs(repo, args.limit))
         actions = plan_actions(build_queue(prs), apply=args.apply)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:

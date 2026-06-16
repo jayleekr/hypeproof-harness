@@ -204,15 +204,15 @@ def classify_pr(pr: dict[str, Any], *, required_non_author_approvals: int = 0) -
     )
 
 
-def load_policy_scope() -> tuple[list[str], dict[str, int]]:
+def load_policy_scope() -> tuple[list[str], dict[str, int], list[str]]:
     try:
         import yaml  # type: ignore
     except ImportError:
-        return DEFAULT_REPOS, {}
+        return DEFAULT_REPOS, {}, DEFAULT_REPOS
 
     path = ROOT / "policy" / "repos.yaml"
     if not path.exists():
-        return DEFAULT_REPOS, {}
+        return DEFAULT_REPOS, {}, DEFAULT_REPOS
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     profiles: dict[str, dict[str, Any]] = {}
     for profile_path in sorted((ROOT / "policy" / "profiles").glob("*.yaml")):
@@ -221,6 +221,7 @@ def load_policy_scope() -> tuple[list[str], dict[str, int]]:
             profiles[str(profile["profile"])] = profile
 
     repos = []
+    auto_merge_repos = []
     required_approvals: dict[str, int] = {}
     for item in doc.get("repositories", []):
         owner = item.get("owner")
@@ -229,6 +230,8 @@ def load_policy_scope() -> tuple[list[str], dict[str, int]]:
             full = f"{owner}/{name}"
             repos.append(full)
             profile = profiles.get(str(item.get("profile") or ""), {})
+            if profile.get("repository", {}).get("allow_auto_merge") is True:
+                auto_merge_repos.append(full)
             reviews = (
                 profile.get("branch_protection", {})
                 .get("required_pull_request_reviews", {})
@@ -236,16 +239,21 @@ def load_policy_scope() -> tuple[list[str], dict[str, int]]:
             count = int(reviews.get("required_approving_review_count") or 0)
             if count > 0:
                 required_approvals[full] = count
-    return repos or DEFAULT_REPOS, required_approvals
+    return repos or DEFAULT_REPOS, required_approvals, auto_merge_repos
 
 
 def load_policy_repos() -> list[str]:
-    repos, _required_approvals = load_policy_scope()
+    repos, _required_approvals, _auto_merge_repos = load_policy_scope()
     return repos
 
 
+def load_auto_merge_policy_repos() -> list[str]:
+    _repos, _required_approvals, auto_merge_repos = load_policy_scope()
+    return auto_merge_repos
+
+
 def load_policy_review_requirements() -> dict[str, int]:
-    _repos, required_approvals = load_policy_scope()
+    _repos, required_approvals, _auto_merge_repos = load_policy_scope()
     return required_approvals
 
 

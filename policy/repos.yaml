@@ -106,7 +106,7 @@ repositories:
   - owner: jayleekr
     name: jayleekr.github.io
     visibility: public
-    profile: public-product
+    profile: public-site
     lifecycle: site
     default_branch: master
     protected_branch: master

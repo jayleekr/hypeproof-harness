@@ -214,6 +214,15 @@ def test_policy_repos_exclude_release_and_retired_repositories() -> None:
     assert "jayleekr/Claude-Code-Remote" not in repos
 
 
+def test_auto_merge_policy_repos_respect_profile_allow_auto_merge() -> None:
+    module = load_module()
+    repos = module.load_auto_merge_policy_repos()
+
+    assert "jayleekr/hypeproof-harness" in repos
+    assert "jayleekr/sediment" in repos
+    assert "jayleekr/jayleekr.github.io" not in repos
+
+
 def test_automerge_dry_run_targets_review_only_waiting_prs(tmp_path: Path) -> None:
     waiting = pr(labels=["human-needed"], review_decision="REVIEW_REQUIRED")
     waiting["number"] = 39
