@@ -376,6 +376,10 @@ Harness 자체에는 두 가지 workflow를 둔다.
    - `pull_request`: policy 변경 PR에서 affected repo만 audit
    - `schedule`: 매일 전체 repo drift audit
    - `workflow_dispatch`: 수동 전체 점검
+   - live audit workflow는 `HYPEPROOF_GOVERNANCE_TOKEN` secret이 있으면 이를
+     사용하고, 없으면 current repo token으로 public surface만 점검한다.
+   - known pending invitation/plan limitation이 있어도 workflow 자체는 성공시키고
+     JSON artifact와 step summary로 drift를 남긴다.
 
 2. Policy apply
    - `workflow_dispatch` 전용

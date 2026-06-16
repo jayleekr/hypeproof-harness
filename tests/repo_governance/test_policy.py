@@ -90,6 +90,16 @@ def test_apply_dry_run_can_limit_to_collaborators() -> None:
     assert "branch_protection" not in proc.stdout
 
 
+def test_live_governance_workflow_is_scheduled_and_manual() -> None:
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "repo-governance-live.yml").read_text(encoding="utf-8"))
+    triggers = workflow[True]
+    assert "schedule" in triggers
+    assert "workflow_dispatch" in triggers
+    assert workflow["jobs"]["audit"]["env"]["GH_TOKEN"] == "${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN || github.token }}"
+
+
 def test_collaborator_audit_marks_pending_invitation() -> None:
     module = load_audit_module()
     policy = module.load_policy()
