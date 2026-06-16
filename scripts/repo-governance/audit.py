@@ -28,6 +28,15 @@ except ImportError as exc:  # pragma: no cover - exercised in user env, not test
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_DIR = ROOT / "policy"
+PERMISSION_RANK = {
+    "none": 0,
+    "read": 1,
+    "triage": 2,
+    "write": 3,
+    "push": 3,
+    "maintain": 4,
+    "admin": 5,
+}
 
 
 @dataclass(frozen=True)
@@ -164,6 +173,10 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
         collaborator_scope = profile.get("collaborators", {}).get("manage")
         if collaborator_scope not in ("members", "admins"):
             findings.append(_policy_error(profile_name, "collaborators.manage", "members/admins", collaborator_scope))
+        for field in ("admin_permission", "writer_permission"):
+            permission = profile.get("collaborators", {}).get(field)
+            if permission is not None and permission not in PERMISSION_RANK:
+                findings.append(_policy_error(profile_name, f"collaborators.{field}", sorted(PERMISSION_RANK), permission))
 
     return findings
 
@@ -238,24 +251,16 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict
     return findings
 
 
-PERMISSION_RANK = {
-    "none": 0,
-    "read": 1,
-    "triage": 2,
-    "write": 3,
-    "push": 3,
-    "maintain": 4,
-    "admin": 5,
-}
-
-
-def desired_collaborators(members: dict[str, Any], profile: dict[str, Any]) -> dict[str, str]:
+def desired_collaborators(members: dict[str, Any], profile: dict[str, Any], repo: dict[str, Any] | None = None) -> dict[str, str]:
     scope = profile.get("collaborators", {}).get("manage", "members")
+    admin_permission = profile.get("collaborators", {}).get("admin_permission", "admin")
+    writer_permission = profile.get("collaborators", {}).get("writer_permission", "write")
+    owner = (repo or {}).get("owner")
     admins = set(members.get("members", {}).get("admins", []) or [])
     writers = set(members.get("members", {}).get("writers", []) or []) if scope == "members" else set()
-    desired = {login: "admin" for login in admins}
+    desired = {login: ("admin" if login == owner else admin_permission) for login in admins}
     for login in writers - admins:
-        desired[login] = "write"
+        desired[login] = writer_permission
     return desired
 
 
@@ -286,7 +291,7 @@ def _audit_collaborators(
     gh=gh_json,
 ) -> list[Finding]:
     findings: list[Finding] = []
-    desired = desired_collaborators(members, profile)
+    desired = desired_collaborators(members, profile, repo)
     owner = repo.get("owner")
 
     code, collaborators = gh(f"repos/{full}/collaborators")

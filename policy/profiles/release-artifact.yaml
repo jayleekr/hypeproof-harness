@@ -16,6 +16,7 @@ repository:
 
 collaborators:
   manage: admins
+  admin_permission: write
 
 security:
   dependabot_security_updates: enabled

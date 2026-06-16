@@ -62,7 +62,7 @@ def apply_security(full: str, profile: dict, dry_run: bool) -> list[str]:
 def apply_collaborators(full: str, repo: dict, members: dict, profile: dict, dry_run: bool) -> list[str]:
     logs: list[str] = []
     owner = repo.get("owner")
-    for login, permission in sorted(desired_collaborators(members, profile).items()):
+    for login, permission in sorted(desired_collaborators(members, profile, repo).items()):
         if login == owner:
             continue
         logs.extend(apply_call(

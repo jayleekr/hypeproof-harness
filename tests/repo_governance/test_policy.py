@@ -122,7 +122,8 @@ def test_collaborator_audit_marks_insufficient_pending_invitation() -> None:
     module = load_audit_module()
     policy = module.load_policy()
     repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "jayleekr.github.io")
-    profile = policy["profiles"][repo["profile"]]
+    profile = dict(policy["profiles"][repo["profile"]])
+    profile["collaborators"] = dict(profile["collaborators"], admin_permission="admin")
 
     def fake_gh(path: str):
         if path.endswith("/collaborators"):
@@ -139,9 +140,10 @@ def test_collaborator_audit_marks_insufficient_pending_invitation() -> None:
     assert "lower permission" in by_login["JeHyeong2"].message
 
 
-def test_release_artifact_collaborators_are_admin_only() -> None:
+def test_release_artifact_collaborators_are_maintainer_only_for_personal_repos() -> None:
     module = load_audit_module()
     policy = module.load_policy()
+    repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "hypeproof-studio-releases")
     profile = policy["profiles"]["release-artifact"]
-    desired = module.desired_collaborators(policy["members"], profile)
-    assert desired == {"jayleekr": "admin", "JeHyeong2": "admin"}
+    desired = module.desired_collaborators(policy["members"], profile, repo)
+    assert desired == {"jayleekr": "admin", "JeHyeong2": "write"}
