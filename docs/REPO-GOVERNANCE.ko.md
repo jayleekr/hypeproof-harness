@@ -323,6 +323,13 @@ python scripts/repo-governance/apply.py --repo jayleekr/sediment --dry-run
 python scripts/repo-governance/apply.py --repo jayleekr/sediment --apply
 ```
 
+권한/초대 drift만 줄일 때는 다른 설정을 건드리지 않도록 module을 좁힌다.
+
+```bash
+python scripts/repo-governance/apply.py --repo jayleekr/sediment --module collaborators --dry-run
+python scripts/repo-governance/apply.py --repo jayleekr/sediment --module collaborators --apply
+```
+
 파일 변경이 필요한 항목, 예를 들어 CODEOWNERS나 workflow template은 대상 repo에
 직접 push하지 않는다. `--create-pr` 모드에서 PR branch를 만들고 PR을 연다.
 

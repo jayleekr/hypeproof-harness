@@ -82,6 +82,14 @@ def test_apply_dry_run_uses_repo_protected_branch_override() -> None:
     assert "repos/jayleekr/jayleekr.github.io/branches/master/protection" in proc.stdout
 
 
+def test_apply_dry_run_can_limit_to_collaborators() -> None:
+    proc = run_cmd(str(APPLY), "--repo", "sediment", "--module", "collaborators", "--dry-run")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "DRY jayleekr/sediment collaborators PUT repos/jayleekr/sediment/collaborators/TJ-kr" in proc.stdout
+    assert "repo_settings" not in proc.stdout
+    assert "branch_protection" not in proc.stdout
+
+
 def test_collaborator_audit_marks_pending_invitation() -> None:
     module = load_audit_module()
     policy = module.load_policy()
