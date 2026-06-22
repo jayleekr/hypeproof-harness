@@ -1,0 +1,16 @@
+version: 1
+profile: retired-repository
+
+repository:
+  archived: true
+  features:
+    issues: false
+    wiki: false
+    projects: false
+
+collaborators:
+  manage: owner
+  admin_permission: write
+
+actions:
+  enabled: false

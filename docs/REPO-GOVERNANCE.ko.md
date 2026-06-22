@@ -121,10 +121,20 @@ repositories:
   - name: hypeprooflab
     owner: jayleekr
     visibility: private
+    target_visibility: public
     profile: content-vault
     lifecycle: product
     default_branch: main
     products: [lab, vault]
+    public_readiness:
+      blocked_by:
+        - issue: jayleekr/hypeprooflab#96
+          reason: exposed Google OAuth credential rotation and history purge verification
+        - issue: jayleekr/hypeprooflab#100
+          reason: tracked content PII/email sweep
+      verifier:
+        pr: jayleekr/hypeprooflab#120
+        workflow: OAuth purge verification
     required_secrets:
       actions:
         - VERCEL_TOKEN
@@ -137,6 +147,14 @@ repositories:
     profile: harness-core
     lifecycle: governance
     default_branch: main
+
+  - name: jayleekr.github.io
+    owner: jayleekr
+    visibility: public
+    profile: public-product
+    lifecycle: site
+    default_branch: master
+    protected_branch: master
 ```
 
 `policy/members.yaml`은 사람과 역할을 분리한다.
@@ -172,10 +190,11 @@ Profile은 repo 유형별 기본 정책이다. 각 repo는 하나의 profile을 
 | Profile | 대상 | 핵심 정책 |
 | --- | --- | --- |
 | `harness-core` | `hypeproof-harness` | 가장 엄격. 2 approvals, CODEOWNERS required, admins enforced, direct push 금지 |
-| `public-product` | `hypeproof-studio`, `sediment` | public 유지, 외부 PR 허용, main은 PR/CI/review로만 유입, Actions read-only |
+| `public-product` | `hypeproof-studio`, `sediment`, public tool/site repo | public 유지, 외부 PR 허용, main은 PR/CI/review로만 유입, Actions read-only |
 | `private-product` | private 제품 repo | 멤버만 접근, main PR 강제, 가능한 경우 branch protection 적용 |
-| `content-vault` | `hypeprooflab` | private 유지, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
-| `release-artifact` | release mirror/artifact repo | 사람 개발 금지, CI bot만 release/tag 생성, issues/wiki/projects off |
+| `content-vault` | `hypeprooflab` | public 전환 전까지 임시 private, 콘텐츠 ingest secret 보호, vault 변경 workflow 제한 |
+| `release-artifact` | release mirror/artifact repo | 사람 개발 금지, admin만 직접 collaborator, CI bot만 release/tag 생성, issues/wiki/projects off |
+| `retired-repository` | 더 이상 쓰지 않는 repo | archived 유지, issues/wiki/projects off, Actions off, 삭제 이슈로 추적 |
 
 예시:
 
@@ -187,11 +206,15 @@ profile: public-product
 repository:
   allow_forking: true
   delete_branch_on_merge: true
-  allow_auto_merge: false
+  allow_auto_merge: true
   merge_methods:
     squash: true
     merge_commit: false
     rebase: false
+
+collaborators:
+  manage: members
+  admin_permission: write
 
 security:
   dependabot_security_updates: enabled
@@ -232,7 +255,7 @@ Audit/apply 엔진은 작은 module로 나뉜다.
 | Module | Audit | Apply |
 | --- | --- | --- |
 | `repo_settings` | visibility, merge method, fork, delete branch on merge | 가능 |
-| `collaborators` | direct collaborator와 권한 | 가능 |
+| `collaborators` | direct collaborator, pending invitation, 권한 | 가능 |
 | `branch_protection` | main 보호, review, status checks | 가능, 플랜 미지원은 unsupported |
 | `rulesets` | org/repo ruleset | 가능, 플랜 미지원은 unsupported |
 | `actions` | token permission, fork approval, allowed actions | 가능 |
@@ -242,6 +265,45 @@ Audit/apply 엔진은 작은 module로 나뉜다.
 | `secrets` | required secret 이름 존재 여부 | audit only |
 | `environments` | production deploy environment와 reviewer | 가능 |
 | `labels` | 표준 labels | 가능 |
+
+## Public Readiness Holds
+
+운영 기조는 public repo + member-only contribution이다. 다만 이미 노출된 secret,
+PII, 법무/계약 문서처럼 public 전환 자체가 위험을 키우는 경우에는 `visibility`를
+현재 안전 상태로 두고 `target_visibility`에 최종 상태를 적는다.
+
+`visibility`와 `target_visibility`가 다르면 repo에는 반드시 다음이 있어야 한다.
+
+- `public_readiness.blocked_by`: public 전환을 막는 issue와 이유
+- 만료일이 있는 임시 exception
+- 가능하면 public 전환을 증명할 verifier PR/workflow
+
+예: `hypeprooflab`은 최종 목표가 `public`이지만, #96의 OAuth credential
+rotation/history purge와 #100의 PII sweep이 끝나기 전까지는 private로 유지한다.
+이 상태는 policy drift가 아니라 명시적인 security hold이며, exception 만료 전
+재검토해야 한다.
+
+## Collaborator Policy
+
+`policy/members.yaml`의 admins/writers가 contributor 권한의 원천이다.
+profile은 이 목록을 어떻게 repo에 적용할지 정한다.
+
+- `collaborators.manage: members`: admins와 writers를 모두 직접 collaborator로 관리
+- `collaborators.manage: admins`: admins만 직접 collaborator로 관리; release-artifact repo에 사용
+- `collaborators.admin_permission`: owner가 아닌 admin 멤버에게 줄 실제 repo 권한
+
+live audit은 실제 collaborator와 pending invitation을 분리해서 표시한다.
+초대가 pending인 사용자는 아직 공식 reviewer request 대상이 될 수 없으므로
+`collaborators` module에서 high finding으로 남긴다. pending invitation의 권한이
+policy보다 낮으면 apply로 다시 초대/권한 보정을 시도할 수 있다. 권한이 맞는
+pending invitation은 API로 강제로 해소할 수 없고, 사용자가 GitHub 초대를
+수락해야 사라진다.
+
+현재 repo들은 개인 계정(`jayleekr`) 소유이므로 owner 외 collaborator에게
+admin 권한을 보장할 수 없다. GitHub REST API의 collaborator `permission`
+파라미터도 organization-owned repository에서 유효한 값으로 설명되어 있다.
+따라서 지금은 `admin_permission: write`로 두고, GitHub Organization으로
+이전하면 `admin_permission: admin` 또는 team/ruleset 기반 관리로 바꾼다.
 
 ## Scripts
 
@@ -268,6 +330,13 @@ API로 가능한 설정을 반영한다. 기본은 dry-run이다.
 ```bash
 python scripts/repo-governance/apply.py --repo jayleekr/sediment --dry-run
 python scripts/repo-governance/apply.py --repo jayleekr/sediment --apply
+```
+
+권한/초대 drift만 줄일 때는 다른 설정을 건드리지 않도록 module을 좁힌다.
+
+```bash
+python scripts/repo-governance/apply.py --repo jayleekr/sediment --module collaborators --dry-run
+python scripts/repo-governance/apply.py --repo jayleekr/sediment --module collaborators --apply
 ```
 
 파일 변경이 필요한 항목, 예를 들어 CODEOWNERS나 workflow template은 대상 repo에
@@ -308,6 +377,10 @@ Harness 자체에는 두 가지 workflow를 둔다.
    - `pull_request`: policy 변경 PR에서 affected repo만 audit
    - `schedule`: 매일 전체 repo drift audit
    - `workflow_dispatch`: 수동 전체 점검
+   - live audit workflow는 `HYPEPROOF_GOVERNANCE_TOKEN` secret이 있으면 이를
+     사용하고, 없으면 current repo token으로 public surface만 점검한다.
+   - known pending invitation/plan limitation이 있어도 workflow 자체는 성공시키고
+     JSON artifact와 step summary로 drift를 남긴다.
 
 2. Policy apply
    - `workflow_dispatch` 전용
@@ -380,6 +453,34 @@ Release repo는 개발 repo가 아니다.
 - release/tag 생성은 source repo의 release workflow 또는 bot token만 허용한다.
 - release asset은 immutable로 취급한다. 교체가 필요하면 새 tag를 만든다.
 
+## Retired Repo 기준
+
+쓰지 않는 repo는 삭제가 최종 상태다. 다만 GitHub repository 삭제에는 일반
+`repo` scope만으로는 부족하고 `delete_repo` OAuth scope가 필요하므로, 삭제가
+바로 되지 않으면 harness inventory에 `lifecycle: retired`로 남긴다.
+
+Retired repo는 다음 상태를 목표로 한다.
+
+- `profile: retired-repository`
+- `archived: true`
+- issues, projects, wiki off
+- Actions off
+- collaborator 관리는 owner만 기대하고, 팀 전체 contributor 권한은 강제하지 않음
+- `retirement.issue`에 삭제 추적 이슈를 남김
+- `retirement.delete_when`에 삭제 가능 조건과 검증 명령을 남김
+
+삭제 절차:
+
+```bash
+gh auth refresh -h github.com -s delete_repo
+gh repo delete jayleekr/<repo> --yes
+gh repo view jayleekr/<repo>
+```
+
+마지막 명령이 not found를 반환하면 inventory에서 retired repo 항목을 제거하는
+PR을 열고 삭제 추적 이슈를 닫는다. 삭제 전까지는 archived 상태와 feature off가
+유지되는지 `repo-governance` audit가 drift로 확인한다.
+
 ## Drift Report 형식
 
 Audit 결과는 사람이 읽는 표와 machine-readable JSON을 모두 낸다.
@@ -429,7 +530,8 @@ Severity 기준:
 | `jayleekr/hypeproof-harness` | public | `harness-core` | secret scanning/push protection on, admins enforce |
 | `jayleekr/hypeproof-studio` | public | `public-product` | main protection 추가, Claude Solver collaborator-only |
 | `jayleekr/sediment` | public | `public-product` | required checks와 review count 적용 |
-| `jayleekr/hypeprooflab` | private | `content-vault` | Pro/Team 전까지 unsupported drift로 추적 |
+| `jayleekr/hypeprooflab` | private -> public target | `content-vault` | #96 OAuth purge, #100 PII sweep 완료 전까지 security hold |
+| `jayleekr/jayleekr.github.io` | public | `public-product` | collaborator-only contribution, PR CI 추가 |
 
 이 구조를 쓰면 repo가 늘어나도 새 정책을 복사하지 않는다. repo는 inventory에
 추가되고, profile은 재사용되며, 예외만 명시적으로 기록된다.

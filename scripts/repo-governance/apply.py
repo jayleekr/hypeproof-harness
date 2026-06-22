@@ -11,7 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "repo-governance"))
-from audit import load_policy, repo_full_name, validate_policy  # noqa: E402
+from audit import desired_collaborators, load_policy, repo_full_name, validate_policy  # noqa: E402
+
+
+MODULES = ("repo_settings", "collaborators", "security", "actions", "branch_protection")
 
 
 def gh_api(path: str, *, method: str = "GET", body: dict | None = None) -> tuple[int, str]:
@@ -44,6 +47,8 @@ def apply_repo_settings(full: str, profile: dict, repo: dict, dry_run: bool) -> 
         body["has_wiki"] = features["wiki"]
     if "projects" in features:
         body["has_projects"] = features["projects"]
+    if "archived" in repository:
+        body["archived"] = repository["archived"]
     body = {k: v for k, v in body.items() if v is not None}
     return apply_call(full, "repo_settings", f"repos/{full}", "PATCH", body, dry_run)
 
@@ -54,6 +59,24 @@ def apply_security(full: str, profile: dict, dry_run: bool) -> list[str]:
         return []
     body = {"security_and_analysis": {key: {"status": value} for key, value in desired.items()}}
     return apply_call(full, "security", f"repos/{full}", "PATCH", body, dry_run, soft=True)
+
+
+def apply_collaborators(full: str, repo: dict, members: dict, profile: dict, dry_run: bool) -> list[str]:
+    logs: list[str] = []
+    owner = repo.get("owner")
+    for login, permission in sorted(desired_collaborators(members, profile, repo).items()):
+        if login == owner:
+            continue
+        logs.extend(apply_call(
+            full,
+            "collaborators",
+            f"repos/{full}/collaborators/{login}",
+            "PUT",
+            {"permission": permission},
+            dry_run,
+            soft=True,
+        ))
+    return logs
 
 
 def apply_actions(full: str, repo: dict, profile: dict, dry_run: bool) -> list[str]:
@@ -94,7 +117,7 @@ def apply_branch_protection(full: str, repo: dict, profile: dict, dry_run: bool)
     desired = profile.get("branch_protection", {})
     if not desired:
         return []
-    branch = desired.get("branch", repo.get("default_branch", "main"))
+    branch = repo.get("protected_branch") or desired.get("branch") or repo.get("default_branch", "main")
     reviews = desired.get("required_pull_request_reviews", {})
     checks = repo.get("required_status_checks", [])
     body = {
@@ -144,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", help="owner/name or repo name from policy")
     parser.add_argument("--all", action="store_true", help="apply every repo")
+    parser.add_argument("--module", choices=MODULES, action="append", help="limit apply to one module. Can repeat.")
     parser.add_argument("--dry-run", action="store_true", help="print planned API calls")
     parser.add_argument("--apply", action="store_true", help="mutate GitHub settings")
     args = parser.parse_args(argv)
@@ -169,13 +193,20 @@ def main(argv: list[str] | None = None) -> int:
 
     logs: list[str] = []
     dry_run = args.dry_run
+    modules = set(args.module or MODULES)
     for repo in selected:
         full = repo_full_name(repo)
         profile = policy["profiles"][repo["profile"]]
-        logs.extend(apply_repo_settings(full, profile, repo, dry_run))
-        logs.extend(apply_security(full, profile, dry_run))
-        logs.extend(apply_actions(full, repo, profile, dry_run))
-        logs.extend(apply_branch_protection(full, repo, profile, dry_run))
+        if "repo_settings" in modules:
+            logs.extend(apply_repo_settings(full, profile, repo, dry_run))
+        if "collaborators" in modules:
+            logs.extend(apply_collaborators(full, repo, policy["members"], profile, dry_run))
+        if "security" in modules:
+            logs.extend(apply_security(full, profile, dry_run))
+        if "actions" in modules:
+            logs.extend(apply_actions(full, repo, profile, dry_run))
+        if "branch_protection" in modules:
+            logs.extend(apply_branch_protection(full, repo, profile, dry_run))
     print("\n".join(logs))
     return 0
 

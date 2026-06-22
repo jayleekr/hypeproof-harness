@@ -4,11 +4,15 @@ profile: harness-core
 repository:
   allow_forking: true
   delete_branch_on_merge: true
-  allow_auto_merge: false
+  allow_auto_merge: true
   merge_methods:
     squash: true
     merge_commit: false
     rebase: false
+
+collaborators:
+  manage: members
+  admin_permission: write
 
 security:
   dependabot_security_updates: enabled

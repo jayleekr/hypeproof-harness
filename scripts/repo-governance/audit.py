@@ -28,6 +28,15 @@ except ImportError as exc:  # pragma: no cover - exercised in user env, not test
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_DIR = ROOT / "policy"
+PERMISSION_RANK = {
+    "none": 0,
+    "read": 1,
+    "triage": 2,
+    "write": 3,
+    "push": 3,
+    "maintain": 4,
+    "admin": 5,
+}
 
 
 @dataclass(frozen=True)
@@ -103,8 +112,29 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
             findings.append(_policy_error(full, "profile", f"one of {sorted(profiles)}", profile_name))
 
         visibility = repo.get("visibility")
-        if visibility not in ("public", "private", "internal"):
+        valid_visibilities = ("public", "private", "internal")
+        if visibility not in valid_visibilities:
             findings.append(_policy_error(full, "visibility", "public/private/internal", visibility))
+
+        target_visibility = repo.get("target_visibility")
+        if target_visibility is not None:
+            if target_visibility not in valid_visibilities:
+                findings.append(_policy_error(full, "target_visibility", "public/private/internal", target_visibility))
+            if target_visibility != visibility:
+                readiness = repo.get("public_readiness") or {}
+                blockers = readiness.get("blocked_by") or []
+                has_temporary_exception = any(
+                    exc.get("id") == "temporary-private-until-oauth-purge"
+                    for exc in repo.get("exceptions", []) or []
+                )
+                if not blockers:
+                    findings.append(_policy_error(full, "public_readiness.blocked_by", "present when target_visibility differs", blockers))
+                for index, blocker in enumerate(blockers):
+                    missing = [key for key in ("issue", "reason") if not blocker.get(key)]
+                    if missing:
+                        findings.append(_policy_error(full, f"public_readiness.blocked_by[{index}]", "issue/reason", missing))
+                if not has_temporary_exception:
+                    findings.append(_policy_error(full, "exceptions", "temporary-private-until-oauth-purge", None))
 
         checks = repo.get("required_status_checks", [])
         if checks is not None and not isinstance(checks, list):
@@ -132,6 +162,16 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
                     message="Expired policy exception",
                 ))
 
+        if repo.get("lifecycle") == "retired":
+            if profile_name != "retired-repository":
+                findings.append(_policy_error(full, "profile", "retired-repository for retired lifecycle", profile_name))
+            retirement = repo.get("retirement") or {}
+            missing = [key for key in ("issue", "reason", "delete_when") if not retirement.get(key)]
+            if missing:
+                findings.append(_policy_error(full, "retirement", "issue/reason/delete_when", missing))
+            if retirement.get("delete_when") is not None and not isinstance(retirement.get("delete_when"), list):
+                findings.append(_policy_error(full, "retirement.delete_when", "list", type(retirement.get("delete_when")).__name__))
+
     for profile_name, profile in profiles.items():
         if profile.get("version") != 1:
             findings.append(_policy_error(profile_name, "profile.version", 1, profile.get("version")))
@@ -140,6 +180,13 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
         for section in ("repository", "actions"):
             if section not in profile:
                 findings.append(_policy_error(profile_name, section, "present", None))
+        collaborator_scope = profile.get("collaborators", {}).get("manage")
+        if collaborator_scope not in ("members", "admins", "owner"):
+            findings.append(_policy_error(profile_name, "collaborators.manage", "members/admins/owner", collaborator_scope))
+        for field in ("admin_permission", "writer_permission"):
+            permission = profile.get("collaborators", {}).get(field)
+            if permission is not None and permission not in PERMISSION_RANK:
+                findings.append(_policy_error(profile_name, f"collaborators.{field}", sorted(PERMISSION_RANK), permission))
 
     return findings
 
@@ -175,7 +222,7 @@ def gh_json(path: str) -> tuple[int, Any]:
     return proc.returncode, data
 
 
-def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any]) -> list[Finding]:
+def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict[str, Any]) -> list[Finding]:
     full = repo_full_name(repo)
     findings: list[Finding] = []
 
@@ -183,17 +230,28 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any]) -> list[Findi
     if code != 0:
         return [Finding(full, "github", "critical", "repo", "reachable", meta, False)]
 
+    repository_policy = profile.get("repository", {})
     compare_map = {
         "visibility": repo.get("visibility"),
         "default_branch": repo.get("default_branch"),
-        "allow_forking": profile.get("repository", {}).get("allow_forking"),
-        "allow_auto_merge": profile.get("repository", {}).get("allow_auto_merge"),
-        "delete_branch_on_merge": profile.get("repository", {}).get("delete_branch_on_merge"),
+        "archived": repository_policy.get("archived"),
+        "allow_forking": repository_policy.get("allow_forking"),
+        "allow_auto_merge": repository_policy.get("allow_auto_merge"),
+        "delete_branch_on_merge": repository_policy.get("delete_branch_on_merge"),
     }
-    merge_methods = profile.get("repository", {}).get("merge_methods", {})
+    merge_methods = repository_policy.get("merge_methods", {})
     compare_map["allow_squash_merge"] = merge_methods.get("squash")
     compare_map["allow_merge_commit"] = merge_methods.get("merge_commit")
     compare_map["allow_rebase_merge"] = merge_methods.get("rebase")
+    features = repository_policy.get("features", {})
+    feature_fields = {
+        "issues": "has_issues",
+        "wiki": "has_wiki",
+        "projects": "has_projects",
+    }
+    for policy_field, api_field in feature_fields.items():
+        if policy_field in features:
+            compare_map[api_field] = features[policy_field]
     for field, expected in compare_map.items():
         if expected is not None and meta.get(field) != expected:
             findings.append(Finding(
@@ -208,8 +266,115 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any]) -> list[Findi
             ))
 
     findings.extend(_audit_security(full, meta, profile))
+    findings.extend(_audit_collaborators(full, repo, members, profile, gh_json))
     findings.extend(_audit_actions(full, repo, profile))
     findings.extend(_audit_branch(full, repo, profile))
+    return findings
+
+
+def desired_collaborators(members: dict[str, Any], profile: dict[str, Any], repo: dict[str, Any] | None = None) -> dict[str, str]:
+    scope = profile.get("collaborators", {}).get("manage", "members")
+    admin_permission = profile.get("collaborators", {}).get("admin_permission", "admin")
+    writer_permission = profile.get("collaborators", {}).get("writer_permission", "write")
+    owner = (repo or {}).get("owner")
+    if scope == "owner":
+        return {owner: "admin"} if owner else {}
+    admins = set(members.get("members", {}).get("admins", []) or [])
+    writers = set(members.get("members", {}).get("writers", []) or []) if scope == "members" else set()
+    desired = {login: ("admin" if login == owner else admin_permission) for login in admins}
+    for login in writers - admins:
+        desired[login] = writer_permission
+    return desired
+
+
+def _permission_from_collaborator(item: dict[str, Any]) -> str:
+    perms = item.get("permissions") or {}
+    if perms.get("admin"):
+        return "admin"
+    if perms.get("maintain"):
+        return "maintain"
+    if perms.get("push"):
+        return "write"
+    if perms.get("triage"):
+        return "triage"
+    if perms.get("pull"):
+        return "read"
+    return "none"
+
+
+def _permission_satisfies(actual: str | None, expected: str) -> bool:
+    return PERMISSION_RANK.get(actual or "none", 0) >= PERMISSION_RANK[expected]
+
+
+def _audit_collaborators(
+    full: str,
+    repo: dict[str, Any],
+    members: dict[str, Any],
+    profile: dict[str, Any],
+    gh=gh_json,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    desired = desired_collaborators(members, profile, repo)
+    owner = repo.get("owner")
+
+    code, collaborators = gh(f"repos/{full}/collaborators")
+    if code != 0:
+        return [Finding(full, "collaborators", "high", "collaborators", "readable", collaborators, False)]
+
+    actual = {owner: "admin"} if owner else {}
+    for item in collaborators or []:
+        login = (item.get("login") or "").strip()
+        if login:
+            actual[login] = _permission_from_collaborator(item)
+
+    code, invitations = gh(f"repos/{full}/invitations")
+    pending: dict[str, str] = {}
+    if code == 0:
+        for item in invitations or []:
+            invitee = item.get("invitee") or {}
+            login = (invitee.get("login") or "").strip()
+            permission = item.get("permissions") or item.get("permission") or "write"
+            if login:
+                pending[login] = permission
+
+    for login, expected in sorted(desired.items()):
+        current = actual.get(login)
+        if _permission_satisfies(current, expected):
+            continue
+        invited = pending.get(login)
+        if invited and _permission_satisfies(invited, expected):
+            findings.append(Finding(
+                full,
+                "collaborators",
+                "high",
+                login,
+                expected,
+                f"pending:{invited}",
+                apply_supported=False,
+                message="Invitation is pending; official reviewer requests may fail until the member accepts it",
+            ))
+            continue
+        if invited:
+            findings.append(Finding(
+                full,
+                "collaborators",
+                "high",
+                login,
+                expected,
+                f"pending:{invited}",
+                apply_supported=True,
+                message="Pending invitation has lower permission than policy requires",
+            ))
+            continue
+        findings.append(Finding(
+            full,
+            "collaborators",
+            "high",
+            login,
+            expected,
+            current or "missing",
+            apply_supported=True,
+        ))
     return findings
 
 
@@ -263,7 +428,7 @@ def _audit_branch(full: str, repo: dict[str, Any], profile: dict[str, Any]) -> l
     if not desired:
         return findings
 
-    branch = desired.get("branch", repo.get("default_branch", "main"))
+    branch = repo.get("protected_branch") or desired.get("branch") or repo.get("default_branch", "main")
     code, branch_meta = gh_json(f"repos/{full}/branches/{branch}")
     if code != 0:
         return [Finding(full, "branch_protection", "high", branch, "reachable", branch_meta, False)]
@@ -363,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                 selected.append(repo)
         for repo in selected:
             profile = policy["profiles"][repo["profile"]]
-            findings.extend(live_audit_repo(repo, profile))
+            findings.extend(live_audit_repo(repo, profile, policy["members"]))
 
     status = "pass" if not findings else "drift"
     if args.json:
