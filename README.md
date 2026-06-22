@@ -36,7 +36,8 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
 | `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
-| `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V11) | (maintainer) |
+| `scripts/register-skills.sh` | harness-local `.claude/skills/<name>` 심링크 생성/검증 (`--check`) | (harness-local) |
+| `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V12) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
 
 **Not shared here**: studio-only 규칙(`branding-swap`, `build-pipeline`,
@@ -86,6 +87,16 @@ bash scripts/sync.sh --check          # drift 미리보기 (read-only)
 bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 
 # 3. 각 consumer push (또는 PR — harness 변경은 피어리뷰 권장)
+```
+
+**새 스킬을 추가할 때** — `skills/<name>/`만 만들면 harness repo에서 `/<name>`이
+잡히지 않는다. `.claude/skills/<name>` 등록 심링크가 필요한데, 손으로 만들지 말고
+생성기를 돌린다(이 단계 누락이 #28에서 발생).
+
+```bash
+scripts/register-skills.sh            # 모든 skills/<name>의 심링크 생성/교정
+scripts/register-skills.sh --check    # read-only 검증 (CI lint 잡 + T-V12가 강제)
+git config core.hooksPath .githooks   # (선택) 커밋 전 자동 검사 훅 활성화
 ```
 
 **Guardrails**
