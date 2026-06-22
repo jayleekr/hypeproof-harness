@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +55,33 @@ def apply_security(full: str, profile: dict, dry_run: bool) -> list[str]:
         return []
     body = {"security_and_analysis": {key: {"status": value} for key, value in desired.items()}}
     return apply_call(full, "security", f"repos/{full}", "PATCH", body, dry_run, soft=True)
+
+
+def apply_labels(full: str, profile: dict, dry_run: bool) -> list[str]:
+    desired = profile.get("labels", {})
+    if not desired:
+        return []
+
+    logs: list[str] = []
+    for name, label in desired.items():
+        body = {
+            "name": name,
+            "color": label.get("color"),
+            "description": label.get("description") or "",
+        }
+        body = {k: v for k, v in body.items() if v is not None}
+        if dry_run:
+            logs.append(f"DRY {full} labels UPSERT {name} {json.dumps(body, ensure_ascii=False, sort_keys=True)}")
+            continue
+
+        encoded = quote(name, safe="")
+        code, _ = gh_api(f"repos/{full}/labels/{encoded}")
+        if code == 0:
+            update_body = {"new_name": name, **body}
+            logs.extend(apply_call(full, "labels", f"repos/{full}/labels/{encoded}", "PATCH", update_body, dry_run))
+        else:
+            logs.extend(apply_call(full, "labels", f"repos/{full}/labels", "POST", body, dry_run))
+    return logs
 
 
 def apply_actions(full: str, repo: dict, profile: dict, dry_run: bool) -> list[str]:
@@ -174,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         profile = policy["profiles"][repo["profile"]]
         logs.extend(apply_repo_settings(full, profile, repo, dry_run))
         logs.extend(apply_security(full, profile, dry_run))
+        logs.extend(apply_labels(full, profile, dry_run))
         logs.extend(apply_actions(full, repo, profile, dry_run))
         logs.extend(apply_branch_protection(full, repo, profile, dry_run))
     print("\n".join(logs))
