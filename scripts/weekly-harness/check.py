@@ -45,6 +45,12 @@ CYCLE_RE = re.compile(r"^weekly-(\d{4})-(\d{2})-(\d{2})$")
 ETA_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\*\*)?ETA(?:\*\*)?\s*[:：]\s*(\S+)", re.IGNORECASE | re.MULTILINE
 )
+# '## ETA' heading with the date on the first non-empty line below it
+# (e.g. issues filed before the inline 'ETA:' template existed)
+ETA_HEADING_RE = re.compile(
+    r"^\s*#{1,6}\s+(?:\*\*)?ETA(?:\*\*)?\s*$\n+\s*(?:\*\*)?(\S+)",
+    re.IGNORECASE | re.MULTILINE,
+)
 OWNER_RE = re.compile(
     r"^\s*(?:#{1,6}\s+(?:\*\*)?(?:Owner|담당자?)(?:\*\*)?\s*$"  # '## Owner' / '## 담당' heading
     r"|(?:[-*]\s*)?(?:\*\*)?(?:Owner|담당자?)(?:\*\*)?\s*[:：])",
@@ -86,7 +92,7 @@ def check_issue(body: str, cycle_date: dt.date) -> list[str]:
     violations: list[str] = []
     body = body or ""
 
-    m = ETA_RE.search(body)
+    m = ETA_RE.search(body) or ETA_HEADING_RE.search(body)
     if not m:
         violations.append("missing 'ETA:' line")
     else:

@@ -83,6 +83,14 @@ def test_check_accepts_bold_eta_value(tmp_path: Path) -> None:
     assert "unparseable" not in proc.stdout
 
 
+def test_check_accepts_eta_heading_with_date_on_next_line(tmp_path: Path) -> None:
+    # issues filed before the inline 'ETA:' template existed (2026-07-14 fanout)
+    body = "## Owner\nJay (이재원)\n\n## ETA\n2026-07-17 — 두 파이프라인 재기동 완료\n"
+    fx = fixture(tmp_path, [{"number": 7, "title": "Heading-style ETA", "body": body}])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 def test_check_rejects_heading_that_merely_contains_owner(tmp_path: Path) -> None:
     body = "## Ownership review\n\nnobody in particular\n\nETA: 2026-07-20\n"
     fx = fixture(tmp_path, [{"number": 7, "title": "Fake owner heading", "body": body}])
