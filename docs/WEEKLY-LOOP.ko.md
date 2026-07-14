@@ -1,0 +1,199 @@
+# HypeProof 주간 운영 루프
+
+> 이 문서는 HypeProof Lab이 매주 도는 운영 루프의 canonical 정의다.
+> 회의가 이슈가 되고, 이슈가 산출물이 되고, 산출물이 다음 회의의 입력이 되는
+> 흐름 전체를 다룬다. *"이번 주 루프 돌려줘"* 라고 에이전트에게 말하면 각
+> 단계가 실제 명령으로 실행된다.
+
+> **출처(provenance)**: `jayleekr/hypeproof-harness:docs/WEEKLY-LOOP.ko.md`
+> 의 vendored 사본. 직접 수정하지 말 것 — 변경은 harness에서 PR로.
+
+---
+
+## 1. 루프 한 바퀴
+
+```
+월요일 주간회의 ─→ 자동 회의록 ─→ (다음날) AI 분해 ─→ GitHub 이슈
+     ▲                                                    │
+     │                                              Context/Tasks/
+     │                                              Owner/ETA 포함
+     │                                                    │
+번다운 리뷰로 ←─ Sediment ingest ←─ 산출물 ←─ 주중 실행 ←─┘
+다음 회의 시작    + members 포털              (사람 + 자율주행 루프)
+```
+
+| 시점 | 무엇 | 누가/무엇이 |
+|---|---|---|
+| 월요일 | 주간회의 — 지난 cycle 이슈 번다운 리뷰로 시작 | 전원 |
+| 월요일 | 회의록 자동 생성 (Discord 핀 / 녹취) | 자동화 |
+| 화요일 | 회의록 → 액션 아이템 분해 → repo별 이슈 발행 | AI (`/weekly-loop`) |
+| 주중 | 이슈 실행 — 사람은 방향, AI는 실행 | 멤버 + 자율주행 루프 |
+| 주중 | 산출물 → members 포털 게시 + Sediment ingest | 멤버 + 자동화 |
+| 일요일~월요일 | pre-meeting 번다운 리포트 생성 → 회의 아젠다에 붙임 | `burndown.py` |
+
+cycle의 이름은 **다음 회의 날짜**다. 라벨 `weekly-YYYY-MM-DD`가 그 cycle의
+모든 이슈에 붙는다. 예: 7/14(월) 회의에서 나온 이슈들은 다음 회의인
+`weekly-2026-07-21` 라벨을 단다 — "이 날짜 전까지 끝낼 일"이라는 뜻이다.
+
+---
+
+## 2. 원칙 — 이 6개가 루프의 전부다
+
+1. **Issue-first — 기록되지 않은 일은 없는 일.** 회의에서 나온 액션이
+   이슈가 안 됐으면 그 일은 존재하지 않는다. 구두 합의, Discord 스레드,
+   개인 메모는 실행 단위가 아니다. 이슈만이 실행 단위다.
+2. **ETA rule — 모든 이슈는 다음 회의 전 ETA를 가진다.** ETA가 다음 월요일을
+   넘는 큰 작업은 그대로 두지 말고 **월요일까지의 1차 산출물**로 분할한다.
+   "다음 주에 중간 결과를 보여줄 수 있는 단위"가 이슈의 최대 크기다.
+3. **사람은 방향, AI는 실행.** 이슈의 Context와 판단은 사람이 쓰고, 반복
+   실행·조사·초안은 자율주행 루프(에이전트)에 위임한다. `human-needed`
+   라벨이 없는 이슈는 AI가 먼저 시도해도 된다 (§MEMBER-GUIDE 4.1).
+4. **모든 산출물은 Sediment에 증거로 축적한다.** 실행이 끝나면 결과물이
+   Sediment에 ingest돼야 완료다. 한 일이 증거로 남지 않으면 다음 주에
+   같은 조사를 반복하게 된다.
+5. **문서 single source — members 포털 + harness canonical.** 프로세스
+   문서는 harness가 원천이고, 멤버가 읽는 곳은 members 포털과 vendored
+   사본이다. 같은 내용을 두 군데에 따로 쓰지 않는다.
+6. **루프 자체도 harness로 검증한다.** "이슈에 ETA가 다 있는가"를 사람이
+   눈으로 세지 않는다. `scripts/weekly-harness/check.py`가 기계적으로
+   검증하고, 위반이 있으면 non-zero로 실패한다.
+
+---
+
+## 3. 이슈는 어느 repo로 가나
+
+| 액션 아이템 성격 | Repo |
+|---|---|
+| 공개 사이트 · 콘텐츠 · 운영 · 멤버/커뮤니티 | **`hypeprooflab`** |
+| Studio 제품 (VSCodium fork · 워크숍 도구 · Worker) | **`hypeproof-studio`** |
+| 지식 DB · ingest · SaaS 백엔드/프론트 | **`sediment`** |
+| 공유 규약 · 스킬 · 프로세스 자체의 변경 | `hypeproof-harness` (PR로) |
+
+애매하면 **산출물이 최종적으로 사는 repo**를 고른다. 여러 repo에 걸치면
+repo별로 이슈를 쪼갠다 — 하나의 이슈는 하나의 repo에서 닫혀야 한다.
+
+---
+
+## 4. 이슈 형식 — Context / Tasks / Owner / ETA
+
+모든 cycle 이슈의 본문은 이 4개 섹션을 가진다. `check.py`가 이 형식을
+검증한다.
+
+```markdown
+## Context
+
+왜 이 일이 나왔나 — 회의록의 해당 대목 요약 + 링크. AI가 이어받아도
+맥락을 다시 묻지 않을 만큼.
+
+## Tasks
+
+- [ ] 구체 작업 1
+- [ ] 구체 작업 2
+
+## Owner
+
+담당: @github-id
+
+## ETA
+
+ETA: 2026-07-21
+```
+
+- **ETA는 `ETA: YYYY-MM-DD` 형식의 라인**이어야 하고, cycle 라벨의 날짜
+  (다음 월요일) **이하**여야 한다.
+- **Owner는 `Owner` 또는 `담당` 섹션/라인**으로 명시한다. assignee 지정도
+  같이 하되, 본문에 남기는 게 기준이다 (assignee는 옮겨질 수 있다).
+- 라벨: `weekly-YYYY-MM-DD` (다음 회의 날짜) 필수. 없으면 그 이슈는 이번
+  cycle의 번다운에 잡히지 않는다 — 원칙 1 위반과 같다.
+
+---
+
+## 5. 화요일 — AI 분해
+
+Claude Code에서:
+
+```text
+/weekly-loop meeting-notes/2026-07-14.md
+```
+
+스킬이 회의록에서 액션 아이템을 뽑고, repo를 배정하고, §4 형식의 이슈
+초안을 만들고, 기존 open 이슈와 중복을 걸러낸 뒤, cycle 라벨을 만들어
+(없으면 생성) 이슈를 발행하고, 생성된 URL을 보고한다. 발행 전에 초안을
+사람이 확인한다 — 방향은 사람이 정한다 (원칙 3).
+
+발행이 끝나면 바로 검증한다:
+
+```bash
+python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
+```
+
+---
+
+## 6. 주중 — 실행과 증거
+
+- 이슈 실행은 MEMBER-GUIDE §4의 5단계 흐름 그대로 — 브랜치 → 커밋·테스트 →
+  PR(`Closes #<N>`) → merge → auto-close.
+- 이슈가 막히면 ETA 전에 이슈에 코멘트로 남긴다. 조용히 넘기는 미룸이
+  가장 비싸다.
+- 산출물(보고서, 문서, 배포 URL)은 members 포털에 게시하고 Sediment에
+  ingest한다 (원칙 4). 이슈를 닫을 때 산출물 링크를 코멘트로 남긴다.
+
+---
+
+## 7. 월요일 아침 — 번다운
+
+회의 전에 리포트를 뽑아 아젠다 맨 위에 붙인다:
+
+```bash
+# 아젠다에 붙일 마크다운
+python3 scripts/weekly-harness/burndown.py --cycle weekly-2026-07-21
+
+# notify dispatcher로 흘려보내기 (선택)
+python3 scripts/weekly-harness/burndown.py --cycle weekly-2026-07-21 \
+  | python3 scripts/notify/notify.py send weekly.burndown \
+      --routes config/notify_routes.yaml --data report=-
+```
+
+리포트는 repo별 closed vs open 수와 이슈 목록(번호 · 제목 · 담당 · 상태)을
+보여준다. 회의는 이 표에서 시작한다 — open으로 남은 이슈는 그 자리에서
+carry-over(새 cycle 라벨로 이관 + ETA 재설정)하거나 명시적으로 drop한다.
+
+---
+
+## 8. 검증 — 루프도 테스트 대상이다
+
+| 도구 | 무엇을 검증 | 실패 시 |
+|---|---|---|
+| `scripts/weekly-harness/check.py` | cycle 라벨이 붙은 모든 open 이슈에 `ETA:` 라인 + `Owner`/담당 섹션이 있고, ETA ≤ cycle 날짜 | non-zero exit + 위반 목록 |
+| `scripts/weekly-harness/burndown.py` | (검증 아님) pre-meeting 번다운 리포트 생성 | gh 실패 시 non-zero |
+| harness `tests/run.sh` T-V13 | weekly-loop 자산군이 harness에 온전히 등록돼 있는가 | 게이트 실패 |
+
+```bash
+# 위반이 있으면 exit 1 — CI나 cron에 그대로 걸 수 있다
+python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
+```
+
+---
+
+## 9. 자주 묻는 것
+
+**Q. 회의에서 안 나온 일도 cycle 라벨을 붙여야 하나?**
+A. 이번 주 안에 끝낼 팀 작업이면 붙인다. 번다운에 잡히는 게 이득이다.
+개인 실험/스파이크는 자유 — 단, 산출물이 생기면 원칙 4는 지킨다.
+
+**Q. ETA를 못 지킬 것 같으면?**
+A. ETA 전에 이슈에 코멘트 + 다음 cycle로 이관(라벨 교체, ETA 재설정).
+월요일 회의에서 "왜 밀렸나"가 아니라 "언제 알았나"를 본다.
+
+**Q. 큰 작업(2주+)은 어떻게 쪼개나?**
+A. "다음 월요일에 보여줄 수 있는 1차 산출물"을 먼저 이슈로 만든다 —
+설계 문서, 프로토타입, 조사 보고서 등. 나머지는 그 산출물을 본 뒤 다음
+cycle에서 다시 이슈화한다 (원칙 2).
+
+**Q. 라벨을 잘못 만들었으면?**
+A. `gh label delete weekly-<잘못된 날짜> --repo jayleekr/<repo>` 후 다시.
+라벨 형식은 `weekly-YYYY-MM-DD` — 항상 **다음 회의 날짜**다.
+
+---
+
+*이 문서는 `hypeproof-harness`에서 자동 vendoring된다. 수정 시 PR을 그 쪽으로.*
