@@ -110,8 +110,10 @@ AI는 실행).
 8. Ensure the cycle label exists in every target repo, then file.
 
    ```bash
-   gh label create "weekly-<YYYY-MM-DD>" --repo <owner/name> \
-     --description "Weekly cycle due <YYYY-MM-DD>" --color "1D76DB" 2>/dev/null || true
+   gh label list --repo <owner/name> --search "weekly-<YYYY-MM-DD>" \
+       --json name --jq '.[].name' | grep -qx "weekly-<YYYY-MM-DD>" \
+     || gh label create "weekly-<YYYY-MM-DD>" --repo <owner/name> \
+          --description "Weekly cycle due <YYYY-MM-DD>" --color "1D76DB"
 
    gh issue create --repo <owner/name> \
      --title "<title>" \

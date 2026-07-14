@@ -75,6 +75,22 @@ def test_check_accepts_korean_owner_section_and_bold_eta(tmp_path: Path) -> None
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
+def test_check_accepts_bold_eta_value(tmp_path: Path) -> None:
+    body = "## Owner\n\n담당: @jayleekr\n\nETA: **2026-07-20**\n"
+    fx = fixture(tmp_path, [{"number": 6, "title": "Bold ETA value", "body": body}])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "unparseable" not in proc.stdout
+
+
+def test_check_rejects_heading_that_merely_contains_owner(tmp_path: Path) -> None:
+    body = "## Ownership review\n\nnobody in particular\n\nETA: 2026-07-20\n"
+    fx = fixture(tmp_path, [{"number": 7, "title": "Fake owner heading", "body": body}])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "missing 'Owner'/담당 section" in proc.stdout
+
+
 def test_burndown_reports_closed_vs_open_with_owner_and_state(tmp_path: Path) -> None:
     fx = fixture(
         tmp_path,

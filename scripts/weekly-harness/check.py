@@ -46,7 +46,7 @@ ETA_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\*\*)?ETA(?:\*\*)?\s*[:：]\s*(\S+)", re.IGNORECASE | re.MULTILINE
 )
 OWNER_RE = re.compile(
-    r"^\s*(?:#{1,6}\s+.*(?:Owner|담당)"  # '## Owner' / '## 담당' heading
+    r"^\s*(?:#{1,6}\s+(?:\*\*)?(?:Owner|담당자?)(?:\*\*)?\s*$"  # '## Owner' / '## 담당' heading
     r"|(?:[-*]\s*)?(?:\*\*)?(?:Owner|담당자?)(?:\*\*)?\s*[:：])",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -90,7 +90,7 @@ def check_issue(body: str, cycle_date: dt.date) -> list[str]:
     if not m:
         violations.append("missing 'ETA:' line")
     else:
-        raw = m.group(1).strip().rstrip(".,;)")
+        raw = m.group(1).strip().rstrip(".,;)").strip("*")  # tolerate 'ETA: **2026-07-21**'
         try:
             eta = dt.date.fromisoformat(raw)
         except ValueError:

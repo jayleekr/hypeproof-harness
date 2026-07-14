@@ -147,12 +147,11 @@ python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 ```bash
 # 아젠다에 붙일 마크다운
 python3 scripts/weekly-harness/burndown.py --cycle weekly-2026-07-21
-
-# notify dispatcher로 흘려보내기 (선택)
-python3 scripts/weekly-harness/burndown.py --cycle weekly-2026-07-21 \
-  | python3 scripts/notify/notify.py send weekly.burndown \
-      --routes config/notify_routes.yaml --data report=-
 ```
+
+출력은 그대로 마크다운이라 아젠다 문서에 붙여넣으면 끝. notify dispatcher로
+자동 발송하고 싶다면 `weekly.burndown` 이벤트 템플릿을 먼저 추가해야 한다
+(`scripts/notify/templates/` — 아직 없음, 선택 과제).
 
 리포트는 repo별 closed vs open 수와 이슈 목록(번호 · 제목 · 담당 · 상태)을
 보여준다. 회의는 이 표에서 시작한다 — open으로 남은 이슈는 그 자리에서

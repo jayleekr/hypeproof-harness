@@ -9,8 +9,8 @@ CLI — no tokens are read or stored here.
 
 Per repo it reports closed vs open counts for the cycle label and lists each
 issue (number, title, owner, state). Output is markdown, suitable for pasting
-at the top of the Monday agenda or piping into the notify dispatcher
-(docs/WEEKLY-LOOP.ko.md §7). The Monday meeting opens with this table.
+at the top of the Monday agenda (docs/WEEKLY-LOOP.ko.md §7). The Monday
+meeting opens with this table.
 
 USAGE:
     burndown.py --cycle weekly-2026-07-21
