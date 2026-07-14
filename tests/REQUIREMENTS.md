@@ -1,4 +1,4 @@
-# Vendor Migration — Test Requirements (T-V1 ... T-V12)
+# Vendor Migration — Test Requirements (T-V1 ... T-V13)
 
 Acceptance criteria for migrating the three HypeProof consumer repos from
 `.harness` submodule + symlink to **vendored real files** for the shared
@@ -37,6 +37,7 @@ harness repo against any consumer path.
 | **T-V10** | Atomic PR scope (per-consumer, env-gated) | When `T_V10_BASE_<consumer>` env var is set to a ref (e.g. pre-migration HEAD), `git diff --name-only $BASE..HEAD` in that consumer contains only paths under `.gitmodules`, `.harness`, or `.claude/skills/skill-creator`. If env var unset, reported as N/A (not gated). |
 | **T-V11** | Shared agent guidance | `docs/MEMBER-GUIDE.ko.md` and `docs/AGENT-GUIDE.ko.md` are byte-identical to harness canonical sources. `CLAUDE.md`, `AGENTS.md`, and `OPENCLAW.md` are present and reference `docs/AGENT-GUIDE.ko.md`; existing consumer-specific content is preserved. |
 | **T-V12** | Harness-local skill registration | In the harness repo itself, every `skills/<name>/` has a `.claude/skills/<name>` symlink → `../../skills/<name>` that resolves, and no orphaned harness symlink points to a missing skill. Delegates to `scripts/register-skills.sh --check` so the rule has a single source of truth (the generator) and `--check` never disagrees with what `apply` produces. Harness-side check — needs no consumer. |
+| **T-V13** | Weekly-loop asset family registered & coherent | The weekly operating loop's three assets all exist in the harness — `docs/WEEKLY-LOOP.ko.md`, `skills/weekly-loop/SKILL.md` (frontmatter with non-empty `name:` + `description:`), `scripts/weekly-harness/check.py` + `burndown.py` — AND all three are registered in `scripts/sync.sh` (`SKILLS=()`, `DOCS=()`, `SCRIPTS=()` respectively), so a partial registration can never vendor a broken loop. Behavioral coverage lives in `tests/weekly_loop/` (pytest, CI). Harness-side check — needs no consumer. |
 
 ## Pass/fail aggregation (CR-5 fixed)
 
@@ -44,10 +45,10 @@ harness repo against any consumer path.
 
 - `FAIL = 0`, AND
 - `SKIP = 0` (every consumer path resolves), AND
-- `PASS >= 6N + 3 + [T-V6 if applicable]`
+- `PASS >= 6N + 4 + [T-V6 if applicable]`
   - N = number of consumers found
   - 6 per-consumer required PASSes: T-V1, T-V2, T-V3, T-V4, T-V8, T-V11
-  - 3 harness PASSes always: T-V5, T-V7, T-V12
+  - 4 harness PASSes always: T-V5, T-V7, T-V12, T-V13
   - + T-V6 when a vendored consumer exists to test drift against (else N/A, not required)
 - DEFER (T-V9, T-V10 unconfigured) does **not** count as PASS.
 

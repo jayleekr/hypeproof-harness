@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/run.sh — execute T-V1..T-V12 (T-V10 partial) against each consumer
-#                plus harness-side checks (T-V5..T-V7, T-V12).
+# tests/run.sh — execute T-V1..T-V13 (T-V10 partial) against each consumer
+#                plus harness-side checks (T-V5..T-V7, T-V12, T-V13).
 # Outputs a markdown table to stdout and writes tests/last-report.json.
 #
 # Exit code:
@@ -327,6 +327,33 @@ else
   mark "(harness)" T-V12 FAIL "$(printf '%s' "$reg_out" | grep '^DRIFT' | tr '\n' ';' | head -c 200)"
 fi
 
+# ---- T-V13 weekly-loop asset family registered & coherent ----
+# The weekly operating loop ships as doc + skill + scripts; a partial
+# registration (e.g. skill without scripts, or assets missing from sync.sh
+# arrays) would vendor a broken loop to all three consumers. Harness-side
+# check — needs no consumer.
+t13_fails=()
+[ -f docs/WEEKLY-LOOP.ko.md ] || t13_fails+=("docs/WEEKLY-LOOP.ko.md absent")
+for wf in scripts/weekly-harness/check.py scripts/weekly-harness/burndown.py; do
+  [ -f "$wf" ] || t13_fails+=("$wf absent")
+done
+WLMD="skills/weekly-loop/SKILL.md"
+if [ -f "$WLMD" ]; then
+  wl_name="$(awk '/^---$/{f++;next} f==1 && /^name: /{sub(/^name: */,""); print; exit}' "$WLMD")"
+  wl_desc="$(awk '/^---$/{f++;next} f==1 && /^description: /{sub(/^description: */,""); print; exit}' "$WLMD")"
+  { [ -n "$wl_name" ] && [ -n "$wl_desc" ]; } || t13_fails+=("SKILL.md frontmatter incomplete")
+else
+  t13_fails+=("$WLMD absent")
+fi
+grep -qE '^SKILLS=\(.*weekly-loop'          scripts/sync.sh || t13_fails+=("weekly-loop not in SKILLS=()")
+grep -qE '^DOCS=\(.*WEEKLY-LOOP\.ko\.md'    scripts/sync.sh || t13_fails+=("WEEKLY-LOOP.ko.md not in DOCS=()")
+grep -qE '^SCRIPTS=\(.*weekly-harness'      scripts/sync.sh || t13_fails+=("weekly-harness not in SCRIPTS=()")
+if [ "${#t13_fails[@]}" -eq 0 ]; then
+  mark "(harness)" T-V13 PASS "doc + skill + scripts present and registered in sync.sh"
+else
+  mark "(harness)" T-V13 FAIL "$(IFS=';'; echo "${t13_fails[*]}")"
+fi
+
 # ============================================================
 # Output
 # ============================================================
@@ -375,7 +402,7 @@ fi
 # ============================================================
 # Gate (CR-5: DEFER alone must not exit 0)
 # Required: 6 per-consumer PASSes (T-V1..T-V4, T-V8, T-V11) × N_CONSUMERS_FOUND
-#         + 3 harness PASSes always (T-V5, T-V7, T-V12) + T-V6 if applicable
+#         + 4 harness PASSes always (T-V5, T-V7, T-V12, T-V13) + T-V6 if applicable
 # T-V6 may be N/A if no consumer is vendored yet — relax in that case.
 # T-V9 always DEFER (consumer CI), T-V10 may be N/A (no base ref).
 # ============================================================
@@ -389,6 +416,8 @@ fi
 # T-V7 always counts
 required=$((required + 1))
 # T-V12 always counts
+required=$((required + 1))
+# T-V13 always counts
 required=$((required + 1))
 
 echo "Gate: PASS=$PASS required>=$required FAIL=$FAIL SKIP=$SKIP"
