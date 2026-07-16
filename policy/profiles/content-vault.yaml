@@ -15,6 +15,10 @@ labels:
     color: fbca04
     description: 사람 직접 리뷰/처리가 필요한 PR 또는 이슈
 
+collaborators:
+  manage: members
+  admin_permission: write
+
 security:
   dependabot_security_updates: enabled
   secret_scanning: enabled

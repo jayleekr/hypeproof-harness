@@ -1,3 +1,4 @@
-# Default — all active HypeProof members auto-requested on every PR.
-# Honors AGENT-GUIDE "리뷰와 배포 권한".
+# Default — all active HypeProof members are code owners, auto-requested on every PR.
+# Honors MEMBER-GUIDE §4.3 "harness 변경은 항상 피어리뷰" and AGENT-GUIDE "리뷰와 배포 권한"
+# — any member's review satisfies the gate.
 *                       @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr

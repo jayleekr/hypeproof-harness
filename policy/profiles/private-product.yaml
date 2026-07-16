@@ -4,7 +4,7 @@ profile: private-product
 repository:
   allow_forking: false
   delete_branch_on_merge: true
-  allow_auto_merge: false
+  allow_auto_merge: true
   merge_methods:
     squash: true
     merge_commit: false
@@ -14,6 +14,10 @@ labels:
   human-needed:
     color: fbca04
     description: 사람 직접 리뷰/처리가 필요한 PR 또는 이슈
+
+collaborators:
+  manage: members
+  admin_permission: write
 
 security:
   dependabot_security_updates: enabled

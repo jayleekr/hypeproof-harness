@@ -1,19 +1,14 @@
 version: 1
-profile: harness-core
+profile: public-site
 
 repository:
   allow_forking: true
   delete_branch_on_merge: true
-  allow_auto_merge: true
+  allow_auto_merge: false
   merge_methods:
     squash: true
     merge_commit: false
     rebase: false
-
-labels:
-  human-needed:
-    color: fbca04
-    description: 사람 직접 리뷰/처리가 필요한 PR 또는 이슈
 
 collaborators:
   manage: members
@@ -34,15 +29,6 @@ actions:
   require_pinned_actions: warn
   allow_pull_request_target: false
 
-review_request:
-  active_members: all
-  exclude_author: true
-
-deployment:
-  production_authority: none
-  provider_git_auto_deploy: disabled
-  manual_cli_deploy: prohibited
-
 branch_protection:
   branch: main
   enforce_admins: true
@@ -50,7 +36,7 @@ branch_protection:
   allow_deletions: false
   required_linear_history: false
   required_pull_request_reviews:
-    required_approving_review_count: 2
+    required_approving_review_count: 1
     dismiss_stale_reviews: true
     require_code_owner_reviews: true
     require_last_push_approval: true

@@ -1,0 +1,47 @@
+# weekly-harness
+
+Deterministic validators for the HypeProof weekly operating loop
+(`docs/WEEKLY-LOOP.ko.md`). Canonical source lives in `hypeproof-harness`;
+vendored into each consumer repo (`hypeproof-studio`, `sediment`,
+`hypeprooflab`) via `scripts/sync.sh` with a `HARNESS_VERSION` marker.
+
+Both scripts are stdlib-only Python 3 and talk to GitHub through the `gh`
+CLI — no tokens are read or stored.
+
+## check.py — pre-meeting gate
+
+For a cycle label (`weekly-YYYY-MM-DD` — the date of the NEXT Monday
+meeting), verifies every **open** issue carrying that label across the three
+product repos has:
+
+- an `ETA: YYYY-MM-DD` line with a date `<=` the cycle date, and
+- an `Owner` / `담당` section or line.
+
+```bash
+python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
+```
+
+Exit codes: `0` clean · `1` violations (each printed) · `2` config/gh error.
+
+## burndown.py — Monday agenda report
+
+Per repo: closed vs open counts for the cycle label plus a table of every
+issue (number, title, owner, state). Markdown on stdout — paste it at the
+top of the weekly agenda or pipe it into `scripts/notify/notify.py`.
+
+```bash
+python3 scripts/weekly-harness/burndown.py --cycle weekly-2026-07-21
+```
+
+Exit codes: `0` report generated · `2` config/gh error.
+
+## Offline / testing
+
+`--issues-json <path>` feeds gh-shaped issue fixtures
+(`{"owner/name": [issue, ...]}`) instead of calling `gh`, so
+`tests/weekly_loop/` runs deterministically without network or auth.
+
+## Vendoring
+
+Registered in `sync.sh` `SCRIPTS=()`. Fix here and re-sync — never edit the
+vendored copies in consumer repos.

@@ -1,0 +1,88 @@
+name: repo-governance live audit
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: live repo governance drift audit
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install policy deps
+        run: python -m pip install --quiet pyyaml
+
+      - name: Run live audit
+        run: |
+          set +e
+          python scripts/repo-governance/audit.py --all --json > repo-governance-audit.json
+          status=$?
+          echo "$status" > repo-governance-audit.exitcode
+          exit 0
+
+      - name: Write summary
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from collections import Counter
+
+          with open("repo-governance-audit.json", encoding="utf-8") as fh:
+              data = json.load(fh)
+          findings = data.get("findings", [])
+          print("# Repo Governance Live Audit")
+          print()
+          print(f"Status: `{data.get('status')}`")
+          print(f"Findings: `{len(findings)}`")
+          print()
+          if not findings:
+              print("No drift found.")
+              raise SystemExit
+
+          by_severity = Counter(item.get("severity", "unknown") for item in findings)
+          by_module = Counter(item.get("module", "unknown") for item in findings)
+          print("## Severity")
+          print()
+          for key, count in sorted(by_severity.items()):
+              print(f"- `{key}`: {count}")
+          print()
+          print("## Module")
+          print()
+          for key, count in sorted(by_module.items()):
+              print(f"- `{key}`: {count}")
+          print()
+          print("## Findings")
+          print()
+          print("| Repo | Severity | Module | Field | Expected | Actual |")
+          print("|---|---|---|---|---|---|")
+          for item in findings:
+              print(
+                  "| {repo} | {severity} | {module} | {field} | `{expected}` | `{actual}` |".format(
+                      repo=item.get("repo", ""),
+                      severity=item.get("severity", ""),
+                      module=item.get("module", ""),
+                      field=item.get("field", ""),
+                      expected=json.dumps(item.get("expected"), ensure_ascii=False),
+                      actual=json.dumps(item.get("actual"), ensure_ascii=False),
+                  )
+              )
+          PY
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: repo-governance-audit
+          path: |
+            repo-governance-audit.json
+            repo-governance-audit.exitcode
