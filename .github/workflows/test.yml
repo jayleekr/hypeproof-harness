@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -95,7 +96,7 @@ jobs:
     name: gate (tests/run.sh against mock consumers)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up mock consumer repos
         run: |
@@ -122,8 +123,8 @@ jobs:
     name: repo-governance (policy validation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install policy test deps
@@ -131,4 +132,4 @@ jobs:
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
       - name: Run Python tests
-        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/security tests/weekly_loop
+        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop

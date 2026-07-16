@@ -30,6 +30,13 @@ python3 scripts/hype-review/review.py
 Run it from the repo root. It reads `policy/members.yaml` when present and has
 an embedded fallback lens map for vendored product repos.
 
+Maintainers can audit or apply all-member reviewer requests with:
+
+```bash
+python3 scripts/hype-review/request_reviewers.py
+python3 scripts/hype-review/request_reviewers.py --apply
+```
+
 ---
 
 ## Default Flow
@@ -95,6 +102,18 @@ an embedded fallback lens map for vendored product repos.
 
    Add `--role <lens>` only when the user explicitly asks to inspect an extra
    angle for this PR.
+
+6. If the user asks to assign reviews to the team, run reviewer request audit
+   first:
+
+   ```bash
+   python3 scripts/hype-review/request_reviewers.py --repo <owner/name>
+   ```
+
+   Only use `--apply` when the intent is to mutate GitHub reviewer requests.
+   The script skips the PR author, already-requested members, and members who
+   already left a review. If GitHub cannot request a member because an
+   invitation is pending, leave a fallback mention comment on the PR.
 
 ---
 

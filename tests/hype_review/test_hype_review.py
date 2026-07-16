@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "hype-review" / "review.py"
+REQUEST_REVIEWERS = ROOT / "scripts" / "hype-review" / "request_reviewers.py"
 SKILL = ROOT / "skills" / "hype-review" / "SKILL.md"
 
 
@@ -27,6 +28,15 @@ def load_module():
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules["hype_review"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_request_module():
+    spec = importlib.util.spec_from_file_location("hype_review_request_reviewers", REQUEST_REVIEWERS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["hype_review_request_reviewers"] = module
     spec.loader.exec_module(module)
     return module
 
@@ -140,4 +150,76 @@ def test_skill_wrapper_is_discoverable_and_uses_hype_review_script() -> None:
     assert "name: hype-review" in content
     assert "user_invocable: true" in content
     assert "scripts/hype-review/review.py" in content
+    assert "scripts/hype-review/request_reviewers.py" in content
     assert "hype-review" in sync.split("SKILLS=(", 1)[1].split(")", 1)[0]
+
+
+def test_request_reviewers_plan_skips_author_requested_and_reviewed() -> None:
+    module = load_request_module()
+    pr = {
+        "repository": {"nameWithOwner": "jayleekr/sediment"},
+        "number": 90,
+        "title": "Fix smoke",
+        "url": "https://github.com/jayleekr/sediment/pull/90",
+        "author": {"login": "jayleekr"},
+        "reviewRequests": [{"login": "JeHyeong2"}],
+        "latestReviews": [{"author": {"login": "JinyongShin"}, "state": "APPROVED"}],
+        "_pendingInvites": [{"invitee": {"login": "TJ-kr"}}],
+    }
+
+    actions = module.plan_actions(
+        [pr],
+        ["jayleekr", "JeHyeong2", "JinyongShin", "TJ-kr"],
+        apply=False,
+    )
+    by_reviewer = {action.reviewer: action for action in actions}
+
+    assert by_reviewer["jayleekr"].status == "skipped"
+    assert by_reviewer["jayleekr"].reason == "author"
+    assert by_reviewer["JeHyeong2"].status == "skipped"
+    assert by_reviewer["JeHyeong2"].reason == "already_requested"
+    assert by_reviewer["JinyongShin"].status == "skipped"
+    assert by_reviewer["JinyongShin"].reason == "already_reviewed"
+    assert by_reviewer["TJ-kr"].status == "pending_invitation"
+    assert by_reviewer["TJ-kr"].reason == "member_invitation_pending"
+
+
+def test_request_reviewers_offline_json(tmp_path: Path) -> None:
+    data = [
+        {
+            "repository": {"nameWithOwner": "jayleekr/hypeproof-harness"},
+            "number": 39,
+            "title": "Add merge monitor",
+            "url": "https://github.com/jayleekr/hypeproof-harness/pull/39",
+            "author": {"login": "jayleekr"},
+            "reviewRequests": [],
+            "latestReviews": [],
+        }
+    ]
+    path = tmp_path / "prs.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REQUEST_REVIEWERS),
+            "--offline-file",
+            str(path),
+            "--member",
+            "jayleekr",
+            "--member",
+            "ico1036",
+            "--format",
+            "json",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    actions = json.loads(proc.stdout)
+    assert [action["status"] for action in actions] == ["skipped", "would_request"]
+    assert actions[0]["reason"] == "author"
+    assert actions[1]["reviewer"] == "ico1036"

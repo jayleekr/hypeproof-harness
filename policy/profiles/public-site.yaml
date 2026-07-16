@@ -1,8 +1,8 @@
 version: 1
-profile: content-vault
+profile: public-site
 
 repository:
-  allow_forking: false
+  allow_forking: true
   delete_branch_on_merge: true
   allow_auto_merge: false
   merge_methods:
@@ -24,6 +24,7 @@ actions:
   enabled: true
   default_workflow_permissions: read
   can_approve_pull_request_reviews: false
+  fork_pr_approval: all_external_contributors
   allowed_actions: all
   require_pinned_actions: warn
   allow_pull_request_target: false
