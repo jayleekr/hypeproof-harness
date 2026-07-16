@@ -140,4 +140,4 @@ def test_skill_wrapper_is_discoverable_and_uses_hype_review_script() -> None:
     assert "name: hype-review" in content
     assert "user_invocable: true" in content
     assert "scripts/hype-review/review.py" in content
-    assert "SKILLS=(skill-creator hype-review)" in sync
+    assert "hype-review" in sync.split("SKILLS=(", 1)[1].split(")", 1)[0]
