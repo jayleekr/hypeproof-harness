@@ -16,19 +16,41 @@ jobs:
     name: lint (bash -n + path hygiene)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: bash -n
         run: |
           set -e
           bash -n scripts/sync.sh
+          bash -n scripts/security/check-secrets.sh
+          bash -n scripts/register-skills.sh
           bash -n tests/run.sh
 
       - name: shellcheck (warnings only, non-blocking)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y shellcheck
-          shellcheck -S warning scripts/sync.sh tests/run.sh || true
+          shellcheck -S warning scripts/sync.sh scripts/security/check-secrets.sh scripts/register-skills.sh tests/run.sh || true
+
+      - name: Secret scan changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -e
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            bash scripts/security/check-secrets.sh --working-tree
+          else
+            bash scripts/security/check-secrets.sh --diff "$BASE_SHA"
+          fi
+
+      - name: skill registration generated & committed
+        run: |
+          # Harness-local invariant: every skills/<name>/ has a committed
+          # .claude/skills/<name> symlink. Fails the PR if a skill was added
+          # without registering it (the gap that shipped hype-review in #28).
+          bash scripts/register-skills.sh --check
 
       - name: No hardcoded user-specific paths
         run: |
@@ -109,5 +131,5 @@ jobs:
         run: python -m pip install --quiet pyyaml pytest
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
-      - name: Run repo governance tests
-        run: python -m pytest tests/repo_governance tests/hype_review tests/hype_merge
+      - name: Run Python tests
+        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop

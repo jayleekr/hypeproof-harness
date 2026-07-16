@@ -48,6 +48,42 @@ consumer repo에서만 일한다.
 
 ---
 
+## 1.5 계정 & 권한
+
+> 새 멤버라면 공개 온보딩 체크리스트가 가장 빠른 입구다:
+> **https://hypeproof-ai.xyz/onboarding**
+
+**모든 active 멤버는 아래 서비스 전부에 접근한다 — "전원이 배포 가능"이
+기본 정책이다 (2026-07-07 합의).** 새 멤버가 조인하면 메인테이너(Jay 또는
+에이전트)가 초대를 일괄 발송한다. 새 멤버가 할 일은 **초대 수락**뿐이다.
+GitHub 아이디와 이메일(Gmail 권장 — Vercel/Supabase 가입에 같은 주소 사용)만
+Jay에게 알려주면 된다.
+
+| 서비스 | 무엇에 쓰나 | 권한 | 수락 방법 |
+|---|---|---|---|
+| **GitHub** (`jayleekr/*` 4개 repo) | 코드 · PR · 머지 | Write | GitHub 알림/이메일에서 초대 4건 수락 |
+| **Vercel** (`hype-proof-lab` 팀) | web(hypeproof-ai.xyz) 등 프론트 배포 | Developer | 이메일 초대 수락 (같은 이메일로 Vercel 가입) |
+| **Supabase** (`sediment` org) | Sediment 프로덕션 Postgres | Developer | 이메일 초대 수락 (같은 이메일로 Supabase 가입) |
+| **Cloudflare** | Studio Worker(api.hypeproof-ai.xyz) 배포 | Jay 계정 경유 | 직접 배포가 필요해지면 Jay에게 요청 |
+| **Fly.io** | Sediment 백엔드 런타임 | Jay 계정 경유 | 직접 배포가 필요해지면 Jay에게 요청 |
+
+메인테이너 체크리스트 (새 멤버 조인 시):
+
+1. GitHub: `gh api -X PUT repos/jayleekr/<repo>/collaborators/<github-id> -f permission=push` × 4개 repo (hypeprooflab · hypeproof-studio · sediment · hypeproof-harness)
+2. Vercel: `hype-proof-lab` 팀 → Members → Invite (Developer)
+3. Supabase: `sediment` org → Team → Invite (Developer)
+4. `hypeprooflab/data/members.json`에 멤버 엔트리 추가
+5. Discord 채널 초대
+
+### 머지 정책 (2026-07-07부터)
+
+모든 repo(studio · sediment · harness)에서 **PR 리뷰 승인 요건이 제거**됐다.
+PR + required CI checks가 green이면 누구든 (자기 PR 포함) 바로 머지한다.
+CODEOWNERS는 전원 등록된 리뷰 요청 라우팅용으로만 남아 있다. 리뷰는 여전히
+권장 — §4.3a의 lens 리뷰 문화는 유지된다.
+
+---
+
 ## 2. 시작하기 / Setup
 
 ### 2a. 1회성 온보딩 (권장 — 자동화)
@@ -191,8 +227,9 @@ PR 본문 대화형으로 채워준다.
 
 **그 외 repo**: `gh pr create --fill --base main`
 
-**정책: PR 필수, 리뷰 선택.** 자신 있으면 셀프 머지 OK. (단 harness
-repo 변경은 항상 피어리뷰 — 메인테이너 영역이라 멤버는 손 댈 일 없음.)
+**정책: PR 필수, 리뷰 선택.** 자신 있으면 셀프 머지 OK. (2026-07-07부터
+harness 포함 모든 repo에서 승인 요건 제거 — CI green이면 셀프 머지 가능.
+§1.5 "머지 정책" 참고. 리뷰는 여전히 권장.)
 
 ### 4.3a 리뷰 요청을 받으면
 

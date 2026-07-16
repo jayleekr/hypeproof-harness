@@ -151,7 +151,7 @@ def test_skill_wrapper_is_discoverable_and_uses_hype_review_script() -> None:
     assert "user_invocable: true" in content
     assert "scripts/hype-review/review.py" in content
     assert "scripts/hype-review/request_reviewers.py" in content
-    assert "SKILLS=(skill-creator hype-review)" in sync
+    assert "hype-review" in sync.split("SKILLS=(", 1)[1].split(")", 1)[0]
 
 
 def test_request_reviewers_plan_skips_author_requested_and_reviewed() -> None:

@@ -26,17 +26,23 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 |---|---|---|
 | `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | 3 consumers `.claude/skills/` |
 | `skills/hype-review/` | PR 리뷰 요청 확인 + 역할별 리뷰 워크시트 스킬 | 3 consumers `.claude/skills/` |
+| `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
 | `docs/AGENT-GUIDE.ko.md` | Claude Code · Codex · OpenClaw 공통 에이전트 규약 | 3 consumers `docs/` |
 | `docs/DOCS-CONTRACT.ko.md` | 제품 repo가 유지해야 하는 dev docs 계약 | 3 consumers `docs/` |
 | `docs/HYPE-REVIEW.ko.md` | `hype-review` 역할별 PR 리뷰 질문·답변 가이드 | 3 consumers `docs/` |
+| `docs/HYPE-PR.ko.md` | `hype-pr` PR 생성·reviewer 요청·auto-merge 판정 가이드 | 3 consumers `docs/` |
+| `docs/WEEKLY-LOOP.ko.md` | 주간 운영 루프 canonical 정의 — 회의 → 이슈 → 번다운 | 3 consumers `docs/` |
 | `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
 | `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
+| `scripts/hype-pr/` | PR 생성 시 active 멤버 reviewer 요청 + auto-merge eligibility 판정 | 3 consumers `scripts/hype-pr/` |
+| `scripts/weekly-harness/` | weekly cycle 이슈 Owner/ETA 검증 + 번다운 리포트 | 3 consumers `scripts/weekly-harness/` |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
-| `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V11) | (maintainer) |
+| `scripts/register-skills.sh` | harness-local `.claude/skills/<name>` 심링크 생성/검증 (`--check`) | (harness-local) |
+| `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V13) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
 
 **Not shared here**: studio-only 규칙(`branding-swap`, `build-pipeline`,
@@ -88,6 +94,16 @@ bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 # 3. 각 consumer push (또는 PR — harness 변경은 피어리뷰 권장)
 ```
 
+**새 스킬을 추가할 때** — `skills/<name>/`만 만들면 harness repo에서 `/<name>`이
+잡히지 않는다. `.claude/skills/<name>` 등록 심링크가 필요한데, 손으로 만들지 말고
+생성기를 돌린다(이 단계 누락이 #28에서 발생).
+
+```bash
+scripts/register-skills.sh            # 모든 skills/<name>의 심링크 생성/교정
+scripts/register-skills.sh --check    # read-only 검증 (CI lint 잡 + T-V12가 강제)
+git config core.hooksPath .githooks   # (선택) 커밋 전 자동 검사 훅 활성화
+```
+
 **Guardrails**
 
 - `--commit`은 `main` 위 + skill 외 변경 없을 때만 실행 (`ALLOW_ANY_BRANCH=1`로 우회)
@@ -117,6 +133,25 @@ python3 scripts/hype-merge/automerge.py --apply             # enable safe waitin
 리뷰 요청은 모든 active 멤버에게 보내되, merge는 branch protection과 CODEOWNERS가
 요구하는 quorum을 따른다. 하네스는 역할별 질문과 작성자에게 남길 답변 초안을
 만들어준다. 자세한 운영 규칙은 [`docs/HYPE-REVIEW.ko.md`](docs/HYPE-REVIEW.ko.md).
+
+### 🚦 작성자 — PR 생성과 auto-merge 판정
+
+```bash
+python3 scripts/hype-pr/pr.py plan \
+  --repo jayleekr/hypeproof-studio \
+  --author JinyongShin \
+  --path docs/dev/cohort.md \
+  --auto-merge
+
+python3 scripts/hype-pr/pr.py request-reviewers \
+  --repo jayleekr/sediment \
+  --pr 87
+```
+
+`hype-pr`는 작성자를 제외한 active 멤버 전원을 reviewer로 계산한다. auto-merge는
+무조건 켜지지 않는다. repo profile이 허용하고, PR이 draft가 아니며, 변경 파일이
+보안/배포/데이터/dependency/governance risk에 걸리지 않을 때만 eligible이다.
+자세한 기준은 [`docs/HYPE-PR.ko.md`](docs/HYPE-PR.ko.md).
 
 ### 🔁 다른 머신에서 운영 — 워크스페이스 경로 해석
 
@@ -197,10 +232,11 @@ Vendor를 고른 이유는 [migration report][migration]에.
 5단계 lifecycle(이슈 → 브랜치 → 커밋·테스트 → PR → merge)은
 [`MEMBER-GUIDE §4`](docs/MEMBER-GUIDE.ko.md). 모든 repo가 지키는 5가지:
 
-- **PR-first, review optional** — `main` 직접 push 금지 (메인테이너 제외)
+- **PR-first, all-member review request** — `main` 직접 push 금지. PR은 작성자를 제외한 active 멤버 전원을 reviewer로 요청한다
 - **`human-needed` 라벨**로 AI 자동처리 vs 사람 필요를 명시 (policy owner: 지용)
 - **스킬은 `/skill-creator`로만** 만들고 고친다 — SKILL.md를 손으로 쓰지 않는다
 - **이 repo 변경은 항상 피어리뷰** — 3 consumer가 공유한다
+- **auto-merge는 low-risk만** — 보호 규칙 통과 후 예약 merge일 뿐이며 보안/배포/데이터/dependency/governance 변경에는 쓰지 않는다
 - **시크릿 절대 커밋 금지** — 새면 즉시 Jay에게 알리고 로테이션
 
 ---
@@ -226,6 +262,8 @@ Vendor를 고른 이유는 [migration report][migration]에.
 - 📘 **한글 멤버 가이드** — [`docs/MEMBER-GUIDE.ko.md`](docs/MEMBER-GUIDE.ko.md)
 - 🤖 **공통 에이전트 가이드** — [`docs/AGENT-GUIDE.ko.md`](docs/AGENT-GUIDE.ko.md)
 - 🔎 **hype-review** — [`docs/HYPE-REVIEW.ko.md`](docs/HYPE-REVIEW.ko.md)
+- 🚦 **hype-pr** — [`docs/HYPE-PR.ko.md`](docs/HYPE-PR.ko.md)
+- 🔁 **주간 운영 루프** — [`docs/WEEKLY-LOOP.ko.md`](docs/WEEKLY-LOOP.ko.md)
 - 🧪 Vendor 테스트 합격선 — [`tests/REQUIREMENTS.md`](tests/REQUIREMENTS.md)
 - 🔄 롤백 런북 (vendor → submodule) — [`docs/rollback-vendor.md`](docs/rollback-vendor.md)
 - 🔐 Repo governance 설계 — [`docs/REPO-GOVERNANCE.ko.md`](docs/REPO-GOVERNANCE.ko.md)

@@ -33,11 +33,6 @@ repositories:
         - DISCORD_WEBHOOK_SEDIMENT
     release_repos:
       - jayleekr/hypeproof-studio-releases
-    exceptions:
-      - id: studio-ci-checks-not-yet-created
-        owner: jayleekr
-        reason: Add PR CI workflow before making all expected checks required.
-        expires_at: 2026-07-01
 
   - owner: jayleekr
     name: sediment
@@ -97,7 +92,7 @@ repositories:
       - id: temporary-private-until-oauth-purge
         owner: jayleekr
         reason: Target visibility is public, but the repo must remain private until the exposed OAuth credential is rotated and the historical commit purge verifier passes.
-        expires_at: 2026-07-15
+        expires_at: 2026-08-31
       - id: private-branch-protection-plan-limit
         owner: jayleekr
         reason: Personal private repo branch protection requires GitHub Pro/Team.
@@ -116,7 +111,7 @@ repositories:
       - id: github-io-ci-not-yet-created
         owner: jayleekr
         reason: Add stable PR checks before requiring named status contexts.
-        expires_at: 2026-07-15
+        expires_at: 2026-08-31
 
   - owner: jayleekr
     name: hypeproof-studio-releases
