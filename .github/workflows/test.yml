@@ -116,5 +116,5 @@ jobs:
         run: python -m pip install --quiet pyyaml pytest
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
-      - name: Run repo governance tests
-        run: python -m pytest tests/repo_governance tests/hype_review tests/weekly_loop
+      - name: Run Python tests
+        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/weekly_loop
