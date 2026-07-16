@@ -123,6 +123,11 @@ def changes_requested(pr: dict[str, Any]) -> list[str]:
 
 def rollup_checks_ok(pr: dict[str, Any]) -> bool:
     rollup = pr.get("statusCheckRollup") or []
+    # Defense in depth: an empty rollup means no signal, not a green signal.
+    # Treat "no checks reported" as not-ok so a PR with zero checks never
+    # surfaces as ready on the strength of a missing rollup alone.
+    if not rollup:
+        return False
     for check in rollup:
         if not isinstance(check, dict):
             continue

@@ -21,6 +21,17 @@ def load_module():
     return module
 
 
+def load_automerge():
+    # automerge.py does `from monitor import ...`, so its directory must be importable.
+    sys.path.insert(0, str(AUTOMERGE.parent))
+    spec = importlib.util.spec_from_file_location("hype_automerge", AUTOMERGE)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["hype_automerge"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def check(name: str, status: str = "COMPLETED", conclusion: str = "SUCCESS") -> dict:
     return {
         "__typename": "CheckRun",
@@ -271,6 +282,49 @@ def test_automerge_dry_run_reports_already_enabled(tmp_path: Path) -> None:
     actions = json.loads(proc.stdout)
     assert actions[0]["status"] == "already_enabled"
     assert actions[0]["reason"] == "already_enabled"
+
+
+def test_rollup_checks_ok_treats_empty_rollup_as_not_ok() -> None:
+    module = load_module()
+
+    # An empty / missing rollup carries no green signal — must be not-ok.
+    assert module.rollup_checks_ok({}) is False
+    assert module.rollup_checks_ok({"statusCheckRollup": []}) is False
+
+    item = module.classify_pr(pr(checks=[]))
+    assert item.checks_ok is False
+    assert "checks_pending_or_failed" in item.blockers
+    assert item.status == "blocked"
+
+
+def test_automerge_apply_enables_and_reports_failure(monkeypatch) -> None:
+    automerge = load_automerge()
+
+    waiting = pr(labels=["human-needed"], review_decision="REVIEW_REQUIRED")
+    waiting["number"] = 39
+
+    calls: list[list[str]] = []
+
+    def fake_gh_ok(args: list[str]) -> tuple[int, str]:
+        calls.append(args)
+        return 0, "enabled auto-merge"
+
+    monkeypatch.setattr(automerge, "run_gh_text", fake_gh_ok)
+    actions = automerge.plan_actions(automerge.build_queue([waiting]), apply=True)
+
+    assert actions[0].status == "enabled"
+    # The mutation is a native auto-merge pinned to the reviewed head commit.
+    assert calls[0][:3] == ["pr", "merge", "39"]
+    assert "--auto" in calls[0]
+    assert "--squash" in calls[0]
+    assert "--match-head-commit" in calls[0]
+    assert "abc123" in calls[0]
+
+    # Failure path surfaces status=failed and the gh error as the reason.
+    monkeypatch.setattr(automerge, "run_gh_text", lambda args: (1, "gh: merge blocked"))
+    failed = automerge.plan_actions(automerge.build_queue([waiting]), apply=True)
+    assert failed[0].status == "failed"
+    assert "merge blocked" in failed[0].reason
 
 
 def test_monitor_markdown_shows_auto_merge_status(tmp_path: Path) -> None:
