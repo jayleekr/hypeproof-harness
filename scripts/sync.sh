@@ -58,7 +58,7 @@ esac
 
 SKILLS=(skill-creator hype-review weekly-loop) # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md HYPE-REVIEW.ko.md WEEKLY-LOOP.ko.md) # vendored to consumer/docs/<file>
-SCRIPTS=(notify docs-harness hype-review weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+SCRIPTS=(notify docs-harness hype-review security weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root
 
 # --- consumer resolution ---
