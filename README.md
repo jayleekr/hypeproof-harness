@@ -237,6 +237,7 @@ Vendor를 고른 이유는 [migration report][migration]에.
 - **스킬은 `/skill-creator`로만** 만들고 고친다 — SKILL.md를 손으로 쓰지 않는다
 - **이 repo 변경은 항상 피어리뷰** — 3 consumer가 공유한다
 - **auto-merge는 low-risk만** — 보호 규칙 통과 후 예약 merge일 뿐이며 보안/배포/데이터/dependency/governance 변경에는 쓰지 않는다
+- **배포 권한은 정책에 선언** — production은 `main` merge 후 trusted workflow가 담당하고, provider Git 자동 배포는 명시적으로 허용된 repo만 쓴다
 - **시크릿 절대 커밋 금지** — 새면 즉시 Jay에게 알리고 로테이션
 
 ---

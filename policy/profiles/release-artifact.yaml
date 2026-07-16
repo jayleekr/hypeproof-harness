@@ -14,6 +14,11 @@ repository:
     wiki: false
     projects: false
 
+labels:
+  human-needed:
+    color: fbca04
+    description: 사람 직접 리뷰/처리가 필요한 PR 또는 이슈
+
 collaborators:
   manage: admins
   admin_permission: write
@@ -28,6 +33,16 @@ actions:
   enabled: false
   default_workflow_permissions: read
   can_approve_pull_request_reviews: false
+
+review_request:
+  active_members: all
+  exclude_author: true
+
+deployment:
+  production_authority: source_repo_release_workflow
+  provider_git_auto_deploy: disabled
+  preview_deploys: disabled
+  manual_cli_deploy: prohibited
 
 branch_protection:
   branch: main

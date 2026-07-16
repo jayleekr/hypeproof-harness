@@ -266,9 +266,39 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict
             ))
 
     findings.extend(_audit_security(full, meta, profile))
+    findings.extend(_audit_labels(full, profile))
     findings.extend(_audit_collaborators(full, repo, members, profile, gh_json))
     findings.extend(_audit_actions(full, repo, profile))
     findings.extend(_audit_branch(full, repo, profile))
+    return findings
+
+
+def _audit_labels(full: str, profile: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+    desired = profile.get("labels", {})
+    if not desired:
+        return findings
+
+    code, labels = gh_json(f"repos/{full}/labels?per_page=100")
+    if code != 0:
+        return [Finding(full, "labels", "medium", "labels", "readable", labels, False)]
+
+    actual = {label.get("name"): label for label in labels or []}
+    for name, expected in desired.items():
+        label = actual.get(name)
+        if not label:
+            findings.append(Finding(full, "labels", "medium", name, expected, None))
+            continue
+
+        expected_color = str(expected.get("color", "")).lower()
+        actual_color = str(label.get("color", "")).lower()
+        if expected_color and actual_color != expected_color:
+            findings.append(Finding(full, "labels", "low", f"{name}.color", expected_color, actual_color))
+
+        expected_description = expected.get("description") or ""
+        actual_description = label.get("description") or ""
+        if actual_description != expected_description:
+            findings.append(Finding(full, "labels", "low", f"{name}.description", expected_description, actual_description))
     return findings
 
 

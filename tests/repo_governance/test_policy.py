@@ -72,6 +72,7 @@ def test_apply_dry_run_plans_known_repo() -> None:
     proc = run_cmd(str(APPLY), "--repo", "hypeproof-harness", "--dry-run")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "DRY jayleekr/hypeproof-harness repo_settings" in proc.stdout
+    assert "DRY jayleekr/hypeproof-harness labels UPSERT human-needed" in proc.stdout
     assert "DRY jayleekr/hypeproof-harness collaborators PUT repos/jayleekr/hypeproof-harness/collaborators/TJ-kr" in proc.stdout
     assert "branch_protection" in proc.stdout
 

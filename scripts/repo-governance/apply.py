@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,7 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "repo-governance"))
 from audit import desired_collaborators, load_policy, repo_full_name, validate_policy  # noqa: E402
 
 
-MODULES = ("repo_settings", "collaborators", "security", "actions", "branch_protection")
+MODULES = ("repo_settings", "collaborators", "security", "labels", "actions", "branch_protection")
 
 
 def gh_api(path: str, *, method: str = "GET", body: dict | None = None) -> tuple[int, str]:
@@ -59,6 +60,33 @@ def apply_security(full: str, profile: dict, dry_run: bool) -> list[str]:
         return []
     body = {"security_and_analysis": {key: {"status": value} for key, value in desired.items()}}
     return apply_call(full, "security", f"repos/{full}", "PATCH", body, dry_run, soft=True)
+
+
+def apply_labels(full: str, profile: dict, dry_run: bool) -> list[str]:
+    desired = profile.get("labels", {})
+    if not desired:
+        return []
+
+    logs: list[str] = []
+    for name, label in desired.items():
+        body = {
+            "name": name,
+            "color": label.get("color"),
+            "description": label.get("description") or "",
+        }
+        body = {k: v for k, v in body.items() if v is not None}
+        if dry_run:
+            logs.append(f"DRY {full} labels UPSERT {name} {json.dumps(body, ensure_ascii=False, sort_keys=True)}")
+            continue
+
+        encoded = quote(name, safe="")
+        code, _ = gh_api(f"repos/{full}/labels/{encoded}")
+        if code == 0:
+            update_body = {"new_name": name, **body}
+            logs.extend(apply_call(full, "labels", f"repos/{full}/labels/{encoded}", "PATCH", update_body, dry_run))
+        else:
+            logs.extend(apply_call(full, "labels", f"repos/{full}/labels", "POST", body, dry_run))
+    return logs
 
 
 def apply_collaborators(full: str, repo: dict, members: dict, profile: dict, dry_run: bool) -> list[str]:
@@ -203,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
             logs.extend(apply_collaborators(full, repo, policy["members"], profile, dry_run))
         if "security" in modules:
             logs.extend(apply_security(full, profile, dry_run))
+        if "labels" in modules:
+            logs.extend(apply_labels(full, profile, dry_run))
         if "actions" in modules:
             logs.extend(apply_actions(full, repo, profile, dry_run))
         if "branch_protection" in modules:
