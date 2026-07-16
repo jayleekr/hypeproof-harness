@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import subprocess
@@ -153,3 +154,75 @@ def test_create_is_dry_run_by_default_and_includes_reviewers() -> None:
     assert "jayleekr" not in reviewer_args
     assert "JeHyeong2" in reviewer_args
     assert "TJ-kr" in reviewer_args
+
+
+def _create_args(module, **overrides):
+    defaults = dict(
+        repo="hypeproof-studio",
+        head="feat/example",
+        base=module.DEFAULT_BASE,
+        title="Example PR",
+        body="Closes #1",
+        body_file=None,
+        author="TJ-kr",
+        path=["docs/dev/usage-notes.md"],
+        label=[],
+        draft=False,
+        auto_merge=True,
+        apply=True,
+    )
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+class _FakeGh:
+    """Records gh invocations and returns canned results by subcommand."""
+
+    def __init__(self, module):
+        self.module = module
+        self.calls: list[list[str]] = []
+
+    def __call__(self, cmd, *, input_text=None):
+        self.calls.append(cmd)
+        # `gh pr create` prints the created PR URL on the last line.
+        if cmd[:3] == ["gh", "pr", "create"]:
+            return self.module.CommandResult(0, "https://github.com/x/y/pull/99", "")
+        return self.module.CommandResult(0, "ok", "")
+
+    def merge_calls(self):
+        return [c for c in self.calls if c[:3] == ["gh", "pr", "merge"]]
+
+
+def test_create_apply_enables_auto_merge_when_eligible(monkeypatch) -> None:
+    module = load_module()
+    policy = module.load_policy()
+    fake = _FakeGh(module)
+    monkeypatch.setattr(module, "run", fake)
+
+    rc = module.command_create(_create_args(module), policy)
+
+    assert rc == 0
+    # PR created, every non-author reviewer requested, and auto-merge enabled.
+    assert any(c[:3] == ["gh", "pr", "create"] for c in fake.calls)
+    assert any("--add-reviewer" in c for c in fake.calls)
+    merge = fake.merge_calls()
+    assert len(merge) == 1
+    assert merge[0][:4] == ["gh", "pr", "merge", "https://github.com/x/y/pull/99"]
+    assert "--auto" in merge[0]
+    assert f"--{module.AUTO_MERGE_METHOD}" in merge[0]
+    assert "--delete-branch" in merge[0]
+
+
+def test_create_apply_does_not_merge_high_risk_pr(monkeypatch) -> None:
+    module = load_module()
+    policy = module.load_policy()
+    fake = _FakeGh(module)
+    monkeypatch.setattr(module, "run", fake)
+
+    # A governance path must keep auto-merge ineligible even with --apply.
+    args = _create_args(module, path=["policy/repos.yaml"])
+    rc = module.command_create(args, policy)
+
+    assert rc == 0
+    assert any(c[:3] == ["gh", "pr", "create"] for c in fake.calls)
+    assert fake.merge_calls() == []
