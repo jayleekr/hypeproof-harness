@@ -33,14 +33,14 @@ EXCLUDED_PATHS=(
 SECRET_PATTERNS=(
   'Google OAuth client secret|GOCSPX-[A-Za-z0-9_-]{20,}'
   'Google API key|AIza[0-9A-Za-z_-]{35}'
-  'PEM private key|-----BEGIN (RSA |EC |OPENSSH |DSA |)?PRIVATE KEY-----'
+  'PEM private key|-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'
   'GitHub classic token|ghp_[0-9A-Za-z]{36}'
   'GitHub fine-grained token|github_pat_[0-9A-Za-z_]{60,}'
   'OpenAI API key|sk-[A-Za-z0-9]{40,}'
   'OpenAI project key|sk-proj-[A-Za-z0-9_-]{40,}'
   'Anthropic API key|sk-ant-(api03|admin01)-[A-Za-z0-9_-]{80,}'
   'Slack bot token|xoxb-[0-9]{10,}-[0-9]{10,}-[0-9A-Za-z]{24,}'
-  'Discord webhook URL|discord(app)?\\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{30,}'
+  'Discord webhook URL|discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{30,}'
 )
 
 FINDINGS_FILE="$(mktemp)"
@@ -139,7 +139,7 @@ scan_file() {
   for entry in "${SECRET_PATTERNS[@]}"; do
     local label="${entry%%|*}"
     local regex="${entry#*|}"
-    if printf '%s' "$content" | grep -E -q "$regex" 2>/dev/null; then
+    if printf '%s' "$content" | grep -E -q -e "$regex" 2>/dev/null; then
       record_finding "$path" "$label"
     fi
   done

@@ -73,6 +73,43 @@ def test_runbook_secret_is_not_excluded(tmp_path: Path) -> None:
     assert secret not in proc.stderr
 
 
+def test_pem_private_key_header_is_blocked_without_echoing_value(tmp_path: Path) -> None:
+    # Use a non-dangerous filename so the content pattern (not the path rule) is exercised.
+    body = "-----BEGIN OPENSSH PRIVATE KEY-----\n" + "b3BlbnNzaC1rZXk" + "\n"
+    leaked = tmp_path / "notes.txt"
+    leaked.write_text(body, encoding="utf-8")
+
+    proc = run_scan(leaked)
+
+    assert proc.returncode == 1, proc.stderr
+    assert "PEM private key" in proc.stderr
+    assert "b3BlbnNzaC1rZXk" not in proc.stderr
+
+
+def test_plain_pem_private_key_header_is_blocked(tmp_path: Path) -> None:
+    # No algorithm token -> exercises the optional group + leading-dash pattern handling.
+    leaked = tmp_path / "leaked-key.txt"
+    leaked.write_text("-----BEGIN PRIVATE KEY-----\nMIIabc\n", encoding="utf-8")
+
+    proc = run_scan(leaked)
+
+    assert proc.returncode == 1, proc.stderr
+    assert "PEM private key" in proc.stderr
+
+
+def test_discord_webhook_url_is_blocked_without_echoing_value(tmp_path: Path) -> None:
+    token = "A" * 40
+    url = f"https://discord.com/api/webhooks/123456789012345678/{token}"
+    leaked = tmp_path / "webhook-notes.txt"
+    leaked.write_text(f"DISCORD_WEBHOOK={url}\n", encoding="utf-8")
+
+    proc = run_scan(leaked)
+
+    assert proc.returncode == 1, proc.stderr
+    assert "Discord webhook URL" in proc.stderr
+    assert token not in proc.stderr
+
+
 def test_dangerous_credential_path_is_blocked(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("SAFE_PLACEHOLDER=1\n", encoding="utf-8")
