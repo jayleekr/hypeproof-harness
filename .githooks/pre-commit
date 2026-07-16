@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# pre-commit — fast local mirror of the CI skill-registration gate.
+#
+# NON-AUTHORITATIVE: the enforced check is .github/workflows/test.yml (lint job)
+# + T-V12 in tests/run.sh. This hook just gives you the same failure locally,
+# before you push. It is opt-in:
+#
+#     git config core.hooksPath .githooks
+#
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+if ! bash "$ROOT/scripts/register-skills.sh" --check; then
+  echo "pre-commit: harness skill registration is out of sync." >&2
+  echo "  fix: scripts/register-skills.sh && git add .claude/skills" >&2
+  exit 1
+fi

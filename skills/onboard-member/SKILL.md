@@ -1,6 +1,6 @@
 ---
 name: onboard-member
-description: Interactive HypeProof member onboarding — picks the consumer repo (studio/sediment/lab), clones it (or git-pulls if present), installs git hooks if the repo has .githooks/, and validates .claude/settings.json + MCP server config + vendored skill-creator + docs/MEMBER-GUIDE.ko.md. Use ONCE when joining HypeProof Lab. After onboarding, day-to-day work happens in the consumer repo and this skill is not needed again. Idempotent — safe to re-run.
+description: Interactive HypeProof member onboarding — picks the consumer repo (studio/sediment/lab), clones it (or git-pulls if present), installs git hooks if the repo has .githooks/, validates .claude/settings.json + MCP server config + vendored skill-creator + docs/MEMBER-GUIDE.ko.md, and registers the new member's profile (members.json entry + photo) on hypeproof-ai.xyz via an auto-generated PR. Use ONCE when joining HypeProof Lab — also when a member says they need to get on the website team section or register their profile. After onboarding, day-to-day work happens in the consumer repo and this skill is not needed again. Idempotent — safe to re-run.
 user_invocable: true
 triggers:
   - "onboard"
@@ -125,7 +125,40 @@ fi
    - 있으면 "로컬 override 존재" 보고 (정상)
    - 없으면 "신규 멤버는 곧 생길 것" 안내 (정상)
 
-### 5. 다음 단계 안내
+### 5. 멤버 프로필 등록 (신규 멤버만)
+
+이미 hypeproof-ai.xyz 팀 섹션에 올라와 있는 멤버는 건너뛴다 (재실행 시 중복
+방지: `hypeprooflab:data/members.json`에 본인 항목이 있으면 skip).
+
+새 멤버라면 사이트 등록까지가 온보딩이다 — 팀 섹션과 멤버 인증(사이트 로그인)
+둘 다 이 데이터를 쓴다. **AskUserQuestion으로 수집**:
+
+| 항목 | 예시 | 어디에 쓰나 |
+|---|---|---|
+| 실명 (한글) | 조민한 | `realName` |
+| 표시 닉네임 (영문) | Nick | `displayName` — 사이트 표시명 |
+| 이메일 | ...@gmail.com | `email` — **사이트 로그인 자격** (Google 로그인과 동일해야 함) |
+| GitHub 아이디 | rabqatab | `username` |
+| 직함/소속 한 줄 (영문) | AI Engineer @ ... | `title`·`bio` |
+| 전문 분야 3~5개 | AI/ML, 백엔드 | `expertise` |
+| 프로필 사진 파일 경로 | ~/Downloads/me.png | `web/public/members/<닉네임소문자>.png` |
+
+수집 후 hypeprooflab에 **PR 자동 생성** (이 스킬에서 유일하게 허용된 자동 PR —
+프로필 등록은 정형 데이터 추가라 학습 목적의 수동 이슈 발행 원칙의 예외):
+
+1. `hypeprooflab` clone이 없으면 `$WS/hypeprooflab`에 clone (또는 기존 경로 사용)
+2. 브랜치 `feat/member-<github-id>` 생성
+3. `data/members.json`에 항목 추가 — `role: "creator"`, `joinDate`: 오늘,
+   `status: "active"`, `profileImage: "/members/<파일명>"`. 스키마
+   (`data/members.schema.json`)로 검증
+4. 사진을 `web/public/members/`로 복사 (600px 이상 권장, PNG/JPG)
+5. 커밋 → push → PR (`Closes #<이슈>` 규칙은 lab 컨벤션대로 이슈 먼저 생성)
+6. 사용자에게 PR URL 전달 — CI green이면 본인이 직접 머지 (첫 머지 경험)
+
+`teamRole`(팀 카드의 역할 표기)과 `columnType`은 Jay가 배정 — PR 본문에
+"Jay: teamRole/columnType 배정 필요" 체크박스를 남긴다.
+
+### 6. 다음 단계 안내
 
 ```
 ✓ 셋업 완료 — <repo>
@@ -155,7 +188,7 @@ fi
 - **재실행 안전 (idempotent)**: 이미 셋업된 환경엔 `git pull --ff-only`만 (mutating 변경 없음); git hooks도 이미 설정돼 있으면 no-op.
 - **키 자동 저장 절대 X**: API 키·토큰은 사용자에게 안내·문서 링크만 제공. 환경변수·시크릿 파일은 사용자 본인이 처리.
 - **harness 추가 clone 안내 안 함**: 이 스킬을 실행 중이라면 harness는 이미 clone돼 있음 (그 안에서 호출되므로). 일상 작업은 consumer에서.
-- **자동 PR/이슈 생성 안 함**: 셋업은 read-only/local만. 첫 이슈는 멤버 본인이 발행 (워크플로 학습 목적).
+- **자동 PR/이슈 생성 안 함 (프로필 등록 제외)**: 셋업은 read-only/local만. 첫 이슈는 멤버 본인이 발행 (워크플로 학습 목적). 유일한 예외는 §5 프로필 등록 PR — 정형 데이터 추가이고, 머지는 멤버 본인이 하므로 학습 목적도 유지된다.
 - **언어**: 진행은 사용자 모국어(보통 한글). 출력 JSON/명령은 영문(repo 컨벤션).
 
 ---
@@ -174,6 +207,7 @@ fi
 
 ## 참고 / References
 
+- 공개 온보딩 체크리스트: https://hypeproof-ai.xyz/onboarding (사람이 처음 보는 입구 — 이 스킬은 그 페이지의 3단계에서 호출된다)
 - 한글 워크플로 가이드: 자기 consumer repo의 `docs/MEMBER-GUIDE.ko.md` (이 harness에서 vendoring됨)
 - 토폴로지·시퀀스: `hypeprooflab:jay/reports/2026-05-19-repo-structure-diagram.html`
 - Vendor 마이그레이션 보고서: `hypeprooflab:jay/reports/2026-05-20-vendor-migration.html`
