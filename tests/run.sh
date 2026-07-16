@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/run.sh — execute T-V1..T-V13 (T-V10 partial) against each consumer
-#                plus harness-side checks (T-V5..T-V7, T-V12, T-V13).
+# tests/run.sh — execute T-V1..T-V14 (T-V10 partial) against each consumer
+#                plus harness-side checks (T-V5..T-V7, T-V12, T-V13, T-V14).
 # Outputs a markdown table to stdout and writes tests/last-report.json.
 #
 # Exit code:
@@ -79,7 +79,20 @@ mark() {
 }
 
 SKILL_SRC="$HARNESS_ROOT/skills/skill-creator"
-DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md)
+# Doc-fidelity list is DERIVED from scripts/sync.sh's DOCS=() so the gate and the
+# vendoring source can never diverge (#47). sync.sh is the single source of truth
+# for which docs are vendored to consumer/docs/<file>; add a doc there and this
+# gate covers it automatically.
+_sync_docs_line="$(grep -E '^DOCS=\(' "$HARNESS_ROOT/scripts/sync.sh" | head -1)"
+_sync_docs_inner="${_sync_docs_line#*(}"
+_sync_docs_inner="${_sync_docs_inner%%)*}"
+# shellcheck disable=SC2206
+DOCS=($_sync_docs_inner)
+unset _sync_docs_line _sync_docs_inner
+if [ "${#DOCS[@]}" -eq 0 ]; then
+  echo "FATAL: could not derive DOCS from scripts/sync.sh (expected a 'DOCS=(...)' line)" >&2
+  exit 2
+fi
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md)
 N_CONSUMERS_FOUND=0
 
@@ -354,6 +367,33 @@ else
   mark "(harness)" T-V13 FAIL "$(IFS=';'; echo "${t13_fails[*]}")"
 fi
 
+# ---- T-V14 run.sh doc-fidelity list is derived from sync.sh, not hardcoded ----
+# Regression guard for #47: the two DOCS lists used to diverge (run.sh silently
+# skipped drift for docs added only to sync.sh). Assert run.sh derives its list
+# from sync.sh and does not reintroduce a hardcoded doc-name array.
+t14_fails=()
+# 1. run.sh must parse sync.sh's DOCS=() array.
+grep -q "grep -E '\^DOCS=" tests/run.sh || t14_fails+=("run.sh does not derive DOCS from sync.sh")
+# 2. run.sh must not hardcode a doc-name list (no *.ko.md literal on a DOCS= line).
+if grep -nE '^\s*DOCS=\([^)]*\.ko\.md' tests/run.sh >/dev/null; then
+  t14_fails+=("run.sh reintroduced a hardcoded DOCS=() doc list")
+fi
+# 3. The derived list must actually cover every doc sync.sh vendors.
+_sd_line="$(grep -E '^DOCS=\(' scripts/sync.sh | head -1)"; _sd_inner="${_sd_line#*(}"; _sd_inner="${_sd_inner%%)*}"
+# shellcheck disable=SC2206
+_sync_docs=($_sd_inner)
+for _d in "${_sync_docs[@]}"; do
+  covered=0
+  for _c in "${DOCS[@]}"; do [ "$_c" = "$_d" ] && covered=1 && break; done
+  [ "$covered" -eq 1 ] || t14_fails+=("$_d vendored by sync.sh but not covered by the gate")
+done
+unset _sd_line _sd_inner _sync_docs _d _c covered
+if [ "${#t14_fails[@]}" -eq 0 ]; then
+  mark "(harness)" T-V14 PASS "run.sh DOCS derived from sync.sh; all vendored docs covered"
+else
+  mark "(harness)" T-V14 FAIL "$(IFS=';'; echo "${t14_fails[*]}")"
+fi
+
 # ============================================================
 # Output
 # ============================================================
@@ -402,7 +442,7 @@ fi
 # ============================================================
 # Gate (CR-5: DEFER alone must not exit 0)
 # Required: 6 per-consumer PASSes (T-V1..T-V4, T-V8, T-V11) × N_CONSUMERS_FOUND
-#         + 4 harness PASSes always (T-V5, T-V7, T-V12, T-V13) + T-V6 if applicable
+#         + 5 harness PASSes always (T-V5, T-V7, T-V12, T-V13, T-V14) + T-V6 if applicable
 # T-V6 may be N/A if no consumer is vendored yet — relax in that case.
 # T-V9 always DEFER (consumer CI), T-V10 may be N/A (no base ref).
 # ============================================================
@@ -418,6 +458,8 @@ required=$((required + 1))
 # T-V12 always counts
 required=$((required + 1))
 # T-V13 always counts
+required=$((required + 1))
+# T-V14 always counts
 required=$((required + 1))
 
 echo "Gate: PASS=$PASS required>=$required FAIL=$FAIL SKIP=$SKIP"
