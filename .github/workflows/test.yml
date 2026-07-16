@@ -24,13 +24,14 @@ jobs:
           set -e
           bash -n scripts/sync.sh
           bash -n scripts/security/check-secrets.sh
+          bash -n scripts/register-skills.sh
           bash -n tests/run.sh
 
       - name: shellcheck (warnings only, non-blocking)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y shellcheck
-          shellcheck -S warning scripts/sync.sh scripts/security/check-secrets.sh tests/run.sh || true
+          shellcheck -S warning scripts/sync.sh scripts/security/check-secrets.sh scripts/register-skills.sh tests/run.sh || true
 
       - name: Secret scan changed files
         env:
@@ -42,6 +43,13 @@ jobs:
           else
             bash scripts/security/check-secrets.sh --diff "$BASE_SHA"
           fi
+
+      - name: skill registration generated & committed
+        run: |
+          # Harness-local invariant: every skills/<name>/ has a committed
+          # .claude/skills/<name> symlink. Fails the PR if a skill was added
+          # without registering it (the gap that shipped hype-review in #28).
+          bash scripts/register-skills.sh --check
 
       - name: No hardcoded user-specific paths
         run: |
@@ -123,4 +131,4 @@ jobs:
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
       - name: Run repo governance tests
-        run: python -m pytest tests/repo_governance tests/hype_review tests/security
+        run: python -m pytest tests/repo_governance tests/hype_review tests/security tests/weekly_loop

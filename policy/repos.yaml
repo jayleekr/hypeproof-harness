@@ -33,11 +33,6 @@ repositories:
         - DISCORD_WEBHOOK_SEDIMENT
     release_repos:
       - jayleekr/hypeproof-studio-releases
-    exceptions:
-      - id: studio-ci-checks-not-yet-created
-        owner: jayleekr
-        reason: Add PR CI workflow before making all expected checks required.
-        expires_at: 2026-07-01
 
   - owner: jayleekr
     name: sediment
