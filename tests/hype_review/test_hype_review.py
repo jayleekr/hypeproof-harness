@@ -223,3 +223,105 @@ def test_request_reviewers_offline_json(tmp_path: Path) -> None:
     assert [action["status"] for action in actions] == ["skipped", "would_request"]
     assert actions[0]["reason"] == "author"
     assert actions[1]["reviewer"] == "ico1036"
+
+
+# --- unrequested-approval queue (#52) -------------------------------------
+# The review queue used to be built purely from `gh search --review-requested`,
+# so a PR blocked on my approval whose author forgot to request me stayed
+# invisible (hypeprooflab#179). These pin the gap shut.
+
+
+def _pr(
+    *,
+    number: int = 179,
+    author: str = "TJ-kr",
+    repo: str = "jayleekr/hypeprooflab",
+    reviews: list[dict] | None = None,
+    draft: bool = False,
+) -> dict:
+    return {
+        "repository": {"nameWithOwner": repo},
+        "number": number,
+        "title": "content draft",
+        "url": f"https://github.com/{repo}/pull/{number}",
+        "author": {"login": author},
+        "labels": [],
+        "latestReviews": reviews or [],
+        "reviewDecision": "",
+        "statusCheckRollup": [
+            {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"}
+        ],
+        "mergeStateStatus": "CLEAN",
+        "mergeable": "MERGEABLE",
+        "isDraft": draft,
+        "headRefOid": "abc123",
+        "autoMergeRequest": None,
+        "updatedAt": "2026-07-19T00:00:00Z",
+    }
+
+
+def _monitor():
+    module = load_module()
+    return module, module._monitor_module()
+
+
+def test_pr_waiting_on_my_approval_is_included_even_without_a_request() -> None:
+    module, monitor = _monitor()
+
+    assert module.needs_my_approval(_pr(), "jayleekr", monitor) is True
+
+
+def test_my_own_pr_is_never_queued_for_my_approval() -> None:
+    module, monitor = _monitor()
+
+    assert module.needs_my_approval(_pr(author="jayleekr"), "jayleekr", monitor) is False
+
+
+def test_pr_i_already_reviewed_is_not_requeued() -> None:
+    module, monitor = _monitor()
+    pr = _pr(reviews=[{"author": {"login": "jayleekr"}, "state": "APPROVED"}])
+
+    assert module.needs_my_approval(pr, "jayleekr", monitor) is False
+
+
+def test_draft_pr_is_not_queued() -> None:
+    module, monitor = _monitor()
+
+    assert module.needs_my_approval(_pr(draft=True), "jayleekr", monitor) is False
+
+
+def test_at_prefixed_reviewer_is_normalized() -> None:
+    module, monitor = _monitor()
+
+    assert module.needs_my_approval(_pr(author="jayleekr"), "@jayleekr", monitor) is False
+
+
+def test_merge_queues_prefers_requested_and_dedupes() -> None:
+    module = load_module()
+    requested = [_pr(number=179)]
+    unrequested = [_pr(number=179), _pr(number=180)]
+
+    merged = module.merge_queues(requested, unrequested)
+
+    assert [item["number"] for item in merged] == [179, 180]
+    # The surviving #179 is the requested one, so it is not marked unrequested.
+    assert merged[0].get("_unrequested") is None
+
+
+def test_queue_table_distinguishes_requested_from_unrequested() -> None:
+    module = load_module()
+    unrequested = _pr(number=180)
+    unrequested["_unrequested"] = True
+
+    lines = module.render_queue([_pr(number=179), unrequested])
+    body = "\n".join(lines)
+
+    assert "요청됨" in body
+    assert "미요청(승인 대기)" in body
+
+
+def test_requested_only_flag_exists_for_opting_out() -> None:
+    module = load_module()
+    args = module.parse_args(["--mine", "--requested-only"])
+
+    assert args.requested_only is True
