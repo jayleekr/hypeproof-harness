@@ -74,6 +74,25 @@ Public-by-default operating stance:
 - Code contribution should still be restricted by collaborator permissions and branch protection.
 - Pending collaborator invitations are not fixed until the invitee accepts; track them as external blockers.
 
+## Finding What Needs Review
+
+Two harnesses answer two different questions. Run both — neither alone is complete.
+
+```bash
+# 1. PRs that explicitly requested me (plus, by default, PRs blocked on my approval)
+python3 scripts/hype-review/review.py --mine
+
+# 2. Every open PR in policy repos with ready/waiting/blocked + blockers
+python3 scripts/hype-merge/monitor.py
+```
+
+`review.py` is reviewer-centric and `monitor.py` is repo-centric. Use the monitor
+whenever the task is "check everything" — it is the only view that shows PRs
+belonging to other reviewers, draft PRs, and PRs stuck on checks rather than review.
+
+Sweep order that works: monitor for the full picture, `review.py --mine` for the
+worksheet on each PR actually assigned to me, then act.
+
 ## Review Requests
 
 When requesting reviews for HypeProof PRs, request every active member unless the user explicitly narrows the audience.
@@ -113,6 +132,43 @@ gh pr view <number> --repo owner/name --json reviews,reviewDecision,mergeStateSt
 ```
 
 Before enabling auto-merge, verify the head SHA and use `--match-head-commit` where possible.
+
+### Merge trains: expect repeated BEHIND
+
+Product repos require the branch to be current, so **merging one PR pushes every
+other open PR in that repo to BEHIND**. Approving is not enough — for each PR:
+
+```bash
+gh pr update-branch <n> --repo owner/name
+gh pr merge <n> --repo owner/name --squash --auto
+```
+
+After a merge lands, re-check the rest and re-run `update-branch` on the ones that
+went BEHIND again. Auto-merge does not update a stale branch for you; it waits.
+Do not read `mergeStateStatus: UNKNOWN` as a failure — GitHub recomputes
+mergeability asynchronously, so poll rather than concluding the merge is blocked.
+
+### Stale CHANGES_REQUESTED
+
+`dismiss_stale_reviews` only clears **approvals** on a new push. A
+`CHANGES_REQUESTED` review keeps blocking merge even after the feedback is fully
+addressed, and even where `required_approving_review_count` is 0.
+
+Dismissal is legitimate ONLY when all three hold:
+
+1. The blocker was actually fixed in code — not argued away.
+2. A comment on the PR states what changed, with evidence (test output, live run).
+3. The dismissal message says so and invites re-review.
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/pulls/<n>/reviews/<review_id>/dismissals \
+  -f message="Fixed: <what changed + evidence>. Dismissing this stale change-request; re-review welcome." \
+  -f event=DISMISS
+```
+
+Dismiss your OWN stale reviews freely. Dismissing another member's review on their
+PR needs the author's agreement first — say what you did and why in the thread.
+Never dismiss to unblock a merge you simply disagree with.
 
 ## Security Incidents
 
