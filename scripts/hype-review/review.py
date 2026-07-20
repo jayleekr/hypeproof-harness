@@ -241,6 +241,77 @@ def parse_pr_ref(pr_ref: str, repo: str | None) -> tuple[str | None, str]:
     return repo, pr_ref
 
 
+def _monitor_module() -> Any:
+    """Load hype-merge/monitor.py so review and merge share one gating verdict.
+
+    Importing rather than re-implementing keeps a single definition of "who has
+    approved" / "is this still waiting on review" across the two harnesses.
+    """
+    import importlib.util
+
+    path = ROOT / "scripts" / "hype-merge" / "monitor.py"
+    spec = importlib.util.spec_from_file_location("hype_merge_monitor", path)
+    if not spec or not spec.loader:
+        raise RuntimeError(f"cannot load monitor helpers from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("hype_merge_monitor", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def needs_my_approval(pr: dict[str, Any], reviewer: str, monitor: Any) -> bool:
+    """Would this reviewer's approval actually unblock the PR?
+
+    True only when the PR is still waiting on review, the reviewer is not the
+    author, and they have not already reviewed it.
+    """
+    login = reviewer.lstrip("@").lower()
+    if monitor.login(pr.get("author")).lower() == login:
+        return False
+    if pr.get("isDraft"):
+        return False
+    already_reviewed = {
+        author.lower() for author in monitor.latest_review_state_by_author(pr)
+    }
+    if login in already_reviewed:
+        return False
+
+    requirements = monitor.load_policy_review_requirements()
+    repo = monitor.repo_name(pr)
+    item = monitor.classify_pr(pr, required_non_author_approvals=requirements.get(repo, 0))
+    # "waiting" means review is the only thing left; an explicit approval-count
+    # blocker means the same on repos with no branch-protection signal.
+    if item.status == "waiting":
+        return True
+    return any(
+        blocker.startswith("policy_required_non_author_approvals:") for blocker in item.blockers
+    )
+
+
+def search_unrequested_approvals(reviewer: str, repo: str | None, limit: int) -> list[dict[str, Any]]:
+    """Open PRs blocked on review that never sent this reviewer a request.
+
+    Requesting reviewers is a step humans forget (which is why hype-pr automates
+    it), and a missed request silently means a missed review — hypeprooflab#179
+    sat waiting on exactly this gap.
+    """
+    monitor = _monitor_module()
+    repos = [repo] if repo else monitor.load_policy_repos()
+    found: list[dict[str, Any]] = []
+    for name in repos:
+        try:
+            prs = monitor.fetch_open_prs(name, limit)
+        except (RuntimeError, OSError):
+            # A single unreadable repo must not blank the whole queue.
+            continue
+        for pr in prs:
+            if needs_my_approval(pr, reviewer, monitor):
+                item = dict(pr)
+                item["_unrequested"] = True
+                found.append(item)
+    return found
+
+
 def search_review_requests(reviewer: str, repo: str | None, owner: str, limit: int) -> list[dict[str, Any]]:
     fields = "author,isDraft,labels,number,repository,state,title,updatedAt,url"
     args = [
@@ -419,10 +490,23 @@ def build_pack(
     }
 
 
+def merge_queues(
+    requested: list[dict[str, Any]], unrequested: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Requested items win; unrequested ones fill the gap without duplicating."""
+    seen = {(repo_name(item.get("repository")), item.get("number")) for item in requested}
+    extra = [
+        item
+        for item in unrequested
+        if (repo_name(item.get("repository")), item.get("number")) not in seen
+    ]
+    return [*requested, *extra]
+
+
 def render_queue(queue: list[dict[str, Any]]) -> list[str]:
     if not queue:
         return ["현재 조회된 리뷰 요청 PR이 없습니다."]
-    lines = ["| Repo | PR | Title | Author | Updated |", "|---|---:|---|---|---|"]
+    lines = ["| Repo | PR | Title | Author | Updated | 요청 |", "|---|---:|---|---|---|---|"]
     for item in queue:
         repo = repo_name(item.get("repository"))
         number = item.get("number", "")
@@ -431,7 +515,10 @@ def render_queue(queue: list[dict[str, Any]]) -> list[str]:
         updated = item.get("updatedAt") or ""
         url = item.get("url") or ""
         pr_cell = f"[#{number}]({url})" if url else f"#{number}"
-        lines.append(f"| {repo} | {pr_cell} | {title} | @{author} | {updated} |")
+        # Whether a request was actually sent is useful signal: an unrequested
+        # item usually means the author skipped the reviewer-request step.
+        origin = "미요청(승인 대기)" if item.get("_unrequested") else "요청됨"
+        lines.append(f"| {repo} | {pr_cell} | {title} | @{author} | {updated} | {origin} |")
     return lines
 
 
@@ -533,6 +620,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--risk", choices=sorted(RISK_LENSES), action="append", default=[], help="Risk lens to force. Can repeat.")
     parser.add_argument("--limit", type=int, default=20, help="Maximum queued PRs to list.")
+    parser.add_argument(
+        "--requested-only",
+        action="store_true",
+        help="Only PRs that explicitly requested me. Default also lists PRs blocked on my approval.",
+    )
     parser.add_argument("--offline", action="store_true", help="Do not call gh; generate from arguments only.")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return parser.parse_args(argv)
@@ -555,6 +647,13 @@ def main(argv: list[str]) -> int:
         else:
             pr = fetch_pr(args.repo, args.pr) if args.pr else None
             queue = search_review_requests(search_reviewer, args.repo, args.owner, args.limit)
+            if not args.requested_only:
+                # A missing reviewer request must not hide a PR that is blocked
+                # on this reviewer's approval (hypeprooflab#179).
+                queue = merge_queues(
+                    queue,
+                    search_unrequested_approvals(reviewer, args.repo, args.limit),
+                )
 
         pack = build_pack(
             reviewer=reviewer.lstrip("@"),
