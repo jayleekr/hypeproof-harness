@@ -53,8 +53,9 @@ def test_plan_requests_every_active_member_except_author() -> None:
         "xoqhdgh1002",
         "JinyongShin",
         "TJ-kr",
+        "rabqatab",
     ]
-    assert data["reviewers"] == ["jayleekr", "JeHyeong2", "ico1036", "xoqhdgh1002", "TJ-kr"]
+    assert data["reviewers"] == ["jayleekr", "JeHyeong2", "ico1036", "xoqhdgh1002", "TJ-kr", "rabqatab"]
 
 
 def test_auto_merge_is_blocked_when_profile_disallows_it() -> None:
@@ -122,7 +123,7 @@ def test_auto_merge_can_be_eligible_when_profile_and_risk_allow_it() -> None:
 
     assert data["auto_merge"]["eligible"] is True
     assert data["auto_merge"]["blocked_by"] == []
-    assert data["reviewers"] == ["jayleekr", "JeHyeong2", "ico1036", "xoqhdgh1002", "JinyongShin"]
+    assert data["reviewers"] == ["jayleekr", "JeHyeong2", "ico1036", "xoqhdgh1002", "JinyongShin", "rabqatab"]
 
 
 def test_create_is_dry_run_by_default_and_includes_reviewers() -> None:
