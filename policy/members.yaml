@@ -9,6 +9,7 @@ members:
     - xoqhdgh1002
     - JinyongShin
     - TJ-kr
+    - rabqatab
 
 roles:
   maintainer:
@@ -23,3 +24,4 @@ review_lenses:
   xoqhdgh1002: [contributor, product]
   JinyongShin: [backend, deploy]
   TJ-kr: [frontend, product]
+  rabqatab: [contributor, product]

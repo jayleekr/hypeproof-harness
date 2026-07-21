@@ -5,7 +5,7 @@ Deterministic validators for the HypeProof weekly operating loop
 vendored into each consumer repo (`hypeproof-studio`, `sediment`,
 `hypeprooflab`) via `scripts/sync.sh` with a `HARNESS_VERSION` marker.
 
-Both scripts are stdlib-only Python 3 and talk to GitHub through the `gh`
+All three scripts are stdlib-only Python 3 and talk to GitHub through the `gh`
 CLI — no tokens are read or stored.
 
 ## check.py — pre-meeting gate
@@ -34,6 +34,21 @@ python3 scripts/weekly-harness/burndown.py --cycle weekly-2026-07-21
 ```
 
 Exit codes: `0` report generated · `2` config/gh error.
+
+## announce.py — Tuesday broadcast
+
+The human-facing announcement for a cycle: what each member owns this cycle
+(grouped by owner across all repos), what carried over unfinished from last
+cycle, and how the tracked milestones (workshop dates) are progressing.
+Markdown on stdout — publish it as an Artifact and/or post to Discord.
+
+```bash
+python3 scripts/weekly-harness/announce.py --cycle weekly-2026-07-27
+```
+
+`--prev-cycle` defaults to the Monday one week earlier (the carry-over
+source). `--milestone-repo` limits which repos' milestones are read (default:
+same as `--repo`). Exit codes: `0` generated · `2` config/gh error.
 
 ## Offline / testing
 

@@ -115,6 +115,7 @@ def test_collaborator_audit_marks_pending_invitation() -> None:
                 {"login": "ico1036", "permissions": {"push": True, "pull": True}},
                 {"login": "xoqhdgh1002", "permissions": {"push": True, "pull": True}},
                 {"login": "JinyongShin", "permissions": {"push": True, "pull": True}},
+                {"login": "rabqatab", "permissions": {"push": True, "pull": True}},
             ]
         if path.endswith("/invitations"):
             return 0, [{"invitee": {"login": "TJ-kr"}, "permissions": "write"}]
