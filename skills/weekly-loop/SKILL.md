@@ -152,6 +152,37 @@ Paste the markdown output for the user (it goes at the top of the Monday
 agenda). Open issues are carried over (new cycle label + new ETA) or dropped
 in the meeting — offer to apply carry-overs with `gh issue edit`.
 
+## Announcement mode
+
+After the issues are filed (and carry-overs settled), produce the weekly
+broadcast — what each member owns this cycle, what carried over unfinished,
+and how the tracked milestones are progressing:
+
+```bash
+python3 scripts/weekly-harness/announce.py --cycle weekly-<YYYY-MM-DD>
+```
+
+`--prev-cycle` defaults to one week earlier (the carry-over source). Publish
+the markdown as an Artifact (default-private, shareable link) so the team sees
+one place with their assignments; optionally post the same content to Discord.
+
+### Milestones
+
+The weekly loop tracks WEEK-scoped work with cycle labels. When the meeting
+commits to a dated deliverable beyond one week (a workshop, a launch), create a
+GitHub milestone for that date and attach the prep issues, so
+`announce.py` can report its progress:
+
+```bash
+gh api repos/<owner/name>/milestones -f title="<event>" -f due_on="<YYYY-MM-DD>T00:00:00Z" \
+  -f description="<why>" -f state=open
+gh issue edit <n> --repo <owner/name> --milestone "<event>"
+```
+
+Milestones are for cross-week dated events; cycle labels remain the unit for
+the weekly loop itself. Do not put every issue in a milestone — only those
+whose deadline is an event, not the coming Monday.
+
 ---
 
 ## Guardrails

@@ -347,7 +347,7 @@ fi
 # check — needs no consumer.
 t13_fails=()
 [ -f docs/WEEKLY-LOOP.ko.md ] || t13_fails+=("docs/WEEKLY-LOOP.ko.md absent")
-for wf in scripts/weekly-harness/check.py scripts/weekly-harness/burndown.py; do
+for wf in scripts/weekly-harness/check.py scripts/weekly-harness/burndown.py scripts/weekly-harness/announce.py; do
   [ -f "$wf" ] || t13_fails+=("$wf absent")
 done
 WLMD="skills/weekly-loop/SKILL.md"
