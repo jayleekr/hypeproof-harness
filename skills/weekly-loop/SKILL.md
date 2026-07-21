@@ -63,6 +63,21 @@ AI는 실행).
    Ambiguous items go to the repo where the deliverable will finally live.
    An item spanning repos becomes one issue per repo.
 
+   Also assign a **theme** — one of the five strategy themes, applied as the
+   GitHub label `theme:<id>` at filing time (not retrofitted; it is the only
+   link the roadmap roll-up has):
+
+   | Item is about | theme |
+   |---|---|
+   | 강의 · 트랙레코드 · 워크숍 · 강의 컨텐츠 | `theme:education` |
+   | Studio 제품 · 배포 · 워커 · 토큰 · 스킬 | `theme:product` |
+   | 비트리 · 인바운드 · 세일즈 · 파트너 퍼널 | `theme:sales` |
+   | 헌법 · 정관 · 법률 · IP · 법인화 | `theme:governance` |
+   | Sediment · 지식DB · AX 케어 · ARR | `theme:sediment` |
+
+   If an item fits no theme, that is a signal to add a theme (edit
+   `roadmap.strategy.json` in the site repo) — ask the user, do not guess.
+
 5. Draft each issue with the four required sections.
 
    Title: imperative, one line, no cycle date in it. Body template:
@@ -104,10 +119,11 @@ AI는 실행).
    comment the new context on the existing issue instead, and ensure it
    carries the cycle label and a valid ETA (add/update if the user agrees).
 
-7. Show the full plan (repo, title, body, dedup verdicts) and get the
-   user's confirmation. Apply their edits.
+7. Show the full plan (repo, title, body, **theme**, dedup verdicts) and get
+   the user's confirmation. Apply their edits.
 
-8. Ensure the cycle label exists in every target repo, then file.
+8. Ensure the cycle label exists in every target repo, then file with both the
+   cycle label and the `theme:<id>` label.
 
    ```bash
    gh label list --repo <owner/name> --search "weekly-<YYYY-MM-DD>" \
@@ -115,10 +131,14 @@ AI는 실행).
      || gh label create "weekly-<YYYY-MM-DD>" --repo <owner/name> \
           --description "Weekly cycle due <YYYY-MM-DD>" --color "1D76DB"
 
+   # theme:<id> labels are seeded once per repo (education/product/sales/
+   # governance/sediment); create on demand with --force if missing.
+
    gh issue create --repo <owner/name> \
      --title "<title>" \
      --body-file <drafted-body.md> \
      --label "weekly-<YYYY-MM-DD>" \
+     --label "theme:<id>" \
      --assignee <github-id>
    ```
 
