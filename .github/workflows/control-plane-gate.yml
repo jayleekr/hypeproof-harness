@@ -1,0 +1,58 @@
+name: control-plane gate
+
+# Enforces policy/control-plane.yaml: a PR that touches control-plane paths
+# (governance engine, policy, security scanner, workflows, agent contracts) must
+# be approved by a human maintainer who is not the author/last-pusher, and must
+# not be approved or last-pushed by an automation actor.
+#
+# This job is intentionally SEPARATE from test.yml so its status-check context
+# ("control-plane (human gate)") is isolated and unambiguous. To make it
+# blocking, a human adds that context to branch protection AFTER it first runs
+# green (see the M004 human-run command list). Do not require it before then —
+# requiring a context no run has produced would lock merge (the exact failure
+# mode this whole change exists to prevent).
+
+on:
+  pull_request:
+    branches: [main]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gate:
+    name: control-plane (human gate)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: python -m pip install --quiet pyyaml
+
+      - name: Detect control-plane changes
+        run: |
+          set -e
+          git fetch origin "$BASE_REF" --depth=1
+          git diff --name-only "origin/${BASE_REF}...HEAD" > changed.txt
+          if python scripts/repo-governance/check_control_plane.py --changed-files changed.txt; then
+            echo "CONTROL_PLANE=0" >> "$GITHUB_ENV"
+          else
+            echo "CONTROL_PLANE=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Enforce human approval gate
+        if: env.CONTROL_PLANE == '1'
+        run: python scripts/repo-governance/check_control_plane.py --pr "$PR_NUMBER"

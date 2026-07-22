@@ -1,0 +1,82 @@
+version: 1
+
+# HypeProof control plane — the set of files that, if modified, can neutralize
+# governance / security / budget enforcement. Changes to these paths are the
+# highest-privilege changes in the repo and MUST NOT be made by automation on
+# its own authority.
+#
+# Rule (enforced by scripts/repo-governance/check_control_plane.py in CI, and by
+# branch protection):
+#   - A PR that touches any control-plane path MUST be reviewed and merged by a
+#     human maintainer (non-author). Automation may OPEN such a PR (propose) but
+#     may never approve or merge it.
+#   - The check emits a required status; branch protection makes it blocking.
+#
+# Derivation is evidence-based, not assumed: each entry below cites the concrete
+# mechanism it protects (see `neutralizes` field). If a path is not here, it is
+# not treated as control plane — add it only with a stated neutralization path.
+
+repo: jayleekr/hypeproof-harness
+
+# Who may merge a control-plane PR. Author-of-the-PR is always excluded even if
+# listed here (enforced by the checker via require_last_push_approval semantics).
+human_approvers:
+  - jayleekr
+  - JeHyeong2
+
+# Automation identity (see M004 WS1). Listed so the checker can HARD-FAIL if this
+# actor is the last pusher / approver on a control-plane PR.
+automation_actors:
+  - hypeproof-automation      # dedicated machine user (target state, WS1)
+  # gho_ personal token acting as jayleekr is NOT listed here on purpose:
+  # today automation still runs as Jay, so path-based human gate is the only
+  # backstop until the machine identity lands. Documented, not silently assumed.
+
+protected_paths:
+  - path: policy/**
+    neutralizes: >-
+      Source of truth for repo settings, branch protection, required checks,
+      collaborators and members. apply.py reads these verbatim and PUTs them to
+      GitHub (apply.py:150-154). A bad edit here silently rewrites enforcement.
+
+  - path: scripts/repo-governance/**
+    neutralizes: >-
+      The enforcement engine itself (audit.py / apply.py / create.py and these
+      checkers). Editing the engine can make every downstream check pass falsely.
+
+  - path: scripts/security/**
+    neutralizes: >-
+      check-secrets.sh — the credential scanner run in CI (test.yml step
+      "Secret scan changed files") and by .githooks. Weakening it lets secrets
+      through the gate.
+
+  - path: .github/workflows/**
+    neutralizes: >-
+      CI enforcement definitions. Deleting a job or renaming its `name:` changes
+      the reported status-check context and can drop a required check (this is
+      exactly the L88-91 landmine class). Also where `permissions:` and
+      pull_request_target risk live.
+
+  - path: .githooks/**
+    neutralizes: Local pre-commit/pre-push enforcement mirrored from CI.
+
+  - path: tests/repo_governance/**
+    neutralizes: The tests that back the governance engine; disabling them hides regressions.
+
+  - path: tests/security/**
+    neutralizes: The tests that back the secret scanner.
+
+  - path: CLAUDE.md
+    neutralizes: Agent execution contract / entry point for every agent session in this repo.
+
+  - path: AGENTS.md
+    neutralizes: Agent execution contract (non-Claude tooling).
+
+  - path: SECURITY.md
+    neutralizes: Stated security policy and disclosure contract.
+
+  - path: policy/control-plane.yaml
+    neutralizes: This file — the definition of what is protected. Self-referential by design.
+
+  - path: scripts/repo-governance/check_control_plane.py
+    neutralizes: The checker that enforces this policy. If it can be edited freely, the gate is moot.
