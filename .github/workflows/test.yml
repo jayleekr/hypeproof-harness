@@ -160,11 +160,11 @@ jobs:
           import json, sys
 
           EXPECTED = {
-              "repos_examined": 1, "issues_examined": 35,
-              "open_examined": 9, "closed_examined": 26, "comments_examined": 3,
-              "violations_detected": 19, "clean_accepted": 16,
-              "exempt_pre_cutoff": 2, "exempt_not_planned": 1, "exempt_code": 4,
-              "ok_github_linked": 2, "ok_syntax_valid": 5,
+              "repos_examined": 1, "issues_examined": 41,
+              "open_examined": 11, "closed_examined": 30, "comments_examined": 3,
+              "violations_detected": 21, "clean_accepted": 20,
+              "exempt_pre_cutoff": 2, "exempt_not_planned": 1, "exempt_code": 5,
+              "ok_github_linked": 2, "ok_syntax_valid": 7,
           }
           counts = json.load(open("corpus-report.json", encoding="utf-8"))["counts"]
           bad = {k: (v, counts.get(k)) for k, v in EXPECTED.items() if counts.get(k) != v}
@@ -182,7 +182,7 @@ jobs:
                     "or the corpus changed without updating the expectations.",
                     file=sys.stderr)
               raise SystemExit(1)
-          print("19 injected violations detected · 16 expected-clean cases accepted.")
+          print("21 injected violations detected · 20 expected-clean cases accepted.")
           PY
 
       - name: weekly-loop gate — bypass must be refused under CI

@@ -129,6 +129,79 @@ def test_exemption_code_inside_a_fence_does_not_exempt(tmp_path: Path) -> None:
     assert "closed with no 'Evidence:' ref" in proc.stdout
 
 
+# ------------------------------------------------- bold marker placement ----
+# `**Evidence**:` and `**Evidence:**` are both idiomatic markdown and both get
+# typed by hand. Accepting only the first rejected a legitimate closure and —
+# because the capture swallowed the '**' — reported it as `malformed ref ''`,
+# which tells the author nothing.
+
+
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        ("plain", "Evidence: {url}"),
+        ("bold-outside-colon", "**Evidence**: {url}"),
+        ("bold-inside-colon", "**Evidence:** {url}"),
+        ("bold-inside-colon-list", "- **Evidence:** {url}"),
+        ("korean-bold-inside-colon", "**증거:** {url}"),
+        ("bold-value", "Evidence: **{url}**"),
+    ],
+)
+def test_every_bold_placement_of_the_evidence_marker_is_accepted(
+    tmp_path: Path, name: str, body: str
+) -> None:
+    fx = fixture(tmp_path, [closed(55, f"Bold {name}", body=body.format(url=PR_URL))])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, f"{name}: {proc.stdout}{proc.stderr}"
+    assert "malformed" not in proc.stdout
+
+
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        ("bold-outside-colon", "**Owner**: @jay\n**ETA**: 2026-07-20"),
+        ("bold-inside-colon", "**Owner:** @jay\n**ETA:** 2026-07-20"),
+        ("bold-inside-colon-list", "- **Owner:** @jay\n- **ETA:** 2026-07-20"),
+        ("bold-value", "Owner: @jay\nETA: **2026-07-20**"),
+    ],
+)
+def test_every_bold_placement_of_owner_and_eta_is_accepted(
+    tmp_path: Path, name: str, body: str
+) -> None:
+    fx = fixture(tmp_path, [{"number": 56, "title": f"Bold {name}", "body": body}])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, f"{name}: {proc.stdout}{proc.stderr}"
+    assert "unparseable" not in proc.stdout
+
+
+@pytest.mark.parametrize("code", ["**Evidence-Exemption:** cancelled",
+                                  "**Evidence-Exemption**: cancelled",
+                                  "- **Evidence-Exemption:** cancelled"])
+def test_every_bold_placement_of_the_exemption_marker_is_accepted(
+    tmp_path: Path, code: str
+) -> None:
+    fx = fixture(tmp_path, [closed(57, "Bold exemption", body=code)])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "EXEMPT" in proc.stdout
+
+
+def test_marker_with_an_empty_value_says_what_is_missing(tmp_path: Path) -> None:
+    # A value that strips to nothing must not be reported as `ref ''` — empty
+    # quotes give the author nothing to act on.
+    fx = fixture(tmp_path, [closed(58, "Bold markup, no URL", body="Evidence: **")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "'Evidence:' marker has no URL after it" in proc.stdout
+    assert "''" not in proc.stdout
+
+    fx = fixture(tmp_path, [{"number": 59, "title": "No date", "body": "Owner: @jay\nETA: **"}])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "'ETA:' marker has no date after it" in proc.stdout
+    assert "''" not in proc.stdout
+
+
 # ------------------------------------------------ quoting-bypass coverage ----
 # One test per quoting construct, for the evidence gate.
 
@@ -339,17 +412,17 @@ def test_gh_cycle_issues_refuses_a_possibly_truncated_set(monkeypatch) -> None:
 
 CORPUS_EXPECTED = {
     "repos_examined": 1,
-    "issues_examined": 35,
-    "open_examined": 9,
-    "closed_examined": 26,
+    "issues_examined": 41,
+    "open_examined": 11,
+    "closed_examined": 30,
     "comments_examined": 3,
-    "violations_detected": 19,   # injected violations, all of which must be caught
-    "clean_accepted": 16,        # expected-clean cases, all of which must pass
+    "violations_detected": 21,   # injected violations, all of which must be caught
+    "clean_accepted": 20,        # expected-clean cases, all of which must pass
     "exempt_pre_cutoff": 2,
     "exempt_not_planned": 1,
-    "exempt_code": 4,
+    "exempt_code": 5,
     "ok_github_linked": 2,
-    "ok_syntax_valid": 5,
+    "ok_syntax_valid": 7,
 }
 
 
@@ -373,4 +446,4 @@ def test_adversarial_corpus_detects_every_injected_violation() -> None:
     detected = {i["number"] for i in report["issues"] if i["status"] == "violation"}
     assert detected == injected, f"missed: {injected - detected}, false: {detected - injected}"
     assert not (clean & detected), f"false positives on expected-clean: {clean & detected}"
-    assert len(injected) == 19 and len(clean) == 16
+    assert len(injected) == 21 and len(clean) == 20

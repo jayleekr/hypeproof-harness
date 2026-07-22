@@ -155,6 +155,21 @@
       "closedAt": "2026-07-21T15:00:00Z"
     },
     {
+      "number": 120,
+      "title": "V closed: Evidence marker with no URL after it",
+      "body": "Evidence: **",
+      "state": "CLOSED",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/120"
+    },
+    {
+      "number": 121,
+      "title": "V open: ETA marker with no date after it",
+      "body": "Owner: @jay\nETA: **",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/121"
+    },
+    {
       "number": 201,
       "title": "C open: owner + ETA within the cycle",
       "body": "## Owner\n\n담당: @TJ-kr\n\n## ETA\n\nETA: 2026-07-24\n",
@@ -300,6 +315,37 @@
       "state": "CLOSED",
       "url": "https://github.com/jayleekr/hypeproof-corpus/issues/216",
       "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 217,
+      "title": "C closed: bold-colon evidence **Evidence:**",
+      "body": "**Evidence:** https://github.com/jayleekr/sediment/pull/42",
+      "state": "CLOSED",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/217"
+    },
+    {
+      "number": 218,
+      "title": "C closed: bold-colon Korean marker in a list",
+      "body": "- **증거:** https://github.com/jayleekr/sediment/pull/42",
+      "state": "CLOSED",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/218"
+    },
+    {
+      "number": 219,
+      "title": "C closed: bold-colon exemption",
+      "body": "**Evidence-Exemption:** administrative",
+      "state": "CLOSED",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/219"
+    },
+    {
+      "number": 220,
+      "title": "C open: bold-colon Owner and ETA",
+      "body": "**Owner:** @TJ-kr\n**ETA:** 2026-07-24",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/220"
     }
   ]
 }
