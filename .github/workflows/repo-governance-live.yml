@@ -107,6 +107,29 @@ jobs:
         with:
           python-version: "3.11"
 
+      # This audit reads issues in three OTHER repos, which the per-repo
+      # GITHUB_TOKEN cannot do. Without a cross-repo token every `gh issue
+      # list` 404s and the gate fails closed with a GraphQL error that reads
+      # like a bug. Say what is actually wrong, once, before the gate runs.
+      - name: Preflight — cross-repo issue read access
+        run: |
+          set -e
+          missing=""
+          for repo in jayleekr/hypeprooflab jayleekr/hypeproof-studio jayleekr/sediment; do
+            if ! gh issue list --repo "$repo" --limit 1 --json number >/dev/null 2>&1; then
+              missing="$missing $repo"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::cannot read issues in:$missing" >&2
+            echo "The weekly-loop gate audits issues across the product repos, which the" >&2
+            echo "per-repo GITHUB_TOKEN cannot see. Set the HYPEPROOF_GOVERNANCE_TOKEN" >&2
+            echo "repository secret to a token with read access to those repos." >&2
+            echo "Failing closed: an audit that cannot see the issues has not passed them." >&2
+            exit 2
+          fi
+          echo "issue read access confirmed for all three product repos"
+
       - name: Resolve the cycles under audit
         id: cycles
         run: |
