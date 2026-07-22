@@ -412,18 +412,71 @@ def test_gh_cycle_issues_refuses_a_possibly_truncated_set(monkeypatch) -> None:
 
 CORPUS_EXPECTED = {
     "repos_examined": 1,
-    "issues_examined": 41,
-    "open_examined": 11,
-    "closed_examined": 30,
+    "issues_examined": 44,
+    "open_examined": 13,
+    "closed_examined": 31,
     "comments_examined": 3,
     "violations_detected": 21,   # injected violations, all of which must be caught
-    "clean_accepted": 20,        # expected-clean cases, all of which must pass
+    "clean_accepted": 23,        # expected-clean cases, all of which must pass
     "exempt_pre_cutoff": 2,
     "exempt_not_planned": 1,
     "exempt_code": 5,
     "ok_github_linked": 2,
-    "ok_syntax_valid": 7,
+    "ok_syntax_valid": 8,
 }
+
+
+# Each quoting mechanism, and the source edit that disables it. If disabling a
+# mechanism does not change the corpus verdict, the corpus is blind to that
+# mechanism — it can regress silently. A single record covering one mechanism
+# proves one mechanism, so this asserts all four independently.
+STRIP_MUTATIONS = {
+    "fenced code blocks": [("m = FENCE_RE.match(stripped)", "m = None")],
+    "indented code blocks": [
+        ("if indent >= 4 and (prev_blank or in_indented):",
+         "if False and indent >= 4 and (prev_blank or in_indented):")
+    ],
+    "inline code spans": [('out.append(INLINE_CODE_RE.sub("", line))', "out.append(line)")],
+    "blockquotes": [("if BLOCKQUOTE_RE.match(line):", "if False and BLOCKQUOTE_RE.match(line):")],
+    "html comments": [
+        ('line = HTML_COMMENT_1LINE_RE.sub("", line)', "pass"),
+        ('open_at = line.find("<!--")', "open_at = -1"),
+    ],
+}
+
+
+def _corpus_violations(source: str, tmp_path: Path) -> int:
+    script = tmp_path / "mutated_check.py"
+    script.write_text(source, encoding="utf-8")
+    proc = run(script, "--cycle", CORPUS_CYCLE, "--repo", CORPUS_REPO,
+               "--issues-json", str(CORPUS), "--json")
+    return json.loads(proc.stdout)["counts"]["violations_detected"]
+
+
+@pytest.mark.parametrize("mechanism", sorted(STRIP_MUTATIONS))
+def test_corpus_detects_each_quoting_mechanism_regressing(
+    tmp_path: Path, mechanism: str
+) -> None:
+    """The corpus must bite on every quoting path, not just the ones we remember.
+
+    A verifier found that disabling inline-code stripping changed nothing: the
+    only inline record put the marker *inside* the span, which the line anchor
+    rejects anyway, so the record could not observe the stripping. Coverage gap,
+    not a security hole — and exactly the kind that hides until it matters.
+    """
+    baseline = _corpus_violations(CHECK.read_text(encoding="utf-8"), tmp_path)
+    assert baseline == CORPUS_EXPECTED["violations_detected"]
+
+    source = CHECK.read_text(encoding="utf-8")
+    for old, new in STRIP_MUTATIONS[mechanism]:
+        assert old in source, f"mutation anchor vanished from check.py: {old!r}"
+        source = source.replace(old, new)
+
+    mutated = _corpus_violations(source, tmp_path)
+    assert mutated != baseline, (
+        f"disabling {mechanism} did not change the corpus verdict "
+        f"({baseline} violations either way) — the corpus is blind to it"
+    )
 
 
 def test_adversarial_corpus_detects_every_injected_violation() -> None:
@@ -446,4 +499,4 @@ def test_adversarial_corpus_detects_every_injected_violation() -> None:
     detected = {i["number"] for i in report["issues"] if i["status"] == "violation"}
     assert detected == injected, f"missed: {injected - detected}, false: {detected - injected}"
     assert not (clean & detected), f"false positives on expected-clean: {clean & detected}"
-    assert len(injected) == 21 and len(clean) == 20
+    assert len(injected) == 21 and len(clean) == 23
