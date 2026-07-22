@@ -80,6 +80,8 @@ EVIDENCE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence|증거)(?:\*\*)?\s*[:：]\s*(\S+)",
     re.IGNORECASE | re.MULTILINE,
 )
+FENCE_RE = re.compile(r"(`{3,}|~{3,})")
+INLINE_CODE_RE = re.compile(r"`+[^`\n]*`+")
 # The ref must be a GitHub permalink to something that was actually produced.
 # Reusing GitHub's identifiers keeps the gate verifiable without a new registry.
 EVIDENCE_URL_RE = re.compile(
@@ -170,6 +172,33 @@ def evidence_exemption(issue: dict) -> str | None:
     return None
 
 
+def strip_code(text: str) -> str:
+    """Blank out fenced code blocks and inline code spans.
+
+    An `Evidence:` line inside a code fence is quoted documentation, not a
+    claim about this issue — pasting the example out of WEEKLY-LOOP.ko.md §6.1
+    must not satisfy the gate. Lines are blanked rather than deleted so the
+    line-anchored markers keep their meaning.
+    """
+    out: list[str] = []
+    fence: str | None = None
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        m = FENCE_RE.match(stripped)
+        if fence is None:
+            if m:
+                fence = m.group(1)[0]
+                out.append("")
+                continue
+        else:
+            if m and stripped[0] == fence:
+                fence = None
+            out.append("")
+            continue
+        out.append(INLINE_CODE_RE.sub("", line))
+    return "\n".join(out)
+
+
 def evidence_sources(issue: dict) -> list[str]:
     """Body plus every comment — evidence normally lands in the closing comment."""
     texts = [issue.get("body") or ""]
@@ -178,7 +207,7 @@ def evidence_sources(issue: dict) -> list[str]:
             texts.append(comment.get("body") or "")
         elif isinstance(comment, str):
             texts.append(comment)
-    return texts
+    return [strip_code(t) for t in texts]
 
 
 def check_closed_issue(issue: dict) -> list[str]:

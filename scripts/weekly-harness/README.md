@@ -32,10 +32,17 @@ meeting), across the three product repos:
 The ref reuses GitHub's own identifiers rather than a new registry, and needs
 *both* the `Evidence:` marker and a permalink shape — a bare link pasted in a
 body is ordinary issue chatter and must not satisfy the gate by accident.
-Only the shape is checked; the checker does not fetch the URL, so a
-well-formed ref to a nonexistent PR still passes. That is deliberate — the
-gate is offline and deterministic, and a wrong permalink is visible to any
-human who clicks it.
+Refs inside fenced code blocks or inline code spans are ignored for the same
+reason: the example in WEEKLY-LOOP.ko.md §6.1 is a fenced block, and pasting
+documentation must not count as doing the work.
+
+Only the shape is checked; the checker does not fetch the URL. A well-formed
+ref to a nonexistent repo, a nonexistent PR number, or an all-zeros commit SHA
+will pass. That is deliberate — the gate is offline and deterministic, and a
+wrong permalink is visible to any human who clicks it. Verifying that the
+referenced thing exists (and actually closed the issue) is the job of a later
+iteration; `gh`'s `closedByPullRequestsReferences` field is the natural
+successor, since GitHub records it and a human cannot type it by hand.
 
 ```bash
 python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
@@ -43,7 +50,17 @@ python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 
 `--skip-evidence-gate` disables only the closed-issue rule. It exists for the
 adoption window (issues closed before the gate landed have no `Evidence:`
-line); it is not for CI.
+line). **It must never appear in an automated invocation** — CI, cron, hooks,
+or a skill. A gate that ships with its own bypass wired in is not a gate.
+
+## Invocation — what is and is not automated
+
+`check.py` is currently run by a human or by the `weekly-loop` skill (§5 and
+§7 of WEEKLY-LOOP.ko.md). It is **not** wired into CI, cron, or a git hook, so
+nothing runs it on its own. The rules are enforced when invoked; invocation
+itself is not yet automatic. Wiring it up needs a migration decision first —
+issues closed before this gate existed carry no `Evidence:` line and would all
+report as violations on the first automated run.
 
 Exit codes: `0` clean · `1` violations (each printed) · `2` config/gh error.
 

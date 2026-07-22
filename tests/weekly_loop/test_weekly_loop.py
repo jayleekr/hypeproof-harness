@@ -170,6 +170,44 @@ def test_evidence_gate_is_not_satisfied_by_an_unmarked_link(tmp_path: Path) -> N
     assert "closed with no 'Evidence:' ref" in proc.stdout
 
 
+def test_evidence_gate_ignores_refs_inside_a_fenced_code_block(tmp_path: Path) -> None:
+    # anti-fabrication: the example in WEEKLY-LOOP.ko.md §6.1 is a fenced block.
+    # Pasting the documentation into an issue must not close the gate.
+    fenced = f"작업 설명.\n\n```\nEvidence: {PR_URL}\n```\n\n실제 산출물 없음.\n"
+    tilde = f"~~~markdown\nEvidence: {PR_URL}\n~~~\n"
+    fx = fixture(
+        tmp_path,
+        [closed(30, "Backtick fence", body=fenced), closed(31, "Tilde fence", body=tilde)],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "2 violation(s)" in proc.stdout
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+
+
+def test_evidence_gate_ignores_refs_inside_an_inline_code_span(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(32, "Inline span", body=f"예시: `Evidence: {PR_URL}`\n")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+
+
+def test_evidence_gate_still_sees_a_real_ref_outside_the_fence(tmp_path: Path) -> None:
+    # guard against over-stripping: a quoted example plus a genuine ref passes,
+    # and inline code elsewhere on an unrelated line is harmless.
+    body = f"~~~\nEvidence: https://github.com/x/y/pull/1\n~~~\n\nEvidence: {PR_URL}\n"
+    fx = fixture(
+        tmp_path,
+        [
+            closed(33, "Fence then real ref", body=body),
+            closed(34, "Inline code elsewhere", body=f"`make build` 확인.\n\nEvidence: {PR_URL}\n"),
+        ],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "0 violation(s)" in proc.stdout
+
+
 def test_evidence_gate_accepts_commit_and_comment_permalinks(tmp_path: Path) -> None:
     fx = fixture(
         tmp_path,
