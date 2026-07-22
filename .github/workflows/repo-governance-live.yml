@@ -24,14 +24,7 @@ jobs:
       - name: Install policy deps
         run: python -m pip install --quiet pyyaml
 
-      # Without a token that can see admin-visible repo fields, `gh api repos/X`
-      # still succeeds on public repos but omits allow_auto_merge and friends.
-      # audit.py then reads them as None and reports drift on every one — 42
-      # phantom findings in the 2026-07-22 run — while the genuinely drifted
-      # settings it cannot reach stay invisible. Loud about the wrong things and
-      # silent about the real ones is worse than failing, so check first and say
-      # which of the two is happening.
-      - name: Preflight — policy repos readable at admin visibility
+      - name: Resolve policy repos
         run: |
           set -eo pipefail
           python - <<'PY' > preflight-repos.txt
@@ -40,40 +33,43 @@ jobs:
           for repo in policy.get("repositories", []):
               print(f"{repo['owner']}/{repo['name']}")
           PY
-          total=0; unreachable=""; shallow=""
+          count=$(grep -c . preflight-repos.txt || true)
+          echo "policy declares $count repo(s)"
+          # Non-vacuity: an audit with nothing to audit has not passed.
+          [ "$count" -gt 0 ] || { echo "::error::policy/repos.yaml declares no repositories" >&2; exit 2; }
+
+      # `gh api repos/X` succeeds on a public repo even without admin, but omits
+      # allow_auto_merge and the other admin-visible fields. audit.py reads them
+      # as None and calls every one drift — 42 phantoms in the 2026-07-22 run —
+      # while the genuinely drifted settings it cannot reach stay invisible.
+      #
+      # This step ONLY classifies. It never exits non-zero and never skips the
+      # audit. An earlier revision failed here and skipped the audit whenever a
+      # single repo was shallow, which meant a repo transferred away — losing us
+      # admin, which IS governance drift — would be reclassified as "credential
+      # problem" and silence the drift report for every other repo too. A
+      # control must not reclassify an incident as a normal condition, and a
+      # failure that summons a human must not erase what they came to see.
+      - name: Classify repo visibility
+        run: |
+          set -eo pipefail
+          : > preflight-classification.txt
           while read -r full; do
             [ -n "$full" ] || continue
-            total=$((total + 1))
             if ! body=$(gh api "repos/$full" 2>/dev/null); then
-              unreachable="$unreachable $full"
+              echo "unreachable $full" >> preflight-classification.txt
             elif ! printf '%s' "$body" | grep -q '"allow_auto_merge"'; then
-              shallow="$shallow $full"
+              echo "shallow $full" >> preflight-classification.txt
+            else
+              echo "ok $full" >> preflight-classification.txt
             fi
           done < preflight-repos.txt
-          # A repo that is readable but hides allow_auto_merge cannot be drift —
-          # GitHub always shows that field to an admin-scoped token on a repo we
-          # own. It means the token is too weak, full stop.
-          #
-          # A single unreachable repo IS drift (renamed, deleted, transferred)
-          # and audit.py already reports it as github/critical. Only treat
-          # unreachability as a credential problem when EVERY repo is blind,
-          # which no amount of real drift produces at once.
-          reachable=$((total - $(printf '%s' "$unreachable" | wc -w)))
-          if [ -n "$shallow" ] || [ "$reachable" -eq 0 ]; then
-            echo "::error::repo-governance audit cannot see the repos it audits" >&2
-            [ -n "$shallow" ] && echo "readable but admin fields hidden:$shallow" >&2
-            [ "$reachable" -eq 0 ] && echo "every policy repo unreachable:$unreachable" >&2
-            echo "" >&2
-            echo "This is a CREDENTIAL problem, not governance drift. Set the" >&2
-            echo "HYPEPROOF_GOVERNANCE_TOKEN repository secret to a token with admin" >&2
-            echo "read access to every repo in policy/repos.yaml. Until then any" >&2
-            echo "findings this job produces are phantoms and the real drift is hidden." >&2
-            exit 2
-          fi
-          if [ -n "$unreachable" ]; then
-            echo "note: unreachable, will be reported as drift by audit.py:$unreachable"
-          fi
-          echo "$reachable/$total policy repos readable at admin visibility"
+          cat preflight-classification.txt
+
+      # No `set +e … exit 0`: this job used to discard audit.py's exit code and
+      # report success while its own artifact said `status: drift`. The status
+      # is recorded here so the summary can still be written, and enforced in
+      # the final step. The audit runs unconditionally — see above.
 
       # No `set +e … exit 0`: this job used to discard audit.py's exit code and
       # report success while its own artifact said `status: drift`. The status
@@ -99,51 +95,82 @@ jobs:
 
           from collections import Counter
 
+          klass = {}
+          if os.path.exists("preflight-classification.txt"):
+              for line in open("preflight-classification.txt", encoding="utf-8"):
+                  parts = line.split()
+                  if len(parts) == 2:
+                      klass[parts[1]] = parts[0]
+          shallow = sorted(r for r, k in klass.items() if k == "shallow")
+          unreachable = sorted(r for r, k in klass.items() if k == "unreachable")
+          readable = sorted(r for r, k in klass.items() if k == "ok")
+
+          print("# Repo Governance Live Audit")
+          print()
           if not os.path.exists("repo-governance-audit.json"):
-              # preflight failed before the audit ran; it has already said why
-              print("# Repo Governance Live Audit")
-              print()
-              print("Not run — preflight failed. See the job log.")
+              print("audit.py produced no report — see the job log.")
               raise SystemExit
           with open("repo-governance-audit.json", encoding="utf-8") as fh:
               data = json.load(fh)
           findings = data.get("findings", [])
-          print("# Repo Governance Live Audit")
-          print()
+
+          # Findings from a shallow repo are null-driven phantoms: audit.py read
+          # hidden fields as None. They are ANNOTATED, never suppressed — the
+          # human decides. Findings from readable repos, and the "unreachable"
+          # finding itself, are trustworthy.
+          def trustworthy(item):
+              return klass.get(item.get("repo", ""), "ok") != "shallow"
+
+          trusted = [f for f in findings if trustworthy(f)]
+          unreliable = [f for f in findings if not trustworthy(f)]
+
           print(f"Status: `{data.get('status')}`")
-          print(f"Findings: `{len(findings)}`")
+          print(f"Findings: `{len(findings)}` "
+                f"(trustworthy `{len(trusted)}` · unreliable `{len(unreliable)}`)")
           print()
+          print("## Coverage — non-vacuity")
+          print()
+          print(f"- repos declared by policy: {len(klass)}")
+          print(f"- readable at admin visibility: {len(readable)}")
+          print(f"- unreachable: {len(unreachable)} {' '.join(unreachable)}")
+          print(f"- readable but admin fields hidden: {len(shallow)} {' '.join(shallow)}")
+          print()
+          if shallow:
+              print("> **Findings from the repos above are annotated `unreliable`.** We lost")
+              print("> admin visibility on them, so audit.py read their settings as null.")
+              print("> That loss is itself a drift candidate — a repo transferred away or a")
+              print("> permission revoked looks exactly like this — and it is reported, not")
+              print("> silenced. Everything else below is unaffected.")
+              print()
           if not findings:
               print("No drift found.")
               raise SystemExit
 
-          by_severity = Counter(item.get("severity", "unknown") for item in findings)
-          by_module = Counter(item.get("module", "unknown") for item in findings)
-          print("## Severity")
-          print()
-          for key, count in sorted(by_severity.items()):
-              print(f"- `{key}`: {count}")
-          print()
-          print("## Module")
-          print()
-          for key, count in sorted(by_module.items()):
-              print(f"- `{key}`: {count}")
-          print()
-          print("## Findings")
-          print()
-          print("| Repo | Severity | Module | Field | Expected | Actual |")
-          print("|---|---|---|---|---|---|")
-          for item in findings:
-              print(
-                  "| {repo} | {severity} | {module} | {field} | `{expected}` | `{actual}` |".format(
-                      repo=item.get("repo", ""),
-                      severity=item.get("severity", ""),
-                      module=item.get("module", ""),
-                      field=item.get("field", ""),
-                      expected=json.dumps(item.get("expected"), ensure_ascii=False),
-                      actual=json.dumps(item.get("actual"), ensure_ascii=False),
+          for label, items in (("Trustworthy", trusted), ("Unreliable", unreliable)):
+              if not items:
+                  continue
+              by_severity = Counter(i.get("severity", "unknown") for i in items)
+              by_module = Counter(i.get("module", "unknown") for i in items)
+              print(f"## {label} findings ({len(items)})")
+              print()
+              print("Severity: " + ", ".join(f"`{k}` {v}" for k, v in sorted(by_severity.items())))
+              print()
+              print("Module: " + ", ".join(f"`{k}` {v}" for k, v in sorted(by_module.items())))
+              print()
+              print("| Repo | Severity | Module | Field | Expected | Actual |")
+              print("|---|---|---|---|---|---|")
+              for item in items:
+                  print(
+                      "| {repo} | {severity} | {module} | {field} | `{expected}` | `{actual}` |".format(
+                          repo=item.get("repo", ""),
+                          severity=item.get("severity", ""),
+                          module=item.get("module", ""),
+                          field=item.get("field", ""),
+                          expected=json.dumps(item.get("expected"), ensure_ascii=False),
+                          actual=json.dumps(item.get("actual"), ensure_ascii=False),
+                      )
                   )
-              )
+              print()
           PY
 
       - name: Upload audit artifact
@@ -155,25 +182,79 @@ jobs:
           path: |
             repo-governance-audit.json
             repo-governance-audit.exitcode
+            preflight-classification.txt
 
       # The step that turns a recorded status into a failed job. Splitting it
       # out keeps the report above intact on a red run — the report is what a
       # human acts on, and it must survive the failure that summons them.
+      #
+      # Red means one of three things and says which, because they need
+      # different action: a credential to provision, a permission loss to
+      # investigate, or drift to remediate.
       - name: Enforce
         if: always()
         env:
           STATUS: ${{ steps.audit.outputs.status }}
         run: |
-          if [ -z "$STATUS" ]; then
-            echo "audit did not run (preflight failed) — see above" >&2
-            exit 0
-          fi
-          case "$STATUS" in
-            0) echo "no governance drift" ;;
-            2|3) echo "::error::repo governance drift — see the job summary" >&2; exit 1 ;;
-            4) echo "::error::policy/repos.yaml is invalid — this is a policy error, not drift" >&2; exit 1 ;;
-            *) echo "::error::audit.py exited $STATUS (unexpected)" >&2; exit 1 ;;
-          esac
+          python - <<'PY'
+          import json, os, sys
+
+          klass = {}
+          if os.path.exists("preflight-classification.txt"):
+              for line in open("preflight-classification.txt", encoding="utf-8"):
+                  parts = line.split()
+                  if len(parts) == 2:
+                      klass[parts[1]] = parts[0]
+          readable = [r for r, k in klass.items() if k == "ok"]
+          shallow = sorted(r for r, k in klass.items() if k == "shallow")
+          unreachable = sorted(r for r, k in klass.items() if k == "unreachable")
+          status = os.environ.get("STATUS", "")
+
+          findings = []
+          if os.path.exists("repo-governance-audit.json"):
+              findings = json.load(open("repo-governance-audit.json", encoding="utf-8")).get("findings", [])
+          trusted = [f for f in findings if klass.get(f.get("repo", ""), "ok") != "shallow"]
+
+          reasons = []
+          if not klass:
+              reasons.append("visibility was never classified — the audit examined nothing")
+          elif not readable:
+              # Same threshold both ways: only a wholly blind run is a credential
+              # verdict. Any partial blindness is a drift candidate instead, so
+              # that losing admin on one repo can never mute the other eight.
+              reasons.append(
+                  f"every policy repo is blind (shallow {len(shallow)}, unreachable "
+                  f"{len(unreachable)}) — provision HYPEPROOF_GOVERNANCE_TOKEN with admin "
+                  "read on every repo in policy/repos.yaml. Until then this job cannot "
+                  "distinguish drift from blindness."
+              )
+          else:
+              if shallow:
+                  reasons.append(
+                      "lost admin visibility on: " + " ".join(shallow) +
+                      " — investigate as permission drift (transfer, revoked access, or a "
+                      "token too weak for these repos). Their findings are annotated "
+                      "unreliable in the summary, not suppressed."
+                  )
+              if trusted:
+                  reasons.append(f"{len(trusted)} trustworthy governance drift finding(s) — see the summary")
+          if status == "4":
+              reasons.append("policy/repos.yaml is invalid — a policy error, not drift")
+          elif status not in ("0", "2", "3", ""):
+              reasons.append(f"audit.py exited {status} (unexpected)")
+          elif status == "" :
+              reasons.append("audit.py did not record an exit status")
+
+          print(f"classified {len(klass)} repo(s): readable {len(readable)}, "
+                f"shallow {len(shallow)}, unreachable {len(unreachable)}")
+          print(f"findings: {len(findings)} total, {len(trusted)} trustworthy")
+          if not reasons:
+              print("no governance drift")
+              raise SystemExit(0)
+          for reason in reasons:
+              print(f"::error::{reason}", file=sys.stderr)
+          raise SystemExit(1)
+          PY
 
   weekly-loop-gate:
     # The weekly-loop rules (Owner/ETA on open issues, evidence on closed ones)

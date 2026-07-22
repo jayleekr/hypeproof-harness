@@ -27,3 +27,4 @@ tests/consumers.local.txt
 /preflight-repos.txt
 /repo-governance-audit.json
 /repo-governance-audit.exitcode
+/preflight-classification.txt
