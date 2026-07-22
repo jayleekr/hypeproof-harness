@@ -103,27 +103,44 @@ def _gh(args: list[str]) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
-def check_repo(repo: dict, root: Path | None, observed: bool) -> list[str]:
+def check_repo(repo: dict, root: Path | None, observed: bool) -> dict:
+    """Return {full, status, reason, errors}.
+
+    status is one of:
+      - "no-checks"  declared list empty; nothing to validate (safe).
+      - "examined"   we actually inspected producible/observed contexts.
+      - "skipped"    we could NOT inspect this repo (no local workflows and
+                     --observed not set). Critically this is NOT "OK": an
+                     un-inspected repo must never be conflated with a clean one
+                     (the Control Invariant — do not report unexamined as pass).
+    """
     full = f"{repo['owner']}/{repo['name']}"
     declared = repo.get("required_status_checks") or []
     if not declared:
-        return []
-    errors: list[str] = []
+        return {"full": full, "status": "no-checks", "reason": "", "errors": []}
 
     producible: dict[str, list[str]] | None = None
     if root is not None:
         wf_dir = root / ".github" / "workflows"
         if wf_dir.is_dir():
             producible = producible_contexts(wf_dir)
-        else:
-            print(f"WARN[{full}]: no workflows dir at {wf_dir}; offline check skipped", file=sys.stderr)
+
+    # Not examinable: no local workflows to parse AND not cross-checking GitHub.
+    if producible is None and not observed:
+        return {
+            "full": full,
+            "status": "skipped",
+            "reason": ("no local workflows dir (pass --root/--workspace pointing "
+                       "at a checkout, or --observed to query GitHub)"),
+            "errors": [],
+        }
 
     seen = observed_contexts(full) if observed else set()
-
+    errors: list[str] = []
     for ctx in declared:
         # Some declared contexts belong to external apps (e.g. "Vercel – hypeproof")
-        # or reusable workflows in the same repo; offline parse covers local jobs,
-        # online `observed` covers everything GitHub actually reported.
+        # or reusable workflows; offline parse covers local jobs, online `observed`
+        # covers everything GitHub actually reported.
         producers = producible.get(ctx, []) if producible is not None else None
         if producible is not None and not producers and (not observed or ctx not in seen):
             errors.append(
@@ -141,7 +158,7 @@ def check_repo(repo: dict, root: Path | None, observed: bool) -> list[str]:
                 f"LOCK[{full}]: required context {ctx!r} not among contexts GitHub "
                 f"reported recently — verify a workflow produces it before requiring."
             )
-    return errors
+    return {"full": full, "status": "examined", "reason": "", "errors": errors}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="workspace dir holding sibling checkouts <name>/ (offline parse)")
     ap.add_argument("--observed", action="store_true",
                     help="also cross-check against contexts GitHub actually reported (needs gh)")
+    ap.add_argument("--allow-unexamined", action="store_true",
+                    help="downgrade un-inspectable repos from fail-closed to a warning "
+                         "(default: any skipped repo makes the run exit non-zero)")
     ap.add_argument("--json", action="store_true", help="emit findings as JSON")
     args = ap.parse_args(argv)
 
@@ -163,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: {args.repo} not found in repos.yaml", file=sys.stderr)
             return 2
 
-    all_errors: list[str] = []
+    results: list[dict] = []
     for repo in repos:
         full = f"{repo['owner']}/{repo['name']}"
         if args.root and args.repo == full:
@@ -174,16 +194,40 @@ def main(argv: list[str] | None = None) -> int:
             root = Path(args.workspace) / repo["name"]
         else:
             root = None
-        all_errors.extend(check_repo(repo, root if (root and root.exists()) else None, args.observed))
+        results.append(check_repo(repo, root if (root and root.exists()) else None, args.observed))
+
+    errors = [e for r in results for e in r["errors"]]
+    skipped = [r for r in results if r["status"] == "skipped"]
+    examined = [r for r in results if r["status"] == "examined"]
+    no_checks = [r for r in results if r["status"] == "no-checks"]
 
     if args.json:
-        print(json.dumps({"errors": all_errors}, ensure_ascii=False, indent=2))
+        print(json.dumps({
+            "examined": [r["full"] for r in examined],
+            "skipped": [{"repo": r["full"], "reason": r["reason"]} for r in skipped],
+            "no_checks": [r["full"] for r in no_checks],
+            "errors": errors,
+        }, ensure_ascii=False, indent=2))
     else:
-        for e in all_errors:
+        for e in errors:
             print(e)
-        if not all_errors:
-            print("OK: all declared required_status_checks are producible and unambiguous.")
-    return 1 if all_errors else 0
+        # Always declare the coverage — never let "no errors" imply "all clean"
+        # when some repos were never inspected.
+        print(f"\nCoverage: examined {len(examined)}, "
+              f"no-checks {len(no_checks)}, skipped {len(skipped)}, "
+              f"errors {len(errors)}.")
+        for r in skipped:
+            print(f"SKIPPED[{r['full']}]: {r['reason']}")
+        if not errors and not skipped:
+            print("OK: every repo with required checks was examined; all contexts "
+                  "are producible and unambiguous.")
+
+    if errors:
+        return 1
+    if skipped and not args.allow_unexamined:
+        # Fail-closed: un-inspected repos are not a pass. Control Invariant.
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
