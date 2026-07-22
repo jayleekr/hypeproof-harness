@@ -18,13 +18,18 @@ CLOSED issues (§2 원칙 4 — "산출물은 증거로 축적돼야 완료") cl
 the cutoff (EVIDENCE_CUTOFF, 2026-07-22T00:00:00+09:00) must either
   - reference evidence: an `Evidence: <url>` (or `증거: <url>`) line in the
     issue body or in any comment, where <url> is a GitHub permalink to the
-    thing that was produced — a PR, a commit, or an issue comment; or
+    thing that was produced — a PR, a commit, or an issue comment — *in a repo
+    we own* (an owner from the audited set, see owners_of / --evidence-owner);
+    a well-formed link to someone else's repo is not proof of our work; or
   - be closed by a PR that GitHub itself recorded
     (`closedByPullRequestsReferences` — GitHub's own link, not typed by a
     human, so it cannot be fabricated in issue text); or
   - carry an explicit, enumerated exemption:
     `Evidence-Exemption: cancelled|duplicate|administrative|no-deliverable`,
-    or GitHub's own "closed as not planned" state.
+    or GitHub's own "closed as not planned" state. `not planned` exempts a
+    genuine cancellation, but it does NOT rescue an issue whose body asserts a
+    deliverable (a present-but-invalid Evidence marker): claiming a deliverable
+    contradicts "nothing was produced", so that contradiction is reported.
 
 Issues closed BEFORE the cutoff are exempt. That exemption is derived from the
 issue's `closedAt` timestamp — a fact GitHub records — and deliberately NOT
@@ -89,6 +94,27 @@ DEFAULT_REPOS = [
     "jayleekr/sediment",
 ]
 
+# Extra GitHub owners whose PRs/commits also count as our evidence, beyond the
+# owners of the repos under audit. Set HYPEPROOF_EVIDENCE_OWNERS="acme, other"
+# (or pass --evidence-owner) when a deliverable legitimately lives under a
+# different account (a shared upstream, a spike fork). Empty by default: the
+# audited owner is the only trusted source until someone widens it on purpose.
+EVIDENCE_OWNERS_ENV = "HYPEPROOF_EVIDENCE_OWNERS"
+
+
+def owners_of(repos: list[str]) -> set[str]:
+    """The GitHub owners hosting the repos under audit — the accounts whose
+    PRs/commits/comments count as 'our' evidence. A well-formed link to a repo
+    outside this set is a real link to someone else's work, not proof that this
+    issue produced anything."""
+    owners: set[str] = set()
+    for repo in repos:
+        owner = repo.split("/", 1)[0].strip().lower()
+        if owner:
+            owners.add(owner)
+    return owners
+
+
 KST = dt.timezone(dt.timedelta(hours=9))
 # Approved policy cutoff: the evidence requirement applies to work closed on or
 # after this instant. Derived from closedAt, never from a label.
@@ -133,8 +159,10 @@ BLOCKQUOTE_RE = re.compile(r"^ {0,3}>")
 HTML_COMMENT_1LINE_RE = re.compile(r"<!--.*?-->")
 # The ref must be a GitHub permalink to something that was actually produced.
 # Reusing GitHub's identifiers keeps the gate verifiable without a new registry.
+# owner/repo are captured so the gate can also check the ref points at a repo we
+# own — a well-formed link to *someone else's* PR proves nothing about our work.
 EVIDENCE_URL_RE = re.compile(
-    r"^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/"
+    r"^https://github\.com/(?P<owner>[A-Za-z0-9._-]+)/(?P<repo>[A-Za-z0-9._-]+)/"
     r"(?:pull/\d+"                     # PR that carried the work
     r"|commit/[0-9a-f]{7,40}"          # commit that landed it
     r"|issues/\d+\#issuecomment-\d+)$"  # comment holding the deliverable/report
@@ -415,10 +443,20 @@ def comment_count(issue: dict) -> int:
     return len(issue.get("comments") or [])
 
 
-def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> dict:
+def check_closed_issue(
+    issue: dict,
+    cutoff: dt.datetime = EVIDENCE_CUTOFF,
+    trusted_owners: set[str] | None = None,
+) -> dict:
     """Classify one CLOSED issue against the evidence gate (원칙 4).
 
-    Returns {"status", "detail", "violations"} where status is one of
+    `trusted_owners` is the set of GitHub owners whose repos count as our
+    evidence (see owners_of). When given, a well-formed Evidence URL that points
+    outside the set is rejected — a real link to someone else's PR is not proof
+    that *this* issue produced anything. When None the ownership check is
+    skipped, preserving the shape-only behaviour for direct callers.
+
+    Returns {"status", "detail", "violations", "foreign_count"} where status is
       exempt_pre_cutoff | exempt_not_planned | exempt_code
       | ok_github_linked | ok_syntax_valid | violation
     """
@@ -429,14 +467,17 @@ def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> di
             "detail": f"closed {closed_at.astimezone(KST).isoformat()}, before the "
                       f"{cutoff.isoformat()} cutoff",
             "violations": [],
+            "foreign_count": 0,
         }
 
     unknown_close_time = closed_at is None
     texts = assertive_texts(issue)
     linked = linked_pr_urls(issue)
 
-    # 1. A typed Evidence ref, checked for shape.
+    # 1. A typed Evidence ref, checked for shape and — when we know the audited
+    #    owner — for belonging to a repo we own.
     malformed: list[str] = []
+    foreign: list[str] = []
     empty_marker = False
     for text in texts:
         for m in EVIDENCE_RE.finditer(text):
@@ -446,29 +487,42 @@ def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> di
                 # the shape beats reporting a malformed ref of ''.
                 empty_marker = True
                 continue
-            if EVIDENCE_URL_RE.match(raw):
+            url_m = EVIDENCE_URL_RE.match(raw)
+            if url_m:
+                owner = url_m.group("owner").lower()
+                if trusted_owners is not None and owner not in trusted_owners:
+                    # Well-formed, but it points at a repo we do not own. Do not
+                    # accept it and do not stop — a later comment may carry a
+                    # real ref. Reported below if nothing better turns up.
+                    foreign.append(raw)
+                    continue
                 if raw.rstrip("/") in linked:
                     return {
                         "status": "ok_github_linked",
                         "detail": f"{raw} — matches a PR GitHub recorded as closing this "
                                   "issue (existence verified by GitHub)",
                         "violations": [],
+                        "foreign_count": 0,
                     }
                 return {
                     "status": "ok_syntax_valid",
                     "detail": f"{raw} — syntax_valid, existence_unverified "
                               "(the checker does not fetch the URL)",
                     "violations": [],
+                    "foreign_count": 0,
                 }
             malformed.append(raw)
 
-    # 2. GitHub's own closing-PR record, even with no typed marker.
+    # 2. GitHub's own closing-PR record, even with no typed marker. GitHub only
+    #    records this link for PRs in the issue's own repo, so it needs no
+    #    ownership check — the owner is the audited repo by construction.
     if linked:
         return {
             "status": "ok_github_linked",
             "detail": f"closed by {', '.join(linked)} — GitHub-recorded link "
                       "(existence verified by GitHub)",
             "violations": [],
+            "foreign_count": 0,
         }
 
     # 3. An enumerated exemption code. Free-form text is rejected.
@@ -481,30 +535,55 @@ def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> di
                     "status": "exempt_code",
                     "detail": f"Evidence-Exemption: {code} — {EXEMPTION_CODES[code]}",
                     "violations": [],
+                    "foreign_count": 0,
                 }
             bad_codes.append(m.group(1).strip())
 
-    # 4. GitHub's "closed as not planned" state — a state, not a label.
-    if str(issue.get("stateReason") or "").upper() == "NOT_PLANNED":
+    # 4. GitHub's "closed as not planned" state — a state, not a label. It
+    #    exempts a genuine cancellation (nothing was produced), but it must not
+    #    rescue a *contradictory* delivery claim: a present-but-invalid Evidence
+    #    marker (malformed, foreign-owned, or empty) asserts work was done, which
+    #    "not planned" denies. Fall through so the broken claim is reported
+    #    rather than silently waved through by one traceless dropdown choice.
+    not_planned = str(issue.get("stateReason") or "").upper() == "NOT_PLANNED"
+    asserted_delivery = bool(malformed or foreign or empty_marker)
+    if not_planned and not asserted_delivery:
         return {
             "status": "exempt_not_planned",
             "detail": "closed as not planned — cancelled, nothing was produced",
             "violations": [],
+            "foreign_count": 0,
         }
 
     violations: list[str] = []
     allowed = " | ".join(sorted(EXEMPTION_CODES))
+    if not_planned and asserted_delivery:
+        violations.append(
+            "closed as 'not planned' but the body asserts a deliverable (an "
+            "Evidence marker) — 'not planned' means nothing was produced, so it "
+            "cannot exempt an issue that claims a deliverable; give a valid "
+            "Evidence ref, or state a clean exemption, not both"
+        )
     for code in dict.fromkeys(bad_codes):
         violations.append(
             f"unknown Evidence-Exemption code {code!r} — free-form exemptions are "
             f"rejected; allowed codes: {allowed}"
+        )
+    trusted_str = ", ".join(sorted(trusted_owners)) if trusted_owners else ""
+    for raw in dict.fromkeys(foreign):
+        owner = (EVIDENCE_URL_RE.match(raw).group("owner")).lower()  # type: ignore[union-attr]
+        violations.append(
+            f"Evidence ref {raw!r} points at owner {owner!r}, outside the audited "
+            f"org(s) [{trusted_str}] — evidence must be a PR/commit/comment in a "
+            "repo we own, not a well-formed link to someone else's work "
+            f"(widen with --evidence-owner / {EVIDENCE_OWNERS_ENV} only on purpose)"
         )
     for raw in dict.fromkeys(malformed):
         violations.append(
             f"malformed Evidence ref {raw!r} — want a GitHub PR, commit, or "
             "issue-comment URL (https://github.com/<owner>/<repo>/pull/<n>)"
         )
-    if empty_marker and not malformed:
+    if empty_marker and not malformed and not foreign:
         violations.append(
             "'Evidence:' marker has no URL after it — put the permalink on the "
             "same line (https://github.com/<owner>/<repo>/pull/<n>)"
@@ -526,7 +605,12 @@ def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> di
             "close timestamp unavailable — the pre-cutoff exemption cannot be "
             "established, so the gate applies (fail closed)"
         )
-    return {"status": "violation", "detail": "", "violations": violations}
+    return {
+        "status": "violation",
+        "detail": "",
+        "violations": violations,
+        "foreign_count": len(dict.fromkeys(foreign)),
+    }
 
 
 CLEAN_STATUSES = (
@@ -548,13 +632,49 @@ def new_counts() -> dict:
         "clean_accepted": 0,
         "violations_detected": 0,
         "evidence_gate_skipped": 0,
+        "evidence_foreign_rejected": 0,
     }
     counts.update({status: 0 for status in CLEAN_STATUSES})
     return counts
 
 
-def coverage_lines(counts: dict, cutoff: dt.datetime) -> list[str]:
+def checker_version() -> str:
+    """Short content hash of this checker, so a report says which code ran.
+
+    std-lib only: hash our own source. Answers the Control Invariant's 'which
+    version' without a build step or a git dependency in the consumer repos.
+    """
+    try:
+        import hashlib
+        src = Path(__file__).read_bytes()
+        return "sha256:" + hashlib.sha256(src).hexdigest()[:16]
+    except OSError:
+        return "sha256:unknown"
+
+
+def provenance(enforcing: str | None, trusted_owners: set[str]) -> dict:
+    """Who/what/where a run was, for the audit trail (Control Invariant).
+
+    Answers: who ran it, in which environment, which checker version, and by
+    what authority foreign evidence was rejected (the trusted-owner set).
+    """
+    operator = (
+        os.environ.get("GITHUB_ACTOR")
+        or os.environ.get("USER")
+        or os.environ.get("LOGNAME")
+        or "unknown"
+    )
+    return {
+        "operator": operator,
+        "environment": enforcing or "local",
+        "checker_version": checker_version(),
+        "trusted_evidence_owners": sorted(trusted_owners),
+    }
+
+
+def coverage_lines(counts: dict, cutoff: dt.datetime, prov: dict) -> list[str]:
     """Non-vacuity block. A control that examined nothing has not passed."""
+    owners = ", ".join(prov["trusted_evidence_owners"]) or "(none configured)"
     return [
         "",
         "## Coverage — non-vacuity",
@@ -572,8 +692,16 @@ def coverage_lines(counts: dict, cutoff: dt.datetime) -> list[str]:
         "(existence verified by GitHub)",
         f"- evidence syntax_valid:          {counts['ok_syntax_valid']} "
         "(existence_unverified)",
+        f"- evidence rejected, foreign org: {counts['evidence_foreign_rejected']} "
+        f"(well-formed URL outside [{owners}])",
         f"- closed issues NOT checked:      {counts['evidence_gate_skipped']} "
         "(--skip-evidence-gate)",
+        "",
+        "## Provenance — who/what/where enforced this",
+        f"- operator:                       {prov['operator']}",
+        f"- environment:                    {prov['environment']}",
+        f"- checker version:                {prov['checker_version']}",
+        f"- trusted evidence owners:        {owners}",
     ]
 
 
@@ -610,6 +738,14 @@ def main(argv: list[str] | None = None) -> int:
              "(default: 1 under CI/enforcement, 0 otherwise)",
     )
     parser.add_argument(
+        "--evidence-owner",
+        action="append",
+        dest="evidence_owners",
+        metavar="OWNER",
+        help="extra GitHub owner whose repos count as evidence, beyond the "
+             f"owners of the audited repos (repeatable; also {EVIDENCE_OWNERS_ENV})",
+    )
+    parser.add_argument(
         "--json",
         dest="as_json",
         action="store_true",
@@ -634,6 +770,20 @@ def main(argv: list[str] | None = None) -> int:
 
     min_issues = args.min_issues if args.min_issues is not None else (1 if enforcing else 0)
     repos = args.repos or DEFAULT_REPOS
+
+    # Evidence is only 'ours' if it points at a repo we own. The trusted set is
+    # the owners of the audited repos, plus any explicitly widened via the flag
+    # or HYPEPROOF_EVIDENCE_OWNERS — never silent, always attributable.
+    trusted_owners = owners_of(repos)
+    for extra in (args.evidence_owners or []):
+        owner = extra.strip().lower()
+        if owner:
+            trusted_owners.add(owner)
+    for owner in re.split(r"[,\s]+", os.environ.get(EVIDENCE_OWNERS_ENV, "")):
+        owner = owner.strip().lower()
+        if owner:
+            trusted_owners.add(owner)
+    prov = provenance(enforcing, trusted_owners)
 
     fixture: dict[str, list[dict]] | None = None
     if args.issues_json:
@@ -690,8 +840,9 @@ def main(argv: list[str] | None = None) -> int:
                     lines.append(f"  SKIP       {ref} (closed; evidence gate skipped)")
                     records.append(record)
                     continue
-                result = check_closed_issue(issue)
+                result = check_closed_issue(issue, trusted_owners=trusted_owners)
                 record.update(result)
+                counts["evidence_foreign_rejected"] += result.get("foreign_count", 0)
                 if result["status"] in CLEAN_STATUSES:
                     counts[result["status"]] += 1
 
@@ -717,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
                 "cutoff": EVIDENCE_CUTOFF.isoformat(),
                 "repos": repos,
                 "counts": counts,
+                "provenance": prov,
                 "issues": records,
             },
             ensure_ascii=False,
@@ -728,7 +880,7 @@ def main(argv: list[str] | None = None) -> int:
             f"\nTotal: {counts['issues_examined']} issue(s) · "
             f"{counts['violations_detected']} violation(s)"
         )
-        print("\n".join(coverage_lines(counts, EVIDENCE_CUTOFF)))
+        print("\n".join(coverage_lines(counts, EVIDENCE_CUTOFF, prov)))
 
     if counts["issues_examined"] < min_issues:
         print(

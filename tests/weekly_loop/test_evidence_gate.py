@@ -312,6 +312,82 @@ def test_github_linked_and_syntax_valid_are_reported_separately(tmp_path: Path) 
     assert "evidence syntax_valid:          1" in proc.stdout
 
 
+# ------------------------------------------- evidence belongs to our org ----
+# A well-formed GitHub permalink proves nothing on its own: it can point at any
+# public repo. Evidence must live in a repo we own. REPO is jayleekr/sediment,
+# so the audited owner is `jayleekr`.
+
+FOREIGN_URL = "https://github.com/torvalds/linux/pull/1"
+
+
+def test_foreign_org_evidence_url_is_rejected(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(85, "Foreign PR as evidence", body=f"Evidence: {FOREIGN_URL}")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "outside the audited org" in proc.stdout
+    assert "evidence rejected, foreign org: 1" in proc.stdout
+
+
+def test_same_org_evidence_url_is_accepted(tmp_path: Path) -> None:
+    # Control: identical shape, our org — must still pass, or the org check is
+    # just rejecting everything.
+    fx = fixture(tmp_path, [closed(86, "Our PR as evidence", body=f"Evidence: {PR_URL}")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "outside the audited org" not in proc.stdout
+    assert "evidence rejected, foreign org: 0" in proc.stdout
+
+
+def test_evidence_owner_flag_widens_the_trusted_set(tmp_path: Path) -> None:
+    # Widening is allowed, but only on purpose and attributably.
+    fx = fixture(tmp_path, [closed(87, "Foreign PR, owner whitelisted",
+                                   body=f"Evidence: {FOREIGN_URL}")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx,
+               "--evidence-owner", "torvalds")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "trusted evidence owners:        jayleekr, torvalds" in proc.stdout
+
+
+def test_a_foreign_ref_does_not_poison_a_genuine_ref_beside_it(tmp_path: Path) -> None:
+    body = f"Evidence: {FOREIGN_URL}\nEvidence: {PR_URL}\n"
+    fx = fixture(tmp_path, [closed(88, "Foreign then genuine", body=body)])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+# ----------------------------- not planned is not a traceless free pass ----
+# `closed as not planned` exempts a genuine cancellation, but it must not
+# rescue an issue that *asserts* a deliverable — that contradiction is exactly
+# the quiet, one-click bypass the state otherwise offers.
+
+
+def test_not_planned_does_not_rescue_a_malformed_evidence_claim(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(83, "Not planned + broken evidence",
+                                   body="Evidence: 슬랙에 올림", stateReason="NOT_PLANNED")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "closed as 'not planned' but the body asserts a deliverable" in proc.stdout
+    assert "closed exempt, not planned:     0" in proc.stdout
+
+
+def test_not_planned_does_not_rescue_a_foreign_evidence_claim(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(84, "Not planned + foreign evidence",
+                                   body=f"Evidence: {FOREIGN_URL}", stateReason="NOT_PLANNED")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "closed as 'not planned' but the body asserts a deliverable" in proc.stdout
+
+
+def test_not_planned_still_exempts_a_genuine_cancellation(tmp_path: Path) -> None:
+    # Control: a real cancellation asserts no deliverable and stays exempt — the
+    # guard must bite only on the contradiction, never on honest not-planned.
+    fx = fixture(tmp_path, [closed(82, "Genuinely cancelled", body="방향이 바뀌어 접습니다.",
+                                   stateReason="NOT_PLANNED")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "closed exempt, not planned:     1" in proc.stdout
+
+
 # -------------------------------------------------- enforcement behaviour ----
 
 
@@ -412,17 +488,18 @@ def test_gh_cycle_issues_refuses_a_possibly_truncated_set(monkeypatch) -> None:
 
 CORPUS_EXPECTED = {
     "repos_examined": 1,
-    "issues_examined": 44,
+    "issues_examined": 48,
     "open_examined": 13,
-    "closed_examined": 31,
+    "closed_examined": 35,
     "comments_examined": 3,
-    "violations_detected": 21,   # injected violations, all of which must be caught
-    "clean_accepted": 23,        # expected-clean cases, all of which must pass
+    "violations_detected": 24,   # injected violations, all of which must be caught
+    "clean_accepted": 24,        # expected-clean cases, all of which must pass
     "exempt_pre_cutoff": 2,
     "exempt_not_planned": 1,
     "exempt_code": 5,
     "ok_github_linked": 2,
-    "ok_syntax_valid": 8,
+    "ok_syntax_valid": 9,
+    "evidence_foreign_rejected": 2,  # 122 + 124: well-formed URLs outside our org
 }
 
 
@@ -499,4 +576,4 @@ def test_adversarial_corpus_detects_every_injected_violation() -> None:
     detected = {i["number"] for i in report["issues"] if i["status"] == "violation"}
     assert detected == injected, f"missed: {injected - detected}, false: {detected - injected}"
     assert not (clean & detected), f"false positives on expected-clean: {clean & detected}"
-    assert len(injected) == 21 and len(clean) == 23
+    assert len(injected) == 24 and len(clean) == 24

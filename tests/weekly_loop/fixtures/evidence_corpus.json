@@ -368,6 +368,40 @@
       "body": "Owner: @TJ-kr\n\n## ETA\n> 지난주엔 8월로 잡았음\n2026-07-24\n",
       "state": "OPEN",
       "url": "https://github.com/jayleekr/hypeproof-corpus/issues/223"
+    },
+    {
+      "number": 122,
+      "title": "V closed: well-formed evidence URL in a repo we do not own",
+      "body": "Evidence: https://github.com/torvalds/linux/pull/1",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/122",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 123,
+      "title": "V closed: not planned cannot rescue a malformed evidence claim",
+      "body": "Evidence: 슬랙에 공유함",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/123",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "stateReason": "NOT_PLANNED"
+    },
+    {
+      "number": 124,
+      "title": "V closed: not planned cannot rescue a foreign-org evidence claim",
+      "body": "Evidence: https://github.com/torvalds/linux/pull/1",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/124",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "stateReason": "NOT_PLANNED"
+    },
+    {
+      "number": 224,
+      "title": "C closed: a foreign ref does not poison a genuine one alongside it",
+      "body": "Evidence: https://github.com/torvalds/linux/pull/1\nEvidence: https://github.com/jayleekr/sediment/pull/42\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/224",
+      "closedAt": "2026-07-22T03:00:00Z"
     }
   ]
 }

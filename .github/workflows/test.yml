@@ -71,7 +71,13 @@ jobs:
     name: "pr-policy (branch name + Closes #)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
     steps:
+      - uses: actions/checkout@v6
+
       - name: Branch name
         env:
           BRANCH: ${{ github.head_ref }}
@@ -82,15 +88,17 @@ jobs:
             exit 1
           fi
 
-      - name: "Closes # in body"
+      # Existence, not just form: the old grep passed `Closes #999999` and
+      # `Fixes #0`. verify_pr_closes.py resolves every referenced number against
+      # this repo via gh and fails on a typo'd or invented issue. GH_TOKEN gives
+      # gh the same read access the workflow already has.
+      - name: "Closes # in body (must reference a real issue)"
         env:
           BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! printf '%s' "$BODY" | grep -qE '(Closes|Fixes|Resolves) #[0-9]+'; then
-            echo "PR body must include 'Closes #<n>', 'Fixes #<n>', or 'Resolves #<n>'" >&2
-            echo "See MEMBER-GUIDE.ko.md §4.4" >&2
-            exit 1
-          fi
+          printf '%s' "$BODY" | python3 scripts/weekly-harness/verify_pr_closes.py \
+            --repo "$GITHUB_REPOSITORY"
 
   gate:
     name: gate (tests/run.sh against mock consumers)
