@@ -24,3 +24,6 @@ tests/consumers.local.txt
 /bypass.err
 /weekly-gate-*.json
 /weekly-gate-summary.md
+/preflight-repos.txt
+/repo-governance-audit.json
+/repo-governance-audit.exitcode

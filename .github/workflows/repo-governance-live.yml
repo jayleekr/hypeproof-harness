@@ -24,20 +24,87 @@ jobs:
       - name: Install policy deps
         run: python -m pip install --quiet pyyaml
 
+      # Without a token that can see admin-visible repo fields, `gh api repos/X`
+      # still succeeds on public repos but omits allow_auto_merge and friends.
+      # audit.py then reads them as None and reports drift on every one — 42
+      # phantom findings in the 2026-07-22 run — while the genuinely drifted
+      # settings it cannot reach stay invisible. Loud about the wrong things and
+      # silent about the real ones is worse than failing, so check first and say
+      # which of the two is happening.
+      - name: Preflight — policy repos readable at admin visibility
+        run: |
+          set -eo pipefail
+          python - <<'PY' > preflight-repos.txt
+          import yaml
+          policy = yaml.safe_load(open("policy/repos.yaml", encoding="utf-8"))
+          for repo in policy.get("repositories", []):
+              print(f"{repo['owner']}/{repo['name']}")
+          PY
+          total=0; unreachable=""; shallow=""
+          while read -r full; do
+            [ -n "$full" ] || continue
+            total=$((total + 1))
+            if ! body=$(gh api "repos/$full" 2>/dev/null); then
+              unreachable="$unreachable $full"
+            elif ! printf '%s' "$body" | grep -q '"allow_auto_merge"'; then
+              shallow="$shallow $full"
+            fi
+          done < preflight-repos.txt
+          # A repo that is readable but hides allow_auto_merge cannot be drift —
+          # GitHub always shows that field to an admin-scoped token on a repo we
+          # own. It means the token is too weak, full stop.
+          #
+          # A single unreachable repo IS drift (renamed, deleted, transferred)
+          # and audit.py already reports it as github/critical. Only treat
+          # unreachability as a credential problem when EVERY repo is blind,
+          # which no amount of real drift produces at once.
+          reachable=$((total - $(printf '%s' "$unreachable" | wc -w)))
+          if [ -n "$shallow" ] || [ "$reachable" -eq 0 ]; then
+            echo "::error::repo-governance audit cannot see the repos it audits" >&2
+            [ -n "$shallow" ] && echo "readable but admin fields hidden:$shallow" >&2
+            [ "$reachable" -eq 0 ] && echo "every policy repo unreachable:$unreachable" >&2
+            echo "" >&2
+            echo "This is a CREDENTIAL problem, not governance drift. Set the" >&2
+            echo "HYPEPROOF_GOVERNANCE_TOKEN repository secret to a token with admin" >&2
+            echo "read access to every repo in policy/repos.yaml. Until then any" >&2
+            echo "findings this job produces are phantoms and the real drift is hidden." >&2
+            exit 2
+          fi
+          if [ -n "$unreachable" ]; then
+            echo "note: unreachable, will be reported as drift by audit.py:$unreachable"
+          fi
+          echo "$reachable/$total policy repos readable at admin visibility"
+
+      # No `set +e … exit 0`: this job used to discard audit.py's exit code and
+      # report success while its own artifact said `status: drift`. The status
+      # is recorded here so the summary can still be written, and enforced in
+      # the final step.
       - name: Run live audit
+        id: audit
         run: |
           set +e
           python scripts/repo-governance/audit.py --all --json > repo-governance-audit.json
           status=$?
+          set -e
           echo "$status" > repo-governance-audit.exitcode
-          exit 0
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "audit.py exited $status"
 
       - name: Write summary
+        if: always()
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
+          import os
+
           from collections import Counter
 
+          if not os.path.exists("repo-governance-audit.json"):
+              # preflight failed before the audit ran; it has already said why
+              print("# Repo Governance Live Audit")
+              print()
+              print("Not run — preflight failed. See the job log.")
+              raise SystemExit
           with open("repo-governance-audit.json", encoding="utf-8") as fh:
               data = json.load(fh)
           findings = data.get("findings", [])
@@ -80,12 +147,33 @@ jobs:
           PY
 
       - name: Upload audit artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: repo-governance-audit
+          if-no-files-found: ignore
           path: |
             repo-governance-audit.json
             repo-governance-audit.exitcode
+
+      # The step that turns a recorded status into a failed job. Splitting it
+      # out keeps the report above intact on a red run — the report is what a
+      # human acts on, and it must survive the failure that summons them.
+      - name: Enforce
+        if: always()
+        env:
+          STATUS: ${{ steps.audit.outputs.status }}
+        run: |
+          if [ -z "$STATUS" ]; then
+            echo "audit did not run (preflight failed) — see above" >&2
+            exit 0
+          fi
+          case "$STATUS" in
+            0) echo "no governance drift" ;;
+            2|3) echo "::error::repo governance drift — see the job summary" >&2; exit 1 ;;
+            4) echo "::error::policy/repos.yaml is invalid — this is a policy error, not drift" >&2; exit 1 ;;
+            *) echo "::error::audit.py exited $STATUS (unexpected)" >&2; exit 1 ;;
+          esac
 
   weekly-loop-gate:
     # The weekly-loop rules (Owner/ETA on open issues, evidence on closed ones)
