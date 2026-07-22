@@ -44,6 +44,14 @@ against is an escalation path that exists on paper while nobody looks — the
 validator makes "did this reach a human" a measured pending count, not an
 assumption.
 
+**Self-reinforcing gate — the wiring PR must pass the control-plane gate.**
+Wiring `validate` into CI edits `.github/workflows/**`, a control-plane path.
+The PR that *enables* the check is therefore itself a control-plane change and
+must clear the control-plane gate before it merges — the gate is armed only
+through the same governed path it protects, not through an unreviewed workflow
+edit. Enabling it is a human action, tracked as an ops item, not an autonomous
+change.
+
 ## Seed
 
 Seeded from the borderline cases M003 had nowhere to put: counterparty-name
