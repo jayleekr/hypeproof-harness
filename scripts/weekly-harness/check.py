@@ -14,41 +14,70 @@ OPEN issues (docs/WEEKLY-LOOP.ko.md §4) carrying the cycle label
   - an `ETA: YYYY-MM-DD` line whose date is <= the cycle date, and
   - an `Owner` / `담당` section or line.
 
-CLOSED issues (§2 원칙 4 — "산출물은 증거로 축적돼야 완료") must either
+CLOSED issues (§2 원칙 4 — "산출물은 증거로 축적돼야 완료") closed on or after
+the cutoff (EVIDENCE_CUTOFF, 2026-07-22T00:00:00+09:00) must either
   - reference evidence: an `Evidence: <url>` (or `증거: <url>`) line in the
     issue body or in any comment, where <url> is a GitHub permalink to the
     thing that was produced — a PR, a commit, or an issue comment; or
-  - carry an explicit exemption: the `no-evidence-needed` label (administrative
-    / non-deliverable work), or GitHub's own "closed as not planned"
-    state (cancelled work).
+  - be closed by a PR that GitHub itself recorded
+    (`closedByPullRequestsReferences` — GitHub's own link, not typed by a
+    human, so it cannot be fabricated in issue text); or
+  - carry an explicit, enumerated exemption:
+    `Evidence-Exemption: cancelled|duplicate|administrative|no-deliverable`,
+    or GitHub's own "closed as not planned" state.
+
+Issues closed BEFORE the cutoff are exempt. That exemption is derived from the
+issue's `closedAt` timestamp — a fact GitHub records — and deliberately NOT
+from a label anyone can add. History is never edited into compliance.
 
 The evidence ref deliberately reuses GitHub's existing identifiers instead of
 inventing a namespace, and deliberately requires both the `Evidence:` marker
 and a permalink shape — a bare link pasted in a body does not accidentally
 satisfy the gate, and a satisfied gate always points at something a human can
-open. Shape is checked offline; existence is not (see README).
+open.
+
+Two pass states are reported and never conflated:
+  - `github-linked`  GitHub records a PR that closed the issue → existence
+                     verified by GitHub.
+  - `syntax_valid`   the ref is well-formed but the checker did not fetch it →
+                     existence_unverified.
+
+Markers are only honoured in *assertive* prose. Text inside fenced code
+blocks, indented (4-space) code blocks, inline code spans, blockquotes, and
+HTML comments is quoted material, not a claim about this issue, and is ignored
+for BOTH the evidence gate and the Owner/ETA rule.
 
 USAGE:
     check.py --cycle weekly-2026-07-21
     check.py --cycle weekly-2026-07-21 --repo jayleekr/sediment
     check.py --cycle weekly-2026-07-21 --issues-json fixtures.json   # offline
-    check.py --cycle weekly-2026-07-21 --skip-evidence-gate          # transition only
+    check.py --cycle weekly-2026-07-21 --json                        # machine
+    check.py --cycle weekly-2026-07-21 --skip-evidence-gate          # local only
 
 `--issues-json` bypasses `gh` for deterministic tests: a JSON object mapping
 "owner/name" to a list of gh-shaped issue dicts (number, title, body, url,
-state, stateReason, labels, comments). An issue with no `state` key is treated
-as OPEN.
+state, stateReason, closedAt, labels, comments,
+closedByPullRequestsReferences). An issue with no `state` key is treated as
+OPEN; a closed issue with no `closedAt` is treated as post-cutoff (fail
+closed — an unknown close time is never an exemption).
+
+`--skip-evidence-gate` is refused when CI / GITHUB_ACTIONS / HYPEPROOF_ENFORCE
+is set: a gate that ships with its own bypass wired into enforcement is not a
+gate.
 
 EXIT CODES:
     0  every cycle issue conforms
     1  violations found (each is printed)
-    2  config error / bad cycle label / gh failure
+    2  config error / bad cycle label / gh failure / bypass refused /
+       fewer issues examined than --min-issues (a control that examined
+       nothing has not passed)
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import subprocess
 import sys
@@ -60,9 +89,20 @@ DEFAULT_REPOS = [
     "jayleekr/sediment",
 ]
 
+KST = dt.timezone(dt.timedelta(hours=9))
+# Approved policy cutoff: the evidence requirement applies to work closed on or
+# after this instant. Derived from closedAt, never from a label.
+EVIDENCE_CUTOFF = dt.datetime(2026, 7, 22, 0, 0, 0, tzinfo=KST)
+
 CYCLE_RE = re.compile(r"^weekly-(\d{4})-(\d{2})-(\d{2})$")
+# Both bold placements are idiomatic markdown and both get typed by hand:
+# '**ETA**: 2026-07-20' and '**ETA:** 2026-07-20'. The trailing (?:\*\*)? after
+# the colon is what accepts the second form — without it the value capture
+# swallows the '**' and the marker reads as an empty, unactionable value.
+BOLD_MARKER_COLON = r"(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*"
 ETA_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\*\*)?ETA(?:\*\*)?\s*[:：]\s*(\S+)", re.IGNORECASE | re.MULTILINE
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?ETA" + BOLD_MARKER_COLON + r"(\S+)",
+    re.IGNORECASE | re.MULTILINE,
 )
 # '## ETA' heading with the date on the first non-empty line below it
 # (e.g. issues filed before the inline 'ETA:' template existed)
@@ -76,12 +116,21 @@ OWNER_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 # 'Evidence: <url>' / '증거: <url>' — same line shape as the ETA marker above.
+# 'Evidence-Exemption:' does not match it: '-' is not ':'.
 EVIDENCE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence|증거)(?:\*\*)?\s*[:：]\s*(\S+)",
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence|증거)" + BOLD_MARKER_COLON + r"(\S+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+# 'Evidence-Exemption: <code>' — one enumerated code and nothing else.
+EXEMPTION_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence-Exemption|증거-면제)"
+    + BOLD_MARKER_COLON + r"(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 FENCE_RE = re.compile(r"(`{3,}|~{3,})")
 INLINE_CODE_RE = re.compile(r"`+[^`\n]*`+")
+BLOCKQUOTE_RE = re.compile(r"^ {0,3}>")
+HTML_COMMENT_1LINE_RE = re.compile(r"<!--.*?-->")
 # The ref must be a GitHub permalink to something that was actually produced.
 # Reusing GitHub's identifiers keeps the gate verifiable without a new registry.
 EVIDENCE_URL_RE = re.compile(
@@ -90,7 +139,27 @@ EVIDENCE_URL_RE = re.compile(
     r"|commit/[0-9a-f]{7,40}"          # commit that landed it
     r"|issues/\d+\#issuecomment-\d+)$"  # comment holding the deliverable/report
 )
-EXEMPT_LABEL = "no-evidence-needed"
+
+# NARROW and closed. Free-form exemption text is rejected on purpose: an
+# exemption anyone can phrase is an exemption nobody can audit.
+EXEMPTION_CODES = {
+    "cancelled": "취소 — 작업이 중단되어 산출물이 없음",
+    "duplicate": "중복 — 다른 이슈에서 처리됨",
+    "administrative": "행정 — 설정/라벨 등 산출물이 없는 운영 작업",
+    "no-deliverable": "산출물 없음 — 논의·결정만 남은 작업",
+}
+# Retired: this label used to exempt an issue. A label anyone with write access
+# can add is not an audit trail, so it no longer exempts anything — it only
+# produces a hint inside the violation message.
+RETIRED_EXEMPT_LABEL = "no-evidence-needed"
+
+# gh truncates `--limit N` silently. Escalate until a page comes back short;
+# refuse to report on a set we know may be partial rather than fail open.
+GH_LIMIT_START = 200
+GH_LIMIT_MAX = 5000
+
+BYPASS_ENV_VARS = ("CI", "GITHUB_ACTIONS", "HYPEPROOF_ENFORCE")
+TRUTHY = {"1", "true", "yes", "on"}
 
 
 def parse_cycle_date(label: str) -> dt.date:
@@ -102,15 +171,29 @@ def parse_cycle_date(label: str) -> dt.date:
     return dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
 
-def gh_cycle_issues(repo: str, label: str) -> list[dict]:
+def enforcement_env() -> str | None:
+    """Name of the env var marking this run as an enforcement path, if any."""
+    for var in BYPASS_ENV_VARS:
+        if os.environ.get(var, "").strip().lower() in TRUTHY:
+            return var
+    return None
+
+
+GH_JSON_FIELDS = (
+    "number,title,body,url,state,stateReason,closedAt,labels,comments,"
+    "closedByPullRequestsReferences"
+)
+
+
+def _gh_issue_page(repo: str, label: str, limit: int) -> list[dict]:
     proc = subprocess.run(
         [
             "gh", "issue", "list",
             "--repo", repo,
             "--label", label,
             "--state", "all",
-            "--limit", "200",
-            "--json", "number,title,body,url,state,stateReason,labels,comments",
+            "--limit", str(limit),
+            "--json", GH_JSON_FIELDS,
         ],
         text=True,
         capture_output=True,
@@ -122,26 +205,144 @@ def gh_cycle_issues(repo: str, label: str) -> list[dict]:
     return json.loads(proc.stdout or "[]")
 
 
+def gh_cycle_issues(repo: str, label: str) -> list[dict]:
+    """Fetch every cycle issue, or fail — never a silently truncated prefix.
+
+    `gh issue list --limit N` returns at most N and says nothing when it cut
+    the list short. Closed issues accumulate monotonically, so a fixed cap
+    turns the gate into a fail-open no-op the moment a repo crosses it.
+    Escalate the limit until a page comes back short (proof we saw the end);
+    if even the ceiling comes back full, raise instead of reporting on a
+    partial set.
+    """
+    limit = GH_LIMIT_START
+    while True:
+        issues = _gh_issue_page(repo, label, limit)
+        if len(issues) < limit:
+            return issues
+        if limit >= GH_LIMIT_MAX:
+            raise RuntimeError(
+                f"{repo}: gh returned a full page of {len(issues)} issues at the "
+                f"--limit ceiling {GH_LIMIT_MAX} for label {label} — the result may be "
+                "truncated; refusing to report on a partial issue set"
+            )
+        limit = min(limit * 4, GH_LIMIT_MAX)
+
+
+def strip_quoted(text: str) -> str:
+    """Blank out every region where a marker is quoted rather than asserted.
+
+    Covered: fenced code blocks, indented (4-space) code blocks, inline code
+    spans, blockquotes, and HTML comments. An `Evidence:` or `ETA:` line inside
+    any of them is documentation someone pasted — the example in
+    WEEKLY-LOOP.ko.md §6.1 is a fenced block — not a claim about this issue.
+
+    Lines are blanked rather than deleted so the line-anchored markers keep
+    their meaning. Deliberately errs toward blanking: a genuine marker that got
+    swallowed is fixed by unindenting one line, whereas a swallowed *check* is
+    a silent bypass.
+    """
+    out: list[str] = []
+    fence: str | None = None
+    fence_len = 0
+    in_comment = False
+    in_indented = False
+    prev_blank = True  # start of document behaves like a blank line
+
+    for raw_line in text.split("\n"):
+        line = raw_line.expandtabs(4)
+
+        # --- HTML comments (may span lines) ---
+        if in_comment:
+            close = line.find("-->")
+            if close == -1:
+                out.append("")
+                prev_blank = False
+                continue
+            line = line[close + 3:]
+            in_comment = False
+        line = HTML_COMMENT_1LINE_RE.sub("", line)
+        open_at = line.find("<!--")
+        if open_at != -1:
+            in_comment = True
+            line = line[:open_at]
+
+        stripped = line.lstrip()
+
+        # --- fenced code blocks ---
+        m = FENCE_RE.match(stripped)
+        if fence is not None:
+            if m and stripped[0] == fence and len(m.group(1)) >= fence_len:
+                fence = None
+            out.append("")
+            prev_blank = False
+            continue
+        if m:
+            fence = stripped[0]
+            fence_len = len(m.group(1))
+            out.append("")
+            prev_blank = False
+            continue
+
+        if not line.strip():
+            out.append("")
+            prev_blank = True  # blank lines do not end an indented block
+            continue
+
+        # --- indented (4-space) code blocks ---
+        indent = len(line) - len(line.lstrip(" "))
+        if indent >= 4 and (prev_blank or in_indented):
+            in_indented = True
+            out.append("")
+            prev_blank = False
+            continue
+        in_indented = False
+        prev_blank = False
+
+        # --- blockquotes ---
+        if BLOCKQUOTE_RE.match(line):
+            out.append("")
+            continue
+
+        out.append(INLINE_CODE_RE.sub("", line))
+
+    return "\n".join(out)
+
+
+# Kept as an alias: the vendored docs and consumer notes refer to strip_code.
+strip_code = strip_quoted
+
+
 def check_issue(body: str, cycle_date: dt.date) -> list[str]:
-    """Return human-readable violation reasons for one issue body."""
+    """Return human-readable violation reasons for one OPEN issue body.
+
+    Quoted regions are stripped first: an `ETA:` inside a fence is the issue
+    template someone pasted, not a commitment.
+    """
     violations: list[str] = []
-    body = body or ""
+    body = strip_quoted(body or "")
 
     m = ETA_RE.search(body) or ETA_HEADING_RE.search(body)
     if not m:
         violations.append("missing 'ETA:' line")
     else:
         raw = m.group(1).strip().rstrip(".,;)").strip("*")  # tolerate 'ETA: **2026-07-21**'
-        try:
-            eta = dt.date.fromisoformat(raw)
-        except ValueError:
-            violations.append(f"unparseable ETA date {raw!r} (want YYYY-MM-DD)")
+        if not raw:
+            # e.g. a bare 'ETA:' with the date on the next line. Naming the
+            # shape beats reporting an unparseable date of ''.
+            violations.append("'ETA:' marker has no date after it (want ETA: YYYY-MM-DD)")
         else:
-            if eta > cycle_date:
-                violations.append(
-                    f"ETA {eta.isoformat()} is after the cycle date {cycle_date.isoformat()} — "
-                    "split into a first deliverable due by Monday"
-                )
+            try:
+                eta = dt.date.fromisoformat(raw)
+            except ValueError:
+                violations.append(f"unparseable ETA date {raw!r} (want YYYY-MM-DD)")
+            else:
+                if eta > cycle_date:
+                    violations.append(
+                        f"ETA {eta.isoformat()} is after the cycle date "
+                        f"{cycle_date.isoformat()} — split into a first "
+                        "deliverable due by Monday"
+                    )
 
     if not OWNER_RE.search(body):
         violations.append("missing 'Owner'/담당 section")
@@ -163,43 +364,39 @@ def issue_label_names(issue: dict) -> set[str]:
     return names
 
 
-def evidence_exemption(issue: dict) -> str | None:
-    """Why this closed issue is allowed to skip the evidence gate, or None."""
-    if EXEMPT_LABEL in issue_label_names(issue):
-        return f"`{EXEMPT_LABEL}` label — administrative / non-deliverable"
-    if str(issue.get("stateReason") or "").upper() == "NOT_PLANNED":
-        return "closed as not planned — cancelled, nothing was produced"
-    return None
+def parse_closed_at(issue: dict) -> dt.datetime | None:
+    """The close instant GitHub recorded, or None if absent/unparseable."""
+    raw = str(issue.get("closedAt") or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
 
 
-def strip_code(text: str) -> str:
-    """Blank out fenced code blocks and inline code spans.
+def linked_pr_urls(issue: dict) -> list[str]:
+    """PR URLs GitHub itself recorded as closing this issue.
 
-    An `Evidence:` line inside a code fence is quoted documentation, not a
-    claim about this issue — pasting the example out of WEEKLY-LOOP.ko.md §6.1
-    must not satisfy the gate. Lines are blanked rather than deleted so the
-    line-anchored markers keep their meaning.
+    Not typed by a human into issue text, so it cannot be fabricated the way an
+    `Evidence:` line can — the strongest completion signal available without
+    fetching anything.
     """
-    out: list[str] = []
-    fence: str | None = None
-    for line in text.split("\n"):
-        stripped = line.lstrip()
-        m = FENCE_RE.match(stripped)
-        if fence is None:
-            if m:
-                fence = m.group(1)[0]
-                out.append("")
-                continue
-        else:
-            if m and stripped[0] == fence:
-                fence = None
-            out.append("")
-            continue
-        out.append(INLINE_CODE_RE.sub("", line))
-    return "\n".join(out)
+    urls: list[str] = []
+    for ref in issue.get("closedByPullRequestsReferences") or []:
+        if isinstance(ref, dict) and ref.get("url"):
+            urls.append(str(ref["url"]).rstrip("/"))
+        elif isinstance(ref, str):
+            urls.append(ref.rstrip("/"))
+    return urls
 
 
-def evidence_sources(issue: dict) -> list[str]:
+def assertive_texts(issue: dict) -> list[str]:
     """Body plus every comment — evidence normally lands in the closing comment."""
     texts = [issue.get("body") or ""]
     for comment in issue.get("comments") or []:
@@ -207,36 +404,183 @@ def evidence_sources(issue: dict) -> list[str]:
             texts.append(comment.get("body") or "")
         elif isinstance(comment, str):
             texts.append(comment)
-    return [strip_code(t) for t in texts]
+    return [strip_quoted(t) for t in texts]
 
 
-def check_closed_issue(issue: dict) -> list[str]:
-    """Return violation reasons for one closed issue (evidence gate, 원칙 4)."""
+# Backwards-compatible name used by the previous revision and the docs.
+evidence_sources = assertive_texts
+
+
+def comment_count(issue: dict) -> int:
+    return len(issue.get("comments") or [])
+
+
+def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> dict:
+    """Classify one CLOSED issue against the evidence gate (원칙 4).
+
+    Returns {"status", "detail", "violations"} where status is one of
+      exempt_pre_cutoff | exempt_not_planned | exempt_code
+      | ok_github_linked | ok_syntax_valid | violation
+    """
+    closed_at = parse_closed_at(issue)
+    if closed_at is not None and closed_at < cutoff:
+        return {
+            "status": "exempt_pre_cutoff",
+            "detail": f"closed {closed_at.astimezone(KST).isoformat()}, before the "
+                      f"{cutoff.isoformat()} cutoff",
+            "violations": [],
+        }
+
+    unknown_close_time = closed_at is None
+    texts = assertive_texts(issue)
+    linked = linked_pr_urls(issue)
+
+    # 1. A typed Evidence ref, checked for shape.
     malformed: list[str] = []
-    for text in evidence_sources(issue):
+    empty_marker = False
+    for text in texts:
         for m in EVIDENCE_RE.finditer(text):
             raw = m.group(1).strip().rstrip(".,;)").strip("*")
+            if not raw:
+                # e.g. a bare 'Evidence:' with the URL on the next line. Naming
+                # the shape beats reporting a malformed ref of ''.
+                empty_marker = True
+                continue
             if EVIDENCE_URL_RE.match(raw):
-                return []
+                if raw.rstrip("/") in linked:
+                    return {
+                        "status": "ok_github_linked",
+                        "detail": f"{raw} — matches a PR GitHub recorded as closing this "
+                                  "issue (existence verified by GitHub)",
+                        "violations": [],
+                    }
+                return {
+                    "status": "ok_syntax_valid",
+                    "detail": f"{raw} — syntax_valid, existence_unverified "
+                              "(the checker does not fetch the URL)",
+                    "violations": [],
+                }
             malformed.append(raw)
 
-    if malformed:
-        return [
+    # 2. GitHub's own closing-PR record, even with no typed marker.
+    if linked:
+        return {
+            "status": "ok_github_linked",
+            "detail": f"closed by {', '.join(linked)} — GitHub-recorded link "
+                      "(existence verified by GitHub)",
+            "violations": [],
+        }
+
+    # 3. An enumerated exemption code. Free-form text is rejected.
+    bad_codes: list[str] = []
+    for text in texts:
+        for m in EXEMPTION_RE.finditer(text):
+            code = m.group(1).strip().strip("*`").strip().lower()
+            if code in EXEMPTION_CODES:
+                return {
+                    "status": "exempt_code",
+                    "detail": f"Evidence-Exemption: {code} — {EXEMPTION_CODES[code]}",
+                    "violations": [],
+                }
+            bad_codes.append(m.group(1).strip())
+
+    # 4. GitHub's "closed as not planned" state — a state, not a label.
+    if str(issue.get("stateReason") or "").upper() == "NOT_PLANNED":
+        return {
+            "status": "exempt_not_planned",
+            "detail": "closed as not planned — cancelled, nothing was produced",
+            "violations": [],
+        }
+
+    violations: list[str] = []
+    allowed = " | ".join(sorted(EXEMPTION_CODES))
+    for code in dict.fromkeys(bad_codes):
+        violations.append(
+            f"unknown Evidence-Exemption code {code!r} — free-form exemptions are "
+            f"rejected; allowed codes: {allowed}"
+        )
+    for raw in dict.fromkeys(malformed):
+        violations.append(
             f"malformed Evidence ref {raw!r} — want a GitHub PR, commit, or "
             "issue-comment URL (https://github.com/<owner>/<repo>/pull/<n>)"
-            for raw in dict.fromkeys(malformed)
-        ]
+        )
+    if empty_marker and not malformed:
+        violations.append(
+            "'Evidence:' marker has no URL after it — put the permalink on the "
+            "same line (https://github.com/<owner>/<repo>/pull/<n>)"
+        )
+    if not violations:
+        hint = ""
+        if RETIRED_EXEMPT_LABEL in issue_label_names(issue):
+            hint = (
+                f" — note: the `{RETIRED_EXEMPT_LABEL}` label no longer exempts anything; "
+                "state the reason as `Evidence-Exemption: administrative`"
+            )
+        violations.append(
+            "closed with no 'Evidence:' ref (WEEKLY-LOOP §2 원칙 4) — add "
+            "`Evidence: <PR/commit/comment URL>` in the body or a comment, or "
+            f"`Evidence-Exemption: <{allowed}>` if it produced no deliverable" + hint
+        )
+    if unknown_close_time:
+        violations.append(
+            "close timestamp unavailable — the pre-cutoff exemption cannot be "
+            "established, so the gate applies (fail closed)"
+        )
+    return {"status": "violation", "detail": "", "violations": violations}
+
+
+CLEAN_STATUSES = (
+    "exempt_pre_cutoff",
+    "exempt_not_planned",
+    "exempt_code",
+    "ok_github_linked",
+    "ok_syntax_valid",
+)
+
+
+def new_counts() -> dict:
+    counts = {
+        "repos_examined": 0,
+        "issues_examined": 0,
+        "open_examined": 0,
+        "closed_examined": 0,
+        "comments_examined": 0,
+        "clean_accepted": 0,
+        "violations_detected": 0,
+        "evidence_gate_skipped": 0,
+    }
+    counts.update({status: 0 for status in CLEAN_STATUSES})
+    return counts
+
+
+def coverage_lines(counts: dict, cutoff: dt.datetime) -> list[str]:
+    """Non-vacuity block. A control that examined nothing has not passed."""
     return [
-        "closed with no 'Evidence:' ref (WEEKLY-LOOP §2 원칙 4) — add "
-        "`Evidence: <PR/commit/comment URL>` in the body or a comment, "
-        f"or label the issue `{EXEMPT_LABEL}` if it produced no deliverable"
+        "",
+        "## Coverage — non-vacuity",
+        f"- repos examined:                 {counts['repos_examined']}",
+        f"- issues examined:                {counts['issues_examined']} "
+        f"(open {counts['open_examined']} · closed {counts['closed_examined']})",
+        f"- comment bodies examined:        {counts['comments_examined']}",
+        f"- clean cases accepted:           {counts['clean_accepted']}",
+        f"- violations detected:            {counts['violations_detected']}",
+        f"- closed exempt, pre-cutoff:      {counts['exempt_pre_cutoff']} "
+        f"(closed before {cutoff.isoformat()})",
+        f"- closed exempt, not planned:     {counts['exempt_not_planned']}",
+        f"- closed exempt, declared code:   {counts['exempt_code']}",
+        f"- evidence github-linked:         {counts['ok_github_linked']} "
+        "(existence verified by GitHub)",
+        f"- evidence syntax_valid:          {counts['ok_syntax_valid']} "
+        "(existence_unverified)",
+        f"- closed issues NOT checked:      {counts['evidence_gate_skipped']} "
+        "(--skip-evidence-gate)",
     ]
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate weekly-cycle issues: open ones carry Owner + ETA <= cycle "
-                    "date, closed ones reference evidence or an explicit exemption."
+                    "date, closed ones reference evidence or an enumerated exemption."
     )
     parser.add_argument("--cycle", required=True, help="cycle label, e.g. weekly-2026-07-21")
     parser.add_argument(
@@ -254,9 +598,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skip-evidence-gate",
         action="store_true",
-        help="do not check closed issues for an Evidence ref (transition window only)",
+        help="do not check closed issues for an Evidence ref "
+             "(local triage only; refused under CI/HYPEPROOF_ENFORCE)",
+    )
+    parser.add_argument(
+        "--min-issues",
+        type=int,
+        default=None,
+        metavar="N",
+        help="exit 2 unless at least N issues were examined "
+             "(default: 1 under CI/enforcement, 0 otherwise)",
+    )
+    parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="emit the machine-readable report on stdout instead of the text report",
     )
     args = parser.parse_args(argv)
+
+    enforcing = enforcement_env()
+    if args.skip_evidence_gate and enforcing:
+        print(
+            f"ERROR  --skip-evidence-gate is refused: {enforcing} is set, so this is an "
+            "enforcement path. A gate that ships with its own bypass is not a gate.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         cycle_date = parse_cycle_date(args.cycle)
@@ -264,6 +632,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR  {exc}", file=sys.stderr)
         return 2
 
+    min_issues = args.min_issues if args.min_issues is not None else (1 if enforcing else 0)
     repos = args.repos or DEFAULT_REPOS
 
     fixture: dict[str, list[dict]] | None = None
@@ -274,10 +643,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR  cannot read fixture {args.issues_json}: {exc}", file=sys.stderr)
             return 2
 
-    print(f"# weekly-loop check — cycle {args.cycle} (due {cycle_date.isoformat()})")
-    total = 0
-    bad = 0
-    exempt = 0
+    counts = new_counts()
+    records: list[dict] = []
+    lines: list[str] = [
+        f"# weekly-loop check — cycle {args.cycle} (due {cycle_date.isoformat()})",
+        f"# evidence cutoff {EVIDENCE_CUTOFF.isoformat()} — issues closed earlier are exempt",
+    ]
+
     for repo in repos:
         try:
             issues = (
@@ -288,46 +660,99 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR  {exc}", file=sys.stderr)
             return 2
 
-        print(f"\n{repo} — {len(issues)} issue(s) with label {args.cycle}")
+        counts["repos_examined"] += 1
+        lines.append(f"\n{repo} — {len(issues)} issue(s) with label {args.cycle}")
         for issue in issues:
-            total += 1
-            ref = f"#{issue.get('number', '?')} {issue.get('title', '(no title)')}"
+            counts["issues_examined"] += 1
+            counts["comments_examined"] += comment_count(issue)
+            number = issue.get("number", "?")
+            ref = f"#{number} {issue.get('title', '(no title)')}"
+            record = {
+                "repo": repo,
+                "number": number,
+                "url": issue.get("url", ""),
+                "state": "OPEN" if is_open(issue) else "CLOSED",
+                "rule": "owner_eta" if is_open(issue) else "evidence",
+                "status": "ok",
+                "detail": "",
+                "violations": [],
+            }
 
             if is_open(issue):
-                violations = check_issue(issue.get("body", ""), cycle_date)
-            elif args.skip_evidence_gate:
-                print(f"  SKIP       {ref} (closed; evidence gate skipped)")
-                continue
+                counts["open_examined"] += 1
+                record["violations"] = check_issue(issue.get("body", ""), cycle_date)
+                record["status"] = "violation" if record["violations"] else "ok"
             else:
-                reason = evidence_exemption(issue)
-                if reason:
-                    exempt += 1
-                    print(f"  EXEMPT     {ref} — {reason}")
+                counts["closed_examined"] += 1
+                if args.skip_evidence_gate:
+                    counts["evidence_gate_skipped"] += 1
+                    record["status"] = "skipped"
+                    lines.append(f"  SKIP       {ref} (closed; evidence gate skipped)")
+                    records.append(record)
                     continue
-                violations = check_closed_issue(issue)
+                result = check_closed_issue(issue)
+                record.update(result)
+                if result["status"] in CLEAN_STATUSES:
+                    counts[result["status"]] += 1
 
-            if violations:
-                bad += 1
-                print(f"  VIOLATION  {ref}")
-                for reason in violations:
-                    print(f"    - {reason}")
+            if record["violations"]:
+                counts["violations_detected"] += 1
+                lines.append(f"  VIOLATION  {ref}")
+                for reason in record["violations"]:
+                    lines.append(f"    - {reason}")
                 if issue.get("url"):
-                    print(f"    → {issue['url']}")
+                    lines.append(f"    → {issue['url']}")
             else:
-                print(f"  OK         {ref}")
+                counts["clean_accepted"] += 1
+                label = "EXEMPT" if record["status"].startswith("exempt") else "OK"
+                suffix = f" — {record['detail']}" if record["detail"] else ""
+                lines.append(f"  {label:<10} {ref}{suffix}")
+            records.append(record)
 
-    summary = f"\nTotal: {total} issue(s) · {bad} violation(s)"
-    if exempt:
-        summary += f" · {exempt} exempt"
-    print(summary)
-    if bad:
+    if args.as_json:
+        print(json.dumps(
+            {
+                "cycle": args.cycle,
+                "cycle_date": cycle_date.isoformat(),
+                "cutoff": EVIDENCE_CUTOFF.isoformat(),
+                "repos": repos,
+                "counts": counts,
+                "issues": records,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ))
+    else:
+        print("\n".join(lines))
+        print(
+            f"\nTotal: {counts['issues_examined']} issue(s) · "
+            f"{counts['violations_detected']} violation(s)"
+        )
+        print("\n".join(coverage_lines(counts, EVIDENCE_CUTOFF)))
+
+    if counts["issues_examined"] < min_issues:
+        print(
+            f"ERROR  examined {counts['issues_examined']} issue(s) across "
+            f"{counts['repos_examined']} repo(s) — below --min-issues {min_issues}. "
+            "A control that examined nothing has not passed.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if counts["violations_detected"]:
         print(
             "✗ weekly-loop check failed — open issues need Owner/ETA, "
-            "closed issues need an Evidence ref or an exemption",
+            "closed issues need an Evidence ref or an enumerated exemption",
             file=sys.stderr,
         )
         return 1
-    print("✓ open issues have Owner + ETA within the cycle; closed issues have evidence")
+    # Under --json stdout must stay parseable, so the trailer goes to stderr.
+    print(
+        f"✓ {counts['issues_examined']} issue(s) examined, 0 violation(s) — "
+        "open issues have Owner + ETA within the cycle; closed issues have "
+        "evidence or a declared exemption",
+        file=sys.stderr if args.as_json else sys.stdout,
+    )
     return 0
 
 

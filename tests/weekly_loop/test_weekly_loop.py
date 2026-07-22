@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# check.py treats these as "this is an enforcement path" and changes behaviour
+# (refuses --skip-evidence-gate, defaults --min-issues to 1). Strip them so the
+# suite behaves identically on a laptop and inside GitHub Actions; the tests
+# that care about enforcement set them back explicitly.
+ENFORCEMENT_ENV = ("CI", "GITHUB_ACTIONS", "HYPEPROOF_ENFORCE")
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,13 +28,18 @@ GOOD_BODY = (
 )
 
 
-def run(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def run(
+    script: Path, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    child_env = {k: v for k, v in os.environ.items() if k not in ENFORCEMENT_ENV}
+    child_env.update(env or {})
     return subprocess.run(
         [sys.executable, str(script), *args],
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
+        env=child_env,
     )
 
 
@@ -143,15 +155,28 @@ def test_evidence_gate_rejects_malformed_ref(tmp_path: Path) -> None:
     assert "3 violation(s)" in proc.stdout
 
 
-def test_evidence_gate_exempts_labelled_non_deliverable(tmp_path: Path) -> None:
+def test_no_evidence_needed_label_no_longer_exempts(tmp_path: Path) -> None:
+    # M003: a label anyone with write access can add is not an audit trail.
+    # The label now only produces a hint pointing at the enumerated code.
     fx = fixture(
         tmp_path,
         [closed(15, "Rename the Discord channel", labels=[{"name": "no-evidence-needed"}])],
     )
     proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "no longer exempts anything" in proc.stdout
+    assert "Evidence-Exemption: administrative" in proc.stdout
+
+
+def test_evidence_gate_exempts_declared_enumerated_code(tmp_path: Path) -> None:
+    fx = fixture(
+        tmp_path,
+        [closed(15, "Rename the Discord channel", body="Evidence-Exemption: administrative")],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "EXEMPT" in proc.stdout
-    assert "1 exempt" in proc.stdout
+    assert "closed exempt, declared code:   1" in proc.stdout
 
 
 def test_evidence_gate_exempts_issue_closed_as_not_planned(tmp_path: Path) -> None:
