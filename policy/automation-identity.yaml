@@ -1,9 +1,17 @@
-version: 1
+version: 2
 
 # Machine-readable automation-identity + permission model for M004 WS1.
 # Encodes the target separation between Jay's human owner identity and the
 # delegated automation worker, hardened against the adversarially-verified
 # boundary failures A6 and A7 (boundary-verifier, 2026-07-22).
+#
+# M005 validation (2026-07-22): the Phase 2 permission model below was
+# re-evaluated against GitHub App and classic PAT and re-confirmed as the
+# minimal viable option (fine-grained PAT on a machine user) — the deciding
+# constraint is launchd/cron compatibility with the existing static 0600
+# env-file token model. See docs/M005-IDENTITY-ISOLATION.md and the
+# scripts/identity-isolation/ package. Layer-2 uid isolation is now specified
+# concretely (uid_isolation_m005 below). NOT redesigned — validated + extended.
 #
 # A6 (meta-boundary): the data plane IS server-enforced — enforce_admins:true
 #   makes GitHub itself reject admin --admin merge, main push, force-push,
@@ -28,8 +36,16 @@ current_principal:
   measured_by: "gh auth status; git log; cron-prompts/cron-env.sh:9"
   gh_token_type: oauth          # gho_...
   gh_token_scopes: [repo, admin:public_key, delete_repo, gist, read:org]
-  git_transport: ssh            # gh auth status: "Git operations protocol: ssh"
-  ssh_key_passphrase: none      # audited: passphrase-less key on disk
+  # M005 re-measured 2026-07-22 (phase3-00-preflight.sh): scope set unchanged.
+  git_transport:                # per-repo, re-measured 2026-07-22 (was: "ssh")
+    ssh:   [hypeproof-harness, hypeproof-studio, sediment]   # git@github.com:...
+    https: [hypeprooflab]                                    # osxkeychain (Jay acct 25076199)
+  ssh_key_passphrase: none      # audited: passphrase-less key on disk (~/.ssh/id_ed25519, 0600)
+  cred_store_perms:             # M005 measured 2026-07-22 — perms only, no values
+    "~/.ssh/id_ed25519": "0600 jaylee"
+    "~/.config/cron/env": "0600 jaylee"          # Claude Code OAuth token (set -a source)
+    "~/.config/gh/hosts.yml": "0600 jaylee"
+    "~/.gitconfig": "0644 jaylee"                # WORLD-READABLE — tightened to 0600 in M005 Phase 3 Step 20
   can_modify_branch_protection: true   # A6 — owner/admin principal
   unnecessary_for_autonomy: [delete_repo, admin:public_key]   # never needed by a worker
   runs_as_uid: jaylee           # ROOT CONSTRAINT — see uid_isolation below
@@ -104,6 +120,43 @@ defense_layers:
     what: "Run automation sessions under a separate OS user / sandbox so Jay's ~/.gitconfig, keychain, and ssh keys are NOT readable by the session."
     why: "ROOT CONSTRAINT — while the session runs as uid `jaylee`, narrowing the token is reversible: the session can still read the owner's ssh key / keychain and re-acquire owner rights. Layer 1 alone is bypassable without this."
     human_gate: [separate_os_user_or_sandbox, filesystem_perms_on_owner_creds]
+    realized_by: uid_isolation_m005   # see below — concrete cutover package (M005 Phase 3/4)
+
+# ---------------------------------------------------------------------------
+# M005 realization of Layer 2 — concrete uid isolation (scripts + verification)
+# NOTE: OS account (hypeproof-agent) != GitHub login (hypeproof-automation).
+# ---------------------------------------------------------------------------
+uid_isolation_m005:
+  os_account:
+    login: hypeproof-agent          # dedicated macOS user; uid auto-assigned (501-503 taken)
+    kind: standard_non_admin        # NOT in admin group -> cannot sudo
+    hidden: true                    # IsHidden + HiddenUsersList (service account)
+    home: /Users/hypeproof-agent    # 0700; runtime checkouts under /Users/hypeproof-agent/runtime
+  agent_credentials:                # provisioned INSIDE agent home, nothing inherited from Jay
+    github_pat: "$AGENT_HOME/.config/git/credentials (0600) OR agent gh keyring — machine user PAT"
+    claude_token: "$AGENT_HOME/.config/cron/env (0600) — agent's OWN CLAUDE_CODE_OAUTH_TOKEN"
+  launchd:
+    mechanism: LaunchDaemon         # /Library/LaunchDaemons + <UserName>hypeproof-agent
+    why_not_launchagent: "user LaunchAgents only run in that user's GUI login session; a hidden service account is never logged in. Daemon runs at boot and drops privilege to the agent uid. (macOS behavior, HIGH confidence.)"
+    source_jobs: "~jaylee/Library/LaunchAgents/com.hypeproof.cron.*.plist (12 jobs, measured 2026-07-22)"
+  keychain_isolation: "free from uid split — ~jaylee/Library/Keychains/*.keychain-db is per-uid + locked; agent uid cannot use it. Verified by Phase 4 A2."
+  scripts: scripts/identity-isolation/          # emit-only; --apply refused; no secret values
+  runbook: docs/M005-IDENTITY-ISOLATION.md
+  noninheritance_contract:                        # asserted by phase4-noninheritance-suite.sh
+    must_fail_from_agent:                         # each maps to an expected server/OS response
+      read_jay_ssh_key: EACCES
+      use_jay_keychain_cred: not_found
+      gh_as_jayleekr: "identity != jayleekr"
+      repo_admin_write: 403
+      branch_protection_mutation: 403             # 404 only if authz'd but branch missing
+      repo_deletion: "403/404"
+      ssh_key_admin: "403/404"
+    must_pass_from_agent:
+      clone_authorized_repo: success
+      feature_branch_create_push: success
+      read_ci_status: 200
+      read_branch_protection_observe_only: 200
+      comment_owned_pr: success
 
 # ---------------------------------------------------------------------------
 # Exact human-run procedure for LAYER 1 (settings/credentials NOT changed here)
