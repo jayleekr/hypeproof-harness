@@ -95,8 +95,14 @@ KST = dt.timezone(dt.timedelta(hours=9))
 EVIDENCE_CUTOFF = dt.datetime(2026, 7, 22, 0, 0, 0, tzinfo=KST)
 
 CYCLE_RE = re.compile(r"^weekly-(\d{4})-(\d{2})-(\d{2})$")
+# Both bold placements are idiomatic markdown and both get typed by hand:
+# '**ETA**: 2026-07-20' and '**ETA:** 2026-07-20'. The trailing (?:\*\*)? after
+# the colon is what accepts the second form — without it the value capture
+# swallows the '**' and the marker reads as an empty, unactionable value.
+BOLD_MARKER_COLON = r"(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*"
 ETA_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\*\*)?ETA(?:\*\*)?\s*[:：]\s*(\S+)", re.IGNORECASE | re.MULTILINE
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?ETA" + BOLD_MARKER_COLON + r"(\S+)",
+    re.IGNORECASE | re.MULTILINE,
 )
 # '## ETA' heading with the date on the first non-empty line below it
 # (e.g. issues filed before the inline 'ETA:' template existed)
@@ -112,12 +118,13 @@ OWNER_RE = re.compile(
 # 'Evidence: <url>' / '증거: <url>' — same line shape as the ETA marker above.
 # 'Evidence-Exemption:' does not match it: '-' is not ':'.
 EVIDENCE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence|증거)(?:\*\*)?\s*[:：]\s*(\S+)",
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence|증거)" + BOLD_MARKER_COLON + r"(\S+)",
     re.IGNORECASE | re.MULTILINE,
 )
 # 'Evidence-Exemption: <code>' — one enumerated code and nothing else.
 EXEMPTION_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence-Exemption|증거-면제)(?:\*\*)?\s*[:：]\s*(.+?)\s*$",
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:Evidence-Exemption|증거-면제)"
+    + BOLD_MARKER_COLON + r"(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 FENCE_RE = re.compile(r"(`{3,}|~{3,})")
@@ -320,16 +327,22 @@ def check_issue(body: str, cycle_date: dt.date) -> list[str]:
         violations.append("missing 'ETA:' line")
     else:
         raw = m.group(1).strip().rstrip(".,;)").strip("*")  # tolerate 'ETA: **2026-07-21**'
-        try:
-            eta = dt.date.fromisoformat(raw)
-        except ValueError:
-            violations.append(f"unparseable ETA date {raw!r} (want YYYY-MM-DD)")
+        if not raw:
+            # e.g. a bare 'ETA:' with the date on the next line. Naming the
+            # shape beats reporting an unparseable date of ''.
+            violations.append("'ETA:' marker has no date after it (want ETA: YYYY-MM-DD)")
         else:
-            if eta > cycle_date:
-                violations.append(
-                    f"ETA {eta.isoformat()} is after the cycle date {cycle_date.isoformat()} — "
-                    "split into a first deliverable due by Monday"
-                )
+            try:
+                eta = dt.date.fromisoformat(raw)
+            except ValueError:
+                violations.append(f"unparseable ETA date {raw!r} (want YYYY-MM-DD)")
+            else:
+                if eta > cycle_date:
+                    violations.append(
+                        f"ETA {eta.isoformat()} is after the cycle date "
+                        f"{cycle_date.isoformat()} — split into a first "
+                        "deliverable due by Monday"
+                    )
 
     if not OWNER_RE.search(body):
         violations.append("missing 'Owner'/담당 section")
@@ -424,9 +437,15 @@ def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> di
 
     # 1. A typed Evidence ref, checked for shape.
     malformed: list[str] = []
+    empty_marker = False
     for text in texts:
         for m in EVIDENCE_RE.finditer(text):
             raw = m.group(1).strip().rstrip(".,;)").strip("*")
+            if not raw:
+                # e.g. a bare 'Evidence:' with the URL on the next line. Naming
+                # the shape beats reporting a malformed ref of ''.
+                empty_marker = True
+                continue
             if EVIDENCE_URL_RE.match(raw):
                 if raw.rstrip("/") in linked:
                     return {
@@ -484,6 +503,11 @@ def check_closed_issue(issue: dict, cutoff: dt.datetime = EVIDENCE_CUTOFF) -> di
         violations.append(
             f"malformed Evidence ref {raw!r} — want a GitHub PR, commit, or "
             "issue-comment URL (https://github.com/<owner>/<repo>/pull/<n>)"
+        )
+    if empty_marker and not malformed:
+        violations.append(
+            "'Evidence:' marker has no URL after it — put the permalink on the "
+            "same line (https://github.com/<owner>/<repo>/pull/<n>)"
         )
     if not violations:
         hint = ""
