@@ -1,0 +1,305 @@
+{
+  "jayleekr/hypeproof-corpus": [
+    {
+      "number": 101,
+      "title": "V open: no ETA, no owner",
+      "body": "그냥 해주세요.",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/101"
+    },
+    {
+      "number": 102,
+      "title": "V open: ETA after the cycle date",
+      "body": "Owner: @jay\nETA: 2026-08-30\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/102"
+    },
+    {
+      "number": 103,
+      "title": "V open: ETA only inside a fenced block",
+      "body": "Owner: @jay\n\n```\nETA: 2026-07-24\n```\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/103"
+    },
+    {
+      "number": 104,
+      "title": "V open: Owner only inside a fenced block",
+      "body": "ETA: 2026-07-24\n\n~~~markdown\nOwner: @jay\n~~~\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/104"
+    },
+    {
+      "number": 105,
+      "title": "V open: Owner+ETA only in an indented code block",
+      "body": "설명.\n\n    Owner: @jay\n    ETA: 2026-07-24\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/105"
+    },
+    {
+      "number": 106,
+      "title": "V open: ETA only inside an HTML comment",
+      "body": "Owner: @jay\n\n<!--\nETA: 2026-07-24\n-->\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/106"
+    },
+    {
+      "number": 107,
+      "title": "V open: ETA only inside a blockquote",
+      "body": "Owner: @jay\n\n> ETA: 2026-07-24\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/107"
+    },
+    {
+      "number": 108,
+      "title": "V closed: no evidence at all",
+      "body": "다 했습니다.",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/108",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "comments": [
+        {
+          "body": "확인했습니다."
+        }
+      ]
+    },
+    {
+      "number": 109,
+      "title": "V closed: evidence only inside a fenced block",
+      "body": "```\nEvidence: https://github.com/jayleekr/sediment/pull/42\n```\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/109",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 110,
+      "title": "V closed: evidence only in an indented code block",
+      "body": "예시는 아래.\n\n    Evidence: https://github.com/jayleekr/sediment/pull/42\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/110",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 111,
+      "title": "V closed: evidence only in an inline code span",
+      "body": "형식: `Evidence: https://github.com/jayleekr/sediment/pull/42`\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/111",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 112,
+      "title": "V closed: evidence only inside an HTML comment",
+      "body": "<!-- Evidence: https://github.com/jayleekr/sediment/pull/42 -->\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/112",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 113,
+      "title": "V closed: evidence only inside a blockquote",
+      "body": "> Evidence: https://github.com/jayleekr/sediment/pull/42\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/113",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 114,
+      "title": "V closed: malformed evidence ref",
+      "body": "Evidence: 슬랙에 공유함",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/114",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 115,
+      "title": "V closed: free-form exemption text",
+      "body": "Evidence-Exemption: 그냥 필요 없어서 면제해 주세요",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/115",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 116,
+      "title": "V closed: unknown exemption code",
+      "body": "Evidence-Exemption: wontfix",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/116",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 117,
+      "title": "V closed: close timestamp unavailable",
+      "body": "완료",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/117"
+    },
+    {
+      "number": 118,
+      "title": "V closed: retired label only",
+      "body": "완료",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/118",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "labels": [
+        {
+          "name": "no-evidence-needed"
+        }
+      ]
+    },
+    {
+      "number": 119,
+      "title": "V closed: exactly at the cutoff instant",
+      "body": "완료",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/119",
+      "closedAt": "2026-07-21T15:00:00Z"
+    },
+    {
+      "number": 201,
+      "title": "C open: owner + ETA within the cycle",
+      "body": "## Owner\n\n담당: @TJ-kr\n\n## ETA\n\nETA: 2026-07-24\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/201"
+    },
+    {
+      "number": 202,
+      "title": "C open: real owner/ETA plus a quoted template",
+      "body": "## Owner\n\n담당: @TJ-kr\n\n## ETA\n\nETA: 2026-07-24\n\n참고 템플릿:\n\n```\nOwner: <@handle>\nETA: 2099-01-01\n```\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/202"
+    },
+    {
+      "number": 203,
+      "title": "C closed pre-cutoff: nothing at all",
+      "body": "옛날 작업",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/203",
+      "closedAt": "2026-07-21T12:37:36Z"
+    },
+    {
+      "number": 204,
+      "title": "C closed pre-cutoff: garbage evidence stays untouched",
+      "body": "Evidence: 슬랙 어딘가",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/204",
+      "closedAt": "2026-07-21T12:37:36Z"
+    },
+    {
+      "number": 205,
+      "title": "C closed: valid PR ref",
+      "body": "Evidence: https://github.com/jayleekr/sediment/pull/42",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/205",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 206,
+      "title": "C closed: valid commit ref",
+      "body": "Evidence: https://github.com/jayleekr/sediment/commit/9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/206",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 207,
+      "title": "C closed: valid issue-comment ref",
+      "body": "증거: https://github.com/jayleekr/hypeprooflab/issues/7#issuecomment-3120044556",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/207",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 208,
+      "title": "C closed: marker matches GitHub's closing-PR record",
+      "body": "Evidence: https://github.com/jayleekr/sediment/pull/42",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/208",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "closedByPullRequestsReferences": [
+        {
+          "number": 42,
+          "url": "https://github.com/jayleekr/sediment/pull/42"
+        }
+      ]
+    },
+    {
+      "number": 209,
+      "title": "C closed: GitHub closing-PR record with no typed marker",
+      "body": "완료",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/209",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "closedByPullRequestsReferences": [
+        {
+          "number": 99,
+          "url": "https://github.com/jayleekr/sediment/pull/99"
+        }
+      ]
+    },
+    {
+      "number": 210,
+      "title": "C closed: exemption cancelled",
+      "body": "Evidence-Exemption: cancelled",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/210",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 211,
+      "title": "C closed: exemption duplicate",
+      "body": "Evidence-Exemption: duplicate",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/211",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 212,
+      "title": "C closed: exemption administrative",
+      "body": "**Evidence-Exemption**: administrative",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/212",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 213,
+      "title": "C closed: exemption no-deliverable",
+      "body": "- Evidence-Exemption: no-deliverable",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/213",
+      "closedAt": "2026-07-22T03:00:00Z"
+    },
+    {
+      "number": 214,
+      "title": "C closed: closed as not planned",
+      "body": "취소됨",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/214",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "stateReason": "NOT_PLANNED"
+    },
+    {
+      "number": 215,
+      "title": "C closed: evidence in the closing comment",
+      "body": "작업 내용",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/215",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "comments": [
+        {
+          "body": "리뷰 반영 완료."
+        },
+        {
+          "body": "완료.\n\nEvidence: https://github.com/jayleekr/sediment/pull/42\n"
+        }
+      ]
+    },
+    {
+      "number": 216,
+      "title": "C closed: quoted example plus a genuine ref outside it",
+      "body": "~~~\nEvidence: https://github.com/x/y/pull/1\n~~~\n\nEvidence: https://github.com/jayleekr/sediment/pull/42\n",
+      "state": "CLOSED",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/216",
+      "closedAt": "2026-07-22T03:00:00Z"
+    }
+  ]
+}

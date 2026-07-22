@@ -86,3 +86,140 @@ jobs:
           path: |
             repo-governance-audit.json
             repo-governance-audit.exitcode
+
+  weekly-loop-gate:
+    # The weekly-loop rules (Owner/ETA on open issues, evidence on closed ones)
+    # are organizational facts about GitHub issues, so they can only be enforced
+    # where live issues can be read — not at PR time. This audit is that
+    # enforcement point; the PR-time counterpart in test.yml enforces the gate
+    # code itself against a fixed adversarial corpus.
+    name: weekly-loop owner/ETA + evidence gate (live)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN || github.token }}
+      # Marks this as an enforcement path: check.py refuses --skip-evidence-gate
+      # and treats "examined nothing" as a failure rather than a pass.
+      HYPEPROOF_ENFORCE: "true"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Resolve the cycles under audit
+        id: cycles
+        run: |
+          python - >> "$GITHUB_OUTPUT" <<'PY'
+          import datetime as dt
+
+          # Cycle labels are named for the Monday meeting they feed. Audit the
+          # upcoming cycle (open work) and the one before it (closed work, where
+          # the evidence requirement actually bites).
+          kst = dt.timezone(dt.timedelta(hours=9))
+          today = dt.datetime.now(kst).date()
+          upcoming = today + dt.timedelta(days=(0 - today.weekday()) % 7)
+          previous = upcoming - dt.timedelta(days=7)
+          print(f"labels=weekly-{previous.isoformat()} weekly-{upcoming.isoformat()}")
+          PY
+
+      - name: Run the gate against live issues
+        env:
+          LABELS: ${{ steps.cycles.outputs.labels }}
+        run: |
+          set -eo pipefail
+          for label in $LABELS; do
+            set +e
+            # --min-issues 0 per label: a cycle that has not been filed yet is
+            # legitimately empty. The aggregate non-vacuity check below is what
+            # refuses to call an empty audit a pass.
+            python scripts/weekly-harness/check.py \
+              --cycle "$label" --min-issues 0 --json > "weekly-gate-$label.json"
+            rc=$?
+            set -e
+            if [ "$rc" = "2" ]; then
+              echo "checker errored for $label (config / gh / truncation)" >&2
+              exit 2
+            fi
+          done
+
+      - name: Write violation report
+        run: |
+          set -eo pipefail
+          python - <<'PY' | tee weekly-gate-summary.md >> "$GITHUB_STEP_SUMMARY"
+          import glob, json
+
+          reports = [json.load(open(p, encoding="utf-8")) for p in sorted(glob.glob("weekly-gate-*.json"))]
+          total = {}
+          for report in reports:
+              for key, value in report["counts"].items():
+                  total[key] = total.get(key, 0) + value
+
+          print("# weekly-loop gate — live audit")
+          print()
+          print(f"Cutoff: `{reports[0]['cutoff'] if reports else 'n/a'}` "
+                "(issues closed earlier are exempt, derived from `closedAt`)")
+          print()
+          print("## Coverage — non-vacuity")
+          print()
+          print("| metric | value |")
+          print("|---|---:|")
+          for key in ("repos_examined", "issues_examined", "open_examined",
+                      "closed_examined", "comments_examined", "clean_accepted",
+                      "violations_detected", "exempt_pre_cutoff",
+                      "exempt_not_planned", "exempt_code", "ok_github_linked",
+                      "ok_syntax_valid", "evidence_gate_skipped"):
+              print(f"| {key} | {total.get(key, 0)} |")
+          print()
+
+          rows = [
+              (report["cycle"], item)
+              for report in reports
+              for item in report["issues"]
+              if item["status"] == "violation"
+          ]
+          print("## Violations")
+          print()
+          if not rows:
+              print("None.")
+          else:
+              # Issue numbers and rule names only — no issue content is copied
+              # into the summary, and nothing here edits an issue.
+              print("| cycle | repo | issue | rule | reasons |")
+              print("|---|---|---|---|---|")
+              for cycle, item in rows:
+                  link = f"[#{item['number']}]({item['url']})" if item["url"] else f"#{item['number']}"
+                  print(f"| {cycle} | {item['repo']} | {link} | {item['rule']} | "
+                        f"{len(item['violations'])} |")
+          PY
+
+      - name: Upload gate report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: weekly-loop-gate
+          path: |
+            weekly-gate-*.json
+            weekly-gate-summary.md
+
+      - name: Enforce
+        run: |
+          python - <<'PY'
+          import glob, json, sys
+
+          reports = [json.load(open(p, encoding="utf-8")) for p in sorted(glob.glob("weekly-gate-*.json"))]
+          examined = sum(r["counts"]["issues_examined"] for r in reports)
+          violations = sum(r["counts"]["violations_detected"] for r in reports)
+          skipped = sum(r["counts"]["evidence_gate_skipped"] for r in reports)
+
+          if not reports or examined == 0:
+              sys.exit(f"examined {examined} issue(s) across {len(reports)} cycle(s) — "
+                       "a control that examined nothing has not passed")
+          if skipped:
+              sys.exit(f"{skipped} closed issue(s) bypassed the evidence gate on an "
+                       "enforcement path")
+          print(f"examined {examined} issue(s); {violations} violation(s)")
+          if violations:
+              sys.exit("weekly-loop gate failed — see the job summary for the "
+                       "issues that need an Owner/ETA or an Evidence ref")
+          PY

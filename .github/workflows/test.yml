@@ -133,3 +133,72 @@ jobs:
         run: python scripts/repo-governance/audit.py --offline
       - name: Run Python tests
         run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop
+
+      # The weekly-loop gate cannot be enforced against live issues at PR time —
+      # a PR contains no issues. What IS enforced here is the gate itself: every
+      # PR replays a committed adversarial corpus and must reproduce the exact
+      # injected-vs-detected counts, so a change that quietly reopens a bypass
+      # (or that examines nothing) cannot merge. See tests/weekly_loop/fixtures/.
+      - name: weekly-loop gate — adversarial corpus (non-vacuity proof)
+        env:
+          CI: "true"
+          CORPUS: tests/weekly_loop/fixtures/evidence_corpus.json
+        run: |
+          set +e
+          python scripts/weekly-harness/check.py \
+            --cycle weekly-2026-07-27 \
+            --repo jayleekr/hypeproof-corpus \
+            --issues-json "$CORPUS" --json > corpus-report.json
+          rc=$?
+          set -e
+          if [ "$rc" != "1" ]; then
+            echo "expected exit 1 (the corpus carries injected violations), got $rc" >&2
+            cat corpus-report.json >&2
+            exit 1
+          fi
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+
+          EXPECTED = {
+              "repos_examined": 1, "issues_examined": 35,
+              "open_examined": 9, "closed_examined": 26, "comments_examined": 3,
+              "violations_detected": 19, "clean_accepted": 16,
+              "exempt_pre_cutoff": 2, "exempt_not_planned": 1, "exempt_code": 4,
+              "ok_github_linked": 2, "ok_syntax_valid": 5,
+          }
+          counts = json.load(open("corpus-report.json", encoding="utf-8"))["counts"]
+          bad = {k: (v, counts.get(k)) for k, v in EXPECTED.items() if counts.get(k) != v}
+
+          print("# weekly-loop gate — corpus replay")
+          print()
+          print("| metric | expected | observed |")
+          print("|---|---:|---:|")
+          for key, want in EXPECTED.items():
+              print(f"| {key} | {want} | {counts.get(key)} |")
+          print()
+          if bad:
+              print(f"**MISMATCH**: {bad}")
+              print("The gate no longer reproduces the corpus. Either a bypass reopened "
+                    "or the corpus changed without updating the expectations.",
+                    file=sys.stderr)
+              raise SystemExit(1)
+          print("19 injected violations detected · 16 expected-clean cases accepted.")
+          PY
+
+      - name: weekly-loop gate — bypass must be refused under CI
+        env:
+          CI: "true"
+        run: |
+          set +e
+          python scripts/weekly-harness/check.py \
+            --cycle weekly-2026-07-27 \
+            --repo jayleekr/hypeproof-corpus \
+            --issues-json tests/weekly_loop/fixtures/evidence_corpus.json \
+            --skip-evidence-gate >/dev/null 2>bypass.err
+          rc=$?
+          set -e
+          if [ "$rc" != "2" ]; then
+            echo "--skip-evidence-gate should exit 2 under CI=true, got $rc" >&2
+            exit 1
+          fi
+          grep -q -- "--skip-evidence-gate is refused" bypass.err
