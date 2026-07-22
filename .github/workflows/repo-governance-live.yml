@@ -370,11 +370,18 @@ jobs:
               for item in report["issues"]
               if item["status"] == "violation"
           ]
+          # An issue carrying two cycle labels is audited once per cycle, so the
+          # row count double-counts it. Say both numbers: "2 violations" reads as
+          # two problems when it can be one issue seen twice.
+          distinct = {(item["repo"], item["number"]) for _, item in rows}
           print("## Violations")
           print()
           if not rows:
               print("None.")
           else:
+              print(f"**{len(distinct)} distinct issue(s)**, {len(rows)} cycle-occurrence(s) "
+                    "— an issue labelled for two cycles is audited, and listed, once per cycle.")
+              print()
               # Issue numbers and rule names only — no issue content is copied
               # into the summary, and nothing here edits an issue.
               print("| cycle | repo | issue | rule | reasons |")
@@ -403,6 +410,11 @@ jobs:
           examined = sum(r["counts"]["issues_examined"] for r in reports)
           violations = sum(r["counts"]["violations_detected"] for r in reports)
           skipped = sum(r["counts"]["evidence_gate_skipped"] for r in reports)
+          distinct = len({
+              (item["repo"], item["number"])
+              for report in reports for item in report["issues"]
+              if item["status"] == "violation"
+          })
 
           if not reports or examined == 0:
               sys.exit(f"examined {examined} issue(s) across {len(reports)} cycle(s) — "
@@ -410,8 +422,9 @@ jobs:
           if skipped:
               sys.exit(f"{skipped} closed issue(s) bypassed the evidence gate on an "
                        "enforcement path")
-          print(f"examined {examined} issue(s); {violations} violation(s)")
+          print(f"examined {examined} issue(s); {violations} violation(s) "
+                f"across {distinct} distinct issue(s)")
           if violations:
-              sys.exit("weekly-loop gate failed — see the job summary for the "
-                       "issues that need an Owner/ETA or an Evidence ref")
+              sys.exit(f"weekly-loop gate failed — {distinct} distinct issue(s) need an "
+                       "Owner/ETA or an Evidence ref; see the job summary")
           PY

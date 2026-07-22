@@ -346,6 +346,28 @@
       "body": "**Owner:** @TJ-kr\n**ETA:** 2026-07-24",
       "state": "OPEN",
       "url": "https://github.com/jayleekr/hypeproof-corpus/issues/220"
+    },
+    {
+      "number": 221,
+      "title": "C closed: inline code span before a real Evidence marker",
+      "body": "`gh issue close` Evidence: https://github.com/jayleekr/sediment/pull/42\n",
+      "state": "CLOSED",
+      "closedAt": "2026-07-22T03:00:00Z",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/221"
+    },
+    {
+      "number": 222,
+      "title": "C open: inline code span before a real ETA marker",
+      "body": "Owner: @TJ-kr\n`make build` ETA: 2026-07-24\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/222"
+    },
+    {
+      "number": 223,
+      "title": "C open: quoted note above the real ETA value",
+      "body": "Owner: @TJ-kr\n\n## ETA\n> 지난주엔 8월로 잡았음\n2026-07-24\n",
+      "state": "OPEN",
+      "url": "https://github.com/jayleekr/hypeproof-corpus/issues/223"
     }
   ]
 }
