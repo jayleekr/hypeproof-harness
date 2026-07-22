@@ -18,3 +18,9 @@ tests/consumers.local.txt
 .claude/shell-snapshots/
 .claude/projects/
 .claude/agents.log
+
+# weekly-loop gate reports produced by local workflow runs
+/corpus-report.json
+/bypass.err
+/weekly-gate-*.json
+/weekly-gate-summary.md
