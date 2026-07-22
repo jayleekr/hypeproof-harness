@@ -11,15 +11,56 @@ CLI — no tokens are read or stored.
 ## check.py — pre-meeting gate
 
 For a cycle label (`weekly-YYYY-MM-DD` — the date of the NEXT Monday
-meeting), verifies every **open** issue carrying that label across the three
-product repos has:
+meeting), across the three product repos:
+
+**Open** issues carrying that label must have
 
 - an `ETA: YYYY-MM-DD` line with a date `<=` the cycle date, and
 - an `Owner` / `담당` section or line.
 
+**Closed** issues carrying that label must have (원칙 4 — completion gate)
+
+- an `Evidence: <url>` (or `증거: <url>`) line in the body or in any comment,
+  where `<url>` is one of
+  - `https://github.com/<owner>/<repo>/pull/<n>`
+  - `https://github.com/<owner>/<repo>/commit/<sha>` (7–40 hex)
+  - `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<id>`
+- **or** an exemption: the `no-evidence-needed` label (administrative /
+  non-deliverable work), or GitHub's "closed as not planned" state
+  (cancelled — nothing was produced).
+
+The ref reuses GitHub's own identifiers rather than a new registry, and needs
+*both* the `Evidence:` marker and a permalink shape — a bare link pasted in a
+body is ordinary issue chatter and must not satisfy the gate by accident.
+Refs inside fenced code blocks or inline code spans are ignored for the same
+reason: the example in WEEKLY-LOOP.ko.md §6.1 is a fenced block, and pasting
+documentation must not count as doing the work.
+
+Only the shape is checked; the checker does not fetch the URL. A well-formed
+ref to a nonexistent repo, a nonexistent PR number, or an all-zeros commit SHA
+will pass. That is deliberate — the gate is offline and deterministic, and a
+wrong permalink is visible to any human who clicks it. Verifying that the
+referenced thing exists (and actually closed the issue) is the job of a later
+iteration; `gh`'s `closedByPullRequestsReferences` field is the natural
+successor, since GitHub records it and a human cannot type it by hand.
+
 ```bash
 python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 ```
+
+`--skip-evidence-gate` disables only the closed-issue rule. It exists for the
+adoption window (issues closed before the gate landed have no `Evidence:`
+line). **It must never appear in an automated invocation** — CI, cron, hooks,
+or a skill. A gate that ships with its own bypass wired in is not a gate.
+
+## Invocation — what is and is not automated
+
+`check.py` is currently run by a human or by the `weekly-loop` skill (§5 and
+§7 of WEEKLY-LOOP.ko.md). It is **not** wired into CI, cron, or a git hook, so
+nothing runs it on its own. The rules are enforced when invoked; invocation
+itself is not yet automatic. Wiring it up needs a migration decision first —
+issues closed before this gate existed carry no `Evidence:` line and would all
+report as violations on the first automated run.
 
 Exit codes: `0` clean · `1` violations (each printed) · `2` config/gh error.
 

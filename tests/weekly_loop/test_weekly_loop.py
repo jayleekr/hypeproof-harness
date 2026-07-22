@@ -99,6 +99,165 @@ def test_check_rejects_heading_that_merely_contains_owner(tmp_path: Path) -> Non
     assert "missing 'Owner'/담당 section" in proc.stdout
 
 
+# ---- evidence completion gate (WEEKLY-LOOP §2 원칙 4) ----
+# A closed cycle issue must reference evidence or carry an explicit exemption.
+
+PR_URL = "https://github.com/jayleekr/sediment/pull/42"
+
+
+def closed(number: int, title: str, **extra: object) -> dict:
+    return {"number": number, "title": title, "state": "CLOSED", "body": "", **extra}
+
+
+def test_evidence_gate_accepts_valid_ref_in_a_closing_comment(tmp_path: Path) -> None:
+    fx = fixture(
+        tmp_path,
+        [closed(10, "Shipped", comments=[{"body": f"완료.\n\nEvidence: {PR_URL}\n"}])],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "OK" in proc.stdout
+    assert "VIOLATION" not in proc.stdout
+
+
+def test_evidence_gate_rejects_closed_issue_with_no_ref(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(11, "Silently closed", body="다 했음.")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+    assert "1 violation(s)" in proc.stdout
+
+
+def test_evidence_gate_rejects_malformed_ref(tmp_path: Path) -> None:
+    fx = fixture(
+        tmp_path,
+        [
+            closed(12, "Prose instead of a link", body="Evidence: 슬랙에 공유함"),
+            closed(13, "Wrong host", body="Evidence: https://example.com/report.pdf"),
+            closed(14, "Repo root, not a permalink", body="Evidence: https://github.com/a/b"),
+        ],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "malformed Evidence ref" in proc.stdout
+    assert "3 violation(s)" in proc.stdout
+
+
+def test_evidence_gate_exempts_labelled_non_deliverable(tmp_path: Path) -> None:
+    fx = fixture(
+        tmp_path,
+        [closed(15, "Rename the Discord channel", labels=[{"name": "no-evidence-needed"}])],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "EXEMPT" in proc.stdout
+    assert "1 exempt" in proc.stdout
+
+
+def test_evidence_gate_exempts_issue_closed_as_not_planned(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(16, "Dropped in the meeting", stateReason="NOT_PLANNED")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "not planned" in proc.stdout
+
+
+def test_evidence_gate_is_not_satisfied_by_an_unmarked_link(tmp_path: Path) -> None:
+    # anti-fabrication: pasting a PR link without the 'Evidence:' marker is
+    # something ordinary issue bodies do all the time and must not pass.
+    fx = fixture(tmp_path, [closed(17, "Chatty body", body=f"관련 PR: {PR_URL}\n")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+
+
+def test_evidence_gate_ignores_refs_inside_a_fenced_code_block(tmp_path: Path) -> None:
+    # anti-fabrication: the example in WEEKLY-LOOP.ko.md §6.1 is a fenced block.
+    # Pasting the documentation into an issue must not close the gate.
+    fenced = f"작업 설명.\n\n```\nEvidence: {PR_URL}\n```\n\n실제 산출물 없음.\n"
+    tilde = f"~~~markdown\nEvidence: {PR_URL}\n~~~\n"
+    fx = fixture(
+        tmp_path,
+        [closed(30, "Backtick fence", body=fenced), closed(31, "Tilde fence", body=tilde)],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "2 violation(s)" in proc.stdout
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+
+
+def test_evidence_gate_ignores_refs_inside_an_inline_code_span(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(32, "Inline span", body=f"예시: `Evidence: {PR_URL}`\n")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+
+
+def test_evidence_gate_still_sees_a_real_ref_outside_the_fence(tmp_path: Path) -> None:
+    # guard against over-stripping: a quoted example plus a genuine ref passes,
+    # and inline code elsewhere on an unrelated line is harmless.
+    body = f"~~~\nEvidence: https://github.com/x/y/pull/1\n~~~\n\nEvidence: {PR_URL}\n"
+    fx = fixture(
+        tmp_path,
+        [
+            closed(33, "Fence then real ref", body=body),
+            closed(34, "Inline code elsewhere", body=f"`make build` 확인.\n\nEvidence: {PR_URL}\n"),
+        ],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "0 violation(s)" in proc.stdout
+
+
+def test_evidence_gate_accepts_commit_and_comment_permalinks(tmp_path: Path) -> None:
+    fx = fixture(
+        tmp_path,
+        [
+            closed(18, "Commit ref", body="Evidence: https://github.com/jayleekr/sediment/commit/"
+                                          "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4"),
+            closed(19, "Comment ref", body="증거: https://github.com/jayleekr/hypeprooflab/"
+                                           "issues/7#issuecomment-3120044556"),
+        ],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "0 violation(s)" in proc.stdout
+
+
+def test_evidence_gate_does_not_impose_owner_eta_on_closed_issues(tmp_path: Path) -> None:
+    # regression guard: the Owner/ETA rule stays scoped to OPEN issues.
+    fx = fixture(tmp_path, [closed(20, "No owner, no ETA", body=f"Evidence: {PR_URL}")])
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "missing 'Owner'" not in proc.stdout
+    assert "missing 'ETA:'" not in proc.stdout
+
+
+def test_skip_evidence_gate_flag_bypasses_closed_issue_checks(tmp_path: Path) -> None:
+    fx = fixture(tmp_path, [closed(21, "No evidence at all", body="끝.")])
+    proc = run(
+        CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx, "--skip-evidence-gate"
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "SKIP" in proc.stdout
+
+
+def test_check_still_enforces_owner_eta_on_open_issues_alongside_closed(tmp_path: Path) -> None:
+    fx = fixture(
+        tmp_path,
+        [
+            {"number": 22, "title": "Open and clean", "body": GOOD_BODY, "state": "OPEN"},
+            {"number": 23, "title": "Open and late", "body": "Owner: @jayleekr\nETA: 2026-08-01"},
+            closed(24, "Closed with evidence", body=f"Evidence: {PR_URL}"),
+            closed(25, "Closed without evidence"),
+        ],
+    )
+    proc = run(CHECK, "--cycle", CYCLE, "--repo", REPO, "--issues-json", fx)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "after the cycle date" in proc.stdout
+    assert "closed with no 'Evidence:' ref" in proc.stdout
+    assert "2 violation(s)" in proc.stdout
+
+
 def test_burndown_reports_closed_vs_open_with_owner_and_state(tmp_path: Path) -> None:
     fx = fixture(
         tmp_path,
