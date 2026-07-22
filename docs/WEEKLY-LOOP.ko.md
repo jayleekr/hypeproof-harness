@@ -139,6 +139,21 @@ Claude Code에서:
 python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 ```
 
+### 회의록 아카이브 (놓친 사람용)
+
+이슈 발행과 함께 그 주 회의록을 **큐레이션본**으로 아카이브한다 — 요약 ·
+다음 단계 · 상세만, 스크립트 전사와 이메일은 제외(멤버 게이트 + PII 스캔).
+회의를 놓친 멤버가 `/members/meetings`에서 따라잡는다.
+
+- 저장: consumer(site) repo의 `web/src/content/private/meeting-notes/YYYY-MM-DD.md`
+  (주당 1파일). **이메일·개인 전사 금지** — PII email scan이 막는다.
+- 인덱스: `node web/scripts/gen-meetings.mjs` → `meetings.index.json` 재생성.
+- 페이지: `/members/meetings`(목록) · `/members/meetings/<date>`(상세). 멤버
+  전용 + noindex.
+
+회의록은 실행(이슈)과 함께 굴러 올라간다 — 각 회의록 상세는 그 주 `주간 보드`·
+`로드맵`으로 링크된다.
+
 ---
 
 ## 6. 주중 — 실행과 증거
