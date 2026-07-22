@@ -24,13 +24,25 @@ human_approvers:
   - jayleekr
   - JeHyeong2
 
-# Automation identity (see M004 WS1). Listed so the checker can HARD-FAIL if this
-# actor is the last pusher / approver on a control-plane PR.
+# Automation identity (see M004 WS1 and policy/automation-identity.yaml). Listed
+# so the checker can HARD-FAIL if this actor is the last pusher / approver on a
+# control-plane PR.
 automation_actors:
   - hypeproof-automation      # dedicated machine user (target state, WS1)
   # gho_ personal token acting as jayleekr is NOT listed here on purpose:
   # today automation still runs as Jay, so path-based human gate is the only
   # backstop until the machine identity lands. Documented, not silently assumed.
+
+# Why the .github/workflows/** entry below needs BOTH a required check AND
+# CODEOWNERS, not just a token scope (adversarial finding A7):
+#   A fine-grained PAT denied the "Workflows" permission cannot edit workflow
+#   files over https (contents PUT -> 404), but a raw git SSH push is not
+#   scope-limited and can, on a non-protected branch. The server-side required
+#   check (control-plane-gate) + maintainers-only CODEOWNERS close that gap on
+#   merge to main regardless of transport. See .github/CODEOWNERS.
+# And why automation gets Administration:READ only (A6): the principal holding
+#   Administration:write can PUT enforce_admins:false, push, and restore, so the
+#   data-plane server enforcement is only as strong as that scope's holders.
 
 protected_paths:
   - path: policy/**
