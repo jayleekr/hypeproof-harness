@@ -210,6 +210,10 @@ whose deadline is an event, not the coming Monday.
 - Never file issues without showing the drafts and getting confirmation.
 - Never invent an owner — ask.
 - Never set an ETA after the cycle date — split the work instead.
+- Never close a cycle issue without evidence. Leave `Evidence: <GitHub PR /
+  commit / issue-comment permalink>` in the closing comment, or apply the
+  `no-evidence-needed` label (administrative work) / close it as "not planned"
+  (dropped work). `check.py` enforces this — see WEEKLY-LOOP.ko.md §6.1.
 - One issue closes in one repo; split cross-repo items.
 - No secrets in issue bodies; meeting notes may contain internal detail —
   summarize, do not paste tokens/URLs with credentials.

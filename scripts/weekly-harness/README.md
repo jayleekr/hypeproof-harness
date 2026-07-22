@@ -11,15 +11,39 @@ CLI — no tokens are read or stored.
 ## check.py — pre-meeting gate
 
 For a cycle label (`weekly-YYYY-MM-DD` — the date of the NEXT Monday
-meeting), verifies every **open** issue carrying that label across the three
-product repos has:
+meeting), across the three product repos:
+
+**Open** issues carrying that label must have
 
 - an `ETA: YYYY-MM-DD` line with a date `<=` the cycle date, and
 - an `Owner` / `담당` section or line.
 
+**Closed** issues carrying that label must have (원칙 4 — completion gate)
+
+- an `Evidence: <url>` (or `증거: <url>`) line in the body or in any comment,
+  where `<url>` is one of
+  - `https://github.com/<owner>/<repo>/pull/<n>`
+  - `https://github.com/<owner>/<repo>/commit/<sha>` (7–40 hex)
+  - `https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<id>`
+- **or** an exemption: the `no-evidence-needed` label (administrative /
+  non-deliverable work), or GitHub's "closed as not planned" state
+  (cancelled — nothing was produced).
+
+The ref reuses GitHub's own identifiers rather than a new registry, and needs
+*both* the `Evidence:` marker and a permalink shape — a bare link pasted in a
+body is ordinary issue chatter and must not satisfy the gate by accident.
+Only the shape is checked; the checker does not fetch the URL, so a
+well-formed ref to a nonexistent PR still passes. That is deliberate — the
+gate is offline and deterministic, and a wrong permalink is visible to any
+human who clicks it.
+
 ```bash
 python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 ```
+
+`--skip-evidence-gate` disables only the closed-issue rule. It exists for the
+adoption window (issues closed before the gate landed have no `Evidence:`
+line); it is not for CI.
 
 Exit codes: `0` clean · `1` violations (each printed) · `2` config/gh error.
 
