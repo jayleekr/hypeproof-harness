@@ -86,9 +86,21 @@ repositories:
         pr: jayleekr/hypeprooflab#120
         workflow: OAuth purge verification
     required_status_checks:
-      - repo-governance (repo files)
-      - CI & Deploy / build
-      - Verify Members in Build / verify
+      # Context strings MUST equal what GitHub actually reports: the job `name:`
+      # if set, otherwise the bare job-id — there is NO "<workflow> / <job>"
+      # prefix (verified against live harness protection). apply.py PUTs these
+      # verbatim as branch-protection contexts, so a name no workflow produces
+      # locks merge forever. Validate with:
+      #   scripts/repo-governance/check_required_contexts.py --repo jayleekr/hypeprooflab --root <checkout>
+      - repo-governance (repo files)   # repo-governance.yml job "repo-files" sets this name
+      - build                          # ci.yml job "build" has no name: -> context is bare "build"
+      # DELIBERATELY NOT REQUIRED YET — member verification:
+      #   ci.yml's smoke job AND verify-members.yml's job BOTH resolve to the
+      #   context "verify" (neither sets a distinct name:), so requiring "verify"
+      #   is ambiguous. FIRST give each a distinct `name:` in hypeprooflab
+      #   (e.g. verify-members.yml job -> name: "Verify Members in Build";
+      #   ci.yml verify job -> name: "Post-deploy smoke"), let them run green
+      #   once, THEN add the new context strings here.
     required_secrets:
       actions:
         - VERCEL_TOKEN
