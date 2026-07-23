@@ -208,14 +208,34 @@ def render_body(verdict: dict, risks: list[str]) -> str:
 GH_EVENT = {"approve": "APPROVE", "request_changes": "REQUEST_CHANGES", "comment": "COMMENT"}
 
 
-def submit_review(repo: str, pr_number: int, verdict: dict, body: str) -> None:
-    subprocess.run(
+def _post_review(repo: str, pr_number: int, event: str, body: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
         ["gh", "api", "--method", "POST",
          f"repos/{repo}/pulls/{pr_number}/reviews",
-         "-f", f"event={GH_EVENT[verdict['decision']]}",
-         "-f", f"body={body}"],
-        check=True, text=True, capture_output=True,
+         "-f", f"event={event}", "-f", f"body={body}"],
+        text=True, capture_output=True,
     )
+
+
+def submit_review(repo: str, pr_number: int, verdict: dict, body: str) -> None:
+    event = GH_EVENT[verdict["decision"]]
+    res = _post_review(repo, pr_number, event, body)
+    if res.returncode == 0:
+        return
+    # GitHub forbids the GITHUB_TOKEN (github-actions[bot]) from submitting an
+    # APPROVE — only a real reviewer identity (HYPEPROOF_REVIEWER_TOKEN) can.
+    # Rather than fail the run, post the same verdict as a COMMENT with a note,
+    # so the review is still visible and the identity gap is explicit.
+    if event == "APPROVE":
+        note = (body + "\n\n> ℹ️ AI 판정은 **승인**이나, 공식 approval은 리뷰어 신원이 있어야 "
+                "제출됩니다 (`HYPEPROOF_REVIEWER_TOKEN` 미설정 — github-actions[bot]은 approve 불가). "
+                "COMMENT로 남깁니다.")
+        fb = _post_review(repo, pr_number, "COMMENT", note)
+        if fb.returncode == 0:
+            print("APPROVE not permitted for this identity — posted as COMMENT")
+            return
+        res = fb
+    raise RuntimeError(f"could not submit review ({event}): {res.stderr.strip()}")
 
 
 def main() -> int:
