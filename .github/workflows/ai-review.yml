@@ -1,0 +1,53 @@
+name: AI PR Review
+
+# The automation arm of hype-review: on every PR, Claude applies the team's
+# eight review lenses + path-based risk detection and submits a review
+# (APPROVE / COMMENT / REQUEST_CHANGES). A security/data/deploy blocker is never
+# approved away; an errored model call falls back to COMMENT, never a fake pass.
+#
+# Provisioning (both optional — the job degrades safely without them):
+#   ANTHROPIC_API_KEY         secret — without it the job posts a "not
+#                             provisioned" comment and exits 0 (never blocks).
+#   HYPEPROOF_REVIEWER_TOKEN  a NON-author identity (a reviewer bot / GitHub App
+#                             with pull-requests:write). Its APPROVE counts toward
+#                             branch protection's required reviews. Absent → falls
+#                             back to GITHUB_TOKEN (github-actions[bot]); whether
+#                             that approval *counts* toward protection is verified
+#                             empirically on the first run.
+#
+# This runs the reviewer; it does NOT itself change branch protection. Raising
+# required_approving_review_count to make the bot's approval load-bearing is a
+# separate, deliberate policy change.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: AI review this PR
+        env:
+          GH_TOKEN: ${{ secrets.HYPEPROOF_REVIEWER_TOKEN || github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_REVIEW_MODEL: claude-sonnet-5
+        run: |
+          python3 scripts/ai-review/review_pr.py \
+            --repo "${{ github.repository }}" \
+            --pr "${{ github.event.pull_request.number }}"
