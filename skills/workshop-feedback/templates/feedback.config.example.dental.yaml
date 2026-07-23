@@ -1,0 +1,20 @@
+# workshop-feedback 엔지지먼트 config — 치과 예시 (7/29)
+# 이 파일은 소비 repo(lab)의 engagements/<name>/ 에 두고, 강의마다 이것만 바꾼다.
+# 고정 코어(PC/AC/F)는 harness가 소유하므로 여기 없다 — 주제 슬롯만 정의.
+
+engagement: "치과 AI 레이스 (2시간)"
+retention_months: 6
+
+# 직군 선택지 (사전 폼 Q0b). 생략 시 __직군1__/__직군2__ 플레이스홀더.
+roles: ["원장", "위생사", "코디네이터"]
+
+# 주제 슬롯 — 강의별 교체 부분. type: text | choice | choice_multi
+topic:
+  pre:
+    q: "치과 업무 중 반복 검색/확인이 가장 잦은 상황은? (복수 가능)"
+    type: choice_multi
+    options: ["초진 상담·설명", "예약·응대", "보험·수가 확인", "재료·장비", "원내 규칙·매뉴얼", "기타"]
+  post:
+    q: "오늘 만든 도구를 어느 상황에 쓸 것 같나요?"
+    type: choice
+    options: ["초진 상담", "예약·응대", "보험·수가", "재료·장비", "원내 규칙", "아직 모르겠다"]
