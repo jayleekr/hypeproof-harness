@@ -34,3 +34,8 @@ ANTHROPIC_API_KEY=… python3 scripts/ai-review/review_pr.py \
 
 Making the bot's approval load-bearing (raising `required_approving_review_count`)
 is a separate, deliberate policy change in `policy/profiles/*.yaml`.
+
+## 상태
+
+- 유닛 12건 통과 · 실 PR e2e 검증 완료.
+- 활성: `ANTHROPIC_API_KEY` 프로비저닝됨. 승인 카운트 신원(GitHub App)은 후속.
