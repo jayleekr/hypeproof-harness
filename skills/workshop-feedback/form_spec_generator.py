@@ -55,58 +55,60 @@ SCALE = ["1", "2", "3", "4", "5"]
 # ---- FIXED CORE — constant across every lecture. Owned by harness, not config. ----
 CORE_PRE = [
     {"id": "PC1", "type": "text",
-     "q": '요즘 업무에서 "이거 또 해야 하네" 싶은 반복 불편함 하나만 적어주세요.'},
-    {"id": "PC2", "type": "text", "q": "오늘 워크숍에서 얻고 싶은 것 한 가지는?"},
+     "q": '업무에서 "매번 똑같이 반복한다" 싶은 일이 있으시면 한 가지만 적어 주세요.'},
+    {"id": "PC2", "type": "text", "q": "이번 강의에서 가장 얻어 가고 싶으신 것은 무엇인가요?"},
     {"id": "PC3", "type": "scale", "scale": SCALE, "baseline": "confidence",
-     "q": '"내 반복 업무를 AI 도구로 바꿀 수 있다"에 얼마나 자신 있나요? (1 전혀~5 매우)'},
+     "q": '지금으로선 "AI를 내 업무에 활용할 수 있겠다"는 생각이 어느 정도 드시나요? (1 거의 안 듦~5 매우 그렇다)'},
 ]
 CORE_POST = [
     {"id": "AC1", "type": "scale", "scale": SCALE,
-     "q": "오늘 만든 도구가 실제 업무에 쓸 만한가요? (1 전혀~5 매우)"},
+     "q": "오늘 다뤄 본 내용 중 실제 업무에 써볼 만한 것이 있으셨나요? (1 없었다~5 많았다)"},
     {"id": "AC2", "type": "scale", "scale": SCALE, "delta_of": "PC3",
-     "q": '지금 "내 반복 업무를 AI로 바꿀 수 있다" 자신감은? (1~5)'},
-    {"id": "AC3", "type": "text", "q": "실제로 써볼 도구/스킬 하나만 적어주세요."},
-    {"id": "AC4", "type": "choice", "options": ["추천", "보통", "아니오"],
+     "q": '이제 "AI를 내 업무에 활용할 수 있겠다"는 생각이 어느 정도 드시나요? (1~5)'},
+    {"id": "AC3", "type": "text", "q": "돌아가서 실제로 한 번 써보실 것이 있다면 한 가지만 적어 주세요."},
+    {"id": "AC4", "type": "choice", "options": ["권한다", "보통이다", "권하지 않는다"],
      "aggregate": "distribution",
-     "q": "동료에게 이 워크숍을 추천하겠어요?"},
+     "q": "가까운 동료분께 이 강의를 권하시겠어요?"},
     {"id": "AC5", "type": "text",
-     "q": '"기능 설명"이 아니라 "내 불편함에서 시작"한 방식은 어땠나요? (한 줄)'},
+     "q": '기능을 나열하기보다 "실제로 불편하신 일"에서 시작한 오늘 방식은 어떠셨나요? (한 말씀)'},
 ]
 CORE_FOLLOWUP = [
-    {"id": "F1", "type": "choice", "options": ["안 씀", "가끔", "자주", "매일"],
-     "q": "지난 한 달, 그 도구를 실제로 썼나요?"},
+    {"id": "F1", "type": "choice", "options": ["거의 안 씀", "가끔", "자주", "거의 매일"],
+     "q": "지난 한 달, 강의에서 배운 방법을 실제로 써 보셨나요?"},
     {"id": "F2", "type": "scale", "scale": SCALE, "delta_of": "PC3",
-     "q": "지금 자신감은? (1~5)"},
-    {"id": "F3", "type": "text", "q": "실제로 바뀐 업무 하나 / 또는 안 쓰게 된 이유는?"},
-    {"id": "F4", "type": "choice", "options": ["예", "아니오"], "internal_only": True,
-     "q": "팀·동료에게 공유했나요?"},
-    {"id": "F5", "type": "choice", "options": ["매우", "있음", "미정", "없음"],
-     "internal_only": True, "q": "이런 걸 계속 도입할 의향이 있나요? (반복 가치 신호)"},
+     "q": '지금은 "AI를 내 업무에 활용할 수 있다"는 생각이 어느 정도 드시나요? (1~5)'},
+    {"id": "F3", "type": "text",
+     "q": "실제로 달라진 일이 있으시면, 또는 안 쓰게 되셨다면 그 이유를 알려 주세요."},
+    {"id": "F4", "type": "choice", "options": ["예", "아니요"], "internal_only": True,
+     "q": "직원분들이나 동료와도 함께 써 보셨나요?"},
+    {"id": "F5", "type": "choice", "options": ["매우 그렇다", "그렇다", "미정", "아니다"],
+     "internal_only": True, "q": "앞으로도 이런 도움을 계속 받아 보실 생각이 있으신가요?"},
 ]
 
 IDENTITY = {"id": "Q0", "type": "text", "required": True,
-            "q": "참가자 코드 + 휴대폰 뒤 4자리 (예: A-1234)"}
-JOBROLE = {"id": "Q0b", "type": "choice", "q": "직군/역할", "options": ["__직군1__", "__직군2__", "기타"]}
+            "q": "참가자 코드와 휴대폰 뒤 4자리를 적어 주세요 (예: 가나-1234)"}
+JOBROLE = {"id": "Q0b", "type": "choice", "q": "현재 맡고 계신 역할은?",
+           "options": ["__역할1__", "__역할2__", "기타"]}
 
 
 def consent_pre(months: int) -> dict:
     return {"id": "CONSENT", "type": "consent", "required": True,
-            "q": ("본 설문은 워크숍 개선과 익명 결과 리포트에만 쓰입니다. "
-                  "수집: 참가자 코드·역할·응답(실명·연락처 미수집). "
-                  f"보유: 워크숍 후 {months}개월 뒤 파기. 제3자 제공 없음. 동의하십니까?")}
+            "q": ("본 설문은 강의 준비와 강의 후 익명 요약 자료에만 사용됩니다. "
+                  "수집 항목: 참가자 코드·역할·응답(성함·연락처는 받지 않습니다). "
+                  f"보관: 강의 후 {months}개월 이내 파기하며 외부에 제공하지 않습니다. 동의하십니까?")}
 
 
 RECONTACT = {"id": "RECONTACT", "type": "recontact", "internal_only": True,
              "separate_sheet": True,
-             "q": ("한 달 뒤에도 잘 쓰이는지 딱 한 번 더 여쭤봐도 될까요? "
-                   "예를 고르면 연락처(이메일/카톡ID/휴대폰 중 1)를 남겨주세요. "
-                   "후속 발송 목적에 한해 보관, 언제든 철회 가능.")}
+             "q": ("한 달쯤 뒤에, 실제로 도움이 되었는지 딱 한 번만 더 여쭤봐도 될까요? "
+                   '"예"를 고르시면 이어지는 짧은 폼에 연락 받으실 방법(이메일/카카오톡/휴대폰 중 하나)을 남겨 주세요. '
+                   "후속 안내 외의 목적으로 쓰지 않으며 언제든 철회하실 수 있습니다.")}
 
 # Generic fallback slot (used if config omits topic — keeps the skill runnable).
 GENERIC_TOPIC_PRE = {"id": "DS1", "type": "text",
-                     "q": "이 분야에서 반복 검색/확인이 가장 잦은 상황은?"}
+                     "q": "평소 반복해서 찾아보거나 확인하시는 일은 어떤 것인가요?"}
 GENERIC_TOPIC_POST = {"id": "DSP1", "type": "text",
-                      "q": "오늘 만든 도구를 어느 상황에 쓸 것 같나요?"}
+                      "q": "오늘 배운 것을 어느 업무에 먼저 적용해 보고 싶으신가요?"}
 
 
 def _slot(node: dict | None, fallback: dict, sid: str) -> dict:
