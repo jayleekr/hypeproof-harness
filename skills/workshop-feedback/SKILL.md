@@ -41,8 +41,21 @@ Only the topic slot + roles + retention change per lecture. The core does not.
 **2) Render to Google Forms (runs in Google — reference impl, validate there):**
 Paste `forms.spec.json` into `apps-script/build-forms.gs` `SPEC`, run `buildAll()` at script.google.com. It creates pre/post/follow-up forms + a **separate** re-contact form/sheet. See `apps-script/README.md`.
 
-**3) Collect → reflect:**
-Anonymous responses → `workshop.yaml` (`comments`, distribution counts, `measurement.confidence_*`) → the result-report pipeline (`products/workshop-result-report/run_all.sh`) → Sediment. Contact responses → separate internal sheet, joined by participant code only when needed.
+**3) Collect (token-based, no browser):**
+```bash
+python3 fetch_responses.py --manifest engagements/<date>/forms/sheets.manifest.json [--dump]
+```
+Reads each form's linked response sheet via the Sheets REST API. Credential (a HUMAN
+step to issue — cap.governance) comes from `~/.env` / env: `GOOGLE_APPLICATION_CREDENTIALS`
+(SA key path), `GOOGLE_SERVICE_ACCOUNT_JSON` (inline JSON), or ADC. Share each response
+sheet with the service-account email (Viewer). `internal_only` forms (연락처) are counted
+but rows stay redacted unless `--include-internal`. Do NOT open a browser to check
+responses — that is not automation.
+
+**4) Reflect:**
+Anonymous responses → `workshop.yaml` (`comments`, distribution counts, `measurement.confidence_*`)
+→ the result-report pipeline (`products/workshop-result-report/run_all.sh`) → Sediment.
+Contact responses → separate internal sheet, joined by participant code only when needed.
 
 ## Durability (non-negotiable — nothing lost to scratch)
 
