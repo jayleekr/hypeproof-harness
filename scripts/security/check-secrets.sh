@@ -9,6 +9,24 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# All repo enumeration goes through this handle. Two things are pinned so the
+# scan cannot depend on the ambient git config or the OS default:
+#
+#   core.quotePath=false  git otherwise renders a non-ASCII path as octal
+#                         escapes wrapped in double quotes ("한글.txt" ->
+#                         "\355\225\234.txt"). On a stock CI runner quotePath
+#                         defaults to TRUE, so a secret in a Korean-named file
+#                         was word-split into a path that did not exist and was
+#                         silently skipped while the job stayed green. It only
+#                         worked on a workstation whose *global* git config
+#                         happened to set quotePath=false.
+#   -z (at each call)     NUL-delimited output so a path bearing spaces or
+#                         newlines survives enumeration intact, instead of being
+#                         split on IFS by the old `set -- $files`.
+#
+# See tests/security/test_check_secrets.py::test_non_ascii_* for the control.
+GIT=(git -C "$REPO_ROOT" -c core.quotePath=false)
+
 DANGEROUS_PATHS=(
   '.env'
   '.env.local'
@@ -131,7 +149,17 @@ scan_file() {
 
   local file
   file="$(resolve_file "$path")"
-  [ -n "$file" ] || return 0
+  if [ -z "$file" ]; then
+    # A path named by git enumeration but absent on disk was NOT inspected.
+    # Under the strict (enumeration) modes that is fail-closed, never a silent
+    # skip — it is the exact shape of the quotePath defect this guard was
+    # hardened against. In --files mode the caller owns the path list, so a
+    # missing path stays a no-op for backward compatibility.
+    if [ "${SCAN_STRICT_MISSING:-0}" = "1" ]; then
+      record_finding "$path" "named by git but absent on disk (fail-closed)"
+    fi
+    return 0
+  fi
   is_binary_or_large "$file" && return 0
 
   local content
@@ -163,33 +191,51 @@ scan_files() {
   return 0
 }
 
+# Read a NUL-delimited stream into the global FILES array. Hand-rolled because
+# bash 3.2 (the macOS system bash this also runs under) has no `mapfile`.
+read_nul_into_files() {
+  FILES=()
+  local item
+  while IFS= read -r -d '' item; do
+    FILES+=("$item")
+  done
+}
+
+# Control invariant: announce what this scan pinned so a reader of any CI log —
+# on any platform — can see the scan did not silently inherit the ambient git
+# config or OS default. This is the observable half of the hermeticity fix.
+report_invariant() {
+  printf 'check-secrets: platform=%s enumeration=NUL core.quotePath=pinned-false mode=%s\n' \
+    "$(uname -s)" "$1" >&2
+}
+
 mode="${1:-staged}"
 case "$mode" in
   staged)
-    files="$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=AM 2>/dev/null)"
-    # shellcheck disable=SC2086
-    set -- $files
-    scan_files "$@"
+    report_invariant staged
+    SCAN_STRICT_MISSING=1
+    read_nul_into_files < <("${GIT[@]}" diff --cached -z --name-only --diff-filter=AM 2>/dev/null)
+    scan_files ${FILES[@]+"${FILES[@]}"}
     ;;
   --diff)
     [ $# -eq 2 ] || usage
-    files="$(git -C "$REPO_ROOT" diff --name-only --diff-filter=AM "$2" 2>/dev/null)"
-    # shellcheck disable=SC2086
-    set -- $files
-    scan_files "$@"
+    report_invariant "--diff"
+    SCAN_STRICT_MISSING=1
+    read_nul_into_files < <("${GIT[@]}" diff -z --name-only --diff-filter=AM "$2" 2>/dev/null)
+    scan_files ${FILES[@]+"${FILES[@]}"}
     ;;
   --files)
     shift
     scan_files "$@"
     ;;
   --working-tree)
-    files="$(
-      git -C "$REPO_ROOT" diff --name-only --diff-filter=AM 2>/dev/null
-      git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null
-    )"
-    # shellcheck disable=SC2086
-    set -- $files
-    scan_files "$@"
+    report_invariant "--working-tree"
+    SCAN_STRICT_MISSING=1
+    read_nul_into_files < <(
+      "${GIT[@]}" diff -z --name-only --diff-filter=AM 2>/dev/null
+      "${GIT[@]}" ls-files -z --others --exclude-standard 2>/dev/null
+    )
+    scan_files ${FILES[@]+"${FILES[@]}"}
     ;;
   --help|-h)
     usage

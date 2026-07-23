@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "security" / "check-secrets.sh"
+
+# Synthetic, non-functional credential shaped like a Google OAuth client secret.
+# Never a real value; only its *shape* is what the scanner keys on.
+SYNTHETIC_SECRET = "GOCSPX-" + "Z" * 32
 
 
 def run_scan(*paths: Path) -> subprocess.CompletedProcess[str]:
@@ -118,3 +123,92 @@ def test_dangerous_credential_path_is_blocked(tmp_path: Path) -> None:
 
     assert proc.returncode == 1
     assert "dangerous credential path" in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# Hermeticity regression: the git-enumeration modes (staged/--diff/--working-tree)
+# must not depend on the ambient `core.quotePath`. These exercise the real
+# enumeration path — not --files — by giving the script its own fixture repo as
+# REPO_ROOT and forcing the hostile stock-CI default core.quotePath=true.
+# ---------------------------------------------------------------------------
+
+
+def _make_repo_with_script(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "scripts" / "security").mkdir(parents=True)
+    shutil.copy(SCRIPT, repo / "scripts" / "security" / "check-secrets.sh")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    # Emulate a stock CI runner: core.quotePath defaults to TRUE there. The old
+    # scanner only worked because a workstation's *global* config set it false.
+    subprocess.run(["git", "config", "core.quotepath", "true"], cwd=repo, check=True)
+    return repo
+
+
+def _run_staged(repo: Path) -> subprocess.CompletedProcess[str]:
+    script = repo / "scripts" / "security" / "check-secrets.sh"
+    return subprocess.run(
+        ["bash", str(script), "staged"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_non_ascii_named_secret_is_caught_under_quotepath_true(tmp_path: Path) -> None:
+    # THE regression. Before the fix, under core.quotePath=true a secret in a
+    # Korean-named file was word-split into a non-existent path and skipped, so
+    # the scan reported "no secrets" (exit 0) — a false green. It must be caught.
+    repo = _make_repo_with_script(tmp_path)
+    (repo / "한글비밀.txt").write_text(
+        f"client_secret={SYNTHETIC_SECRET}\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+
+    proc = _run_staged(repo)
+
+    assert proc.returncode == 1, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "한글비밀.txt" in proc.stderr
+    assert "Google OAuth client secret" in proc.stderr
+    # The matched value is never echoed, on either stream.
+    assert SYNTHETIC_SECRET not in proc.stdout + proc.stderr
+
+
+def test_space_bearing_named_secret_is_caught(tmp_path: Path) -> None:
+    # NUL-delimited enumeration also fixes names with spaces, which the old
+    # `set -- $files` split on IFS.
+    repo = _make_repo_with_script(tmp_path)
+    (repo / "my secret notes.txt").write_text(
+        f"client_secret={SYNTHETIC_SECRET}\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+
+    proc = _run_staged(repo)
+
+    assert proc.returncode == 1, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "my secret notes.txt" in proc.stderr
+
+
+def test_clean_non_ascii_tree_still_passes(tmp_path: Path) -> None:
+    # Control against over-firing: a Korean-named file with no secret must PASS,
+    # so the guard is not merely failing on every non-ASCII name.
+    repo = _make_repo_with_script(tmp_path)
+    (repo / "한글문서.md").write_text("# 제목\n본문\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+
+    proc = _run_staged(repo)
+
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+
+
+def test_enumeration_mode_reports_control_invariant(tmp_path: Path) -> None:
+    # The scan announces what it pinned, so any CI log shows it did not inherit
+    # the ambient git config.
+    repo = _make_repo_with_script(tmp_path)
+    (repo / "readme.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+
+    proc = _run_staged(repo)
+
+    assert "core.quotePath=pinned-false" in proc.stderr
+    assert "enumeration=NUL" in proc.stderr
