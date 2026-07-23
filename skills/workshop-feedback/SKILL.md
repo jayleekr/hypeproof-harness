@@ -44,6 +44,22 @@ Paste `forms.spec.json` into `apps-script/build-forms.gs` `SPEC`, run `buildAll(
 **3) Collect → reflect:**
 Anonymous responses → `workshop.yaml` (`comments`, distribution counts, `measurement.confidence_*`) → the result-report pipeline (`products/workshop-result-report/run_all.sh`) → Sediment. Contact responses → separate internal sheet, joined by participant code only when needed.
 
+## Durability (non-negotiable — nothing lost to scratch)
+
+The human must not have to babysit where outputs land. Every artifact this skill
+produces is filed into the **engagement directory and committed** — job tmp / loose
+files are scratch only and are assumed to disappear.
+
+- Per engagement, create `products/workshop-result-report/engagements/<date>/forms/`
+  and put there, committed: the engagement `feedback.config.yaml`, the generated
+  `forms.spec.json`, the built `*.gs`, and a `LIVE-URLS.md` recording every created
+  form's viewform/edit/response-sheet URL.
+- Live form URLs also get a durable pointer the human can find without a git checkout
+  (a stable file and/or a memory note) — a form built but whose URL is only in a
+  transcript is a lost form.
+- "Not recorded in the repo = not done." This is the same `cap.proof` discipline as
+  the evidence pipeline: an output that isn't durably filed did not happen.
+
 ## Privacy gate (non-negotiable)
 
 - Feedback forms: `setCollectEmail(false)`. No real names/contact in the feedback track.
