@@ -42,7 +42,17 @@ function buildForm(f) {
   });
   var ss = SpreadsheetApp.create(f.title + ' — 응답');
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+  shareWithReader(ss); // auto-share so fetch_responses.py can read — no manual step
   return f.key + ' -> form:' + form.getEditUrl() + '  sheet:' + ss.getUrl();
+}
+
+// Grant the response sheet to the reader service account at creation time, so no
+// one ever shares sheets by hand. Email comes from the spec meta (from config).
+function shareWithReader(ss) {
+  var email = SPEC.meta && SPEC.meta.service_account_email;
+  if (!email) return; // no reader configured -> skip silently
+  try { SpreadsheetApp.openById(ss.getId()).addViewer(email); }
+  catch (e) { Logger.log('WARN addViewer 실패(' + email + '): ' + e); }
 }
 
 function buildRecontactForm(parent) {
@@ -61,6 +71,7 @@ function buildRecontactForm(parent) {
       .setChoiceValues(['동의']).setRequired(true);
   var ss = SpreadsheetApp.create(parent.title + ' — 연락처(INTERNAL)');
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+  shareWithReader(ss);
   return 'recontact -> form:' + form.getEditUrl() + '  sheet(INTERNAL):' + ss.getUrl();
 }
 

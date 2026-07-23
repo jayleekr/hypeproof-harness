@@ -8,6 +8,10 @@
 engagement: "치과 AI 활용 강의"
 retention_months: 6
 
+# 응답 리더 서비스계정 — build-forms.gs가 폼 생성 시 각 응답 시트를 이 계정과
+# 자동 공유(Viewer). 그러면 fetch_responses.py가 수동 공유 없이 바로 읽는다.
+service_account_email: "forms-reader@hypeproof-forms.iam.gserviceaccount.com"
+
 # 직군/역할 선택지 (사전 폼). 생략 시 플레이스홀더.
 roles: ["원장", "실장·데스크", "위생사"]
 

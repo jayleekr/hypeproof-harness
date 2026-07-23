@@ -143,6 +143,9 @@ def build_spec(cfg: dict) -> dict:
             "fixed_core": ["PC1", "PC2", "PC3", "AC1-5", "F1-5"],
             "note": "Fixed core owned by harness; only topic slot is per-engagement.",
             "retention_months": months,
+            # build-forms.gs auto-shares each response sheet with this reader SA at
+            # creation time, so fetch_responses.py can read it with no manual sharing.
+            "service_account_email": cfg.get("service_account_email"),
         },
         "forms": [
             {"key": "pre", "when": "D-7", "channel": "remote",
