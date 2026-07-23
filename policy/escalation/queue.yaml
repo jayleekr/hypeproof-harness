@@ -1,0 +1,172 @@
+# Human Escalation Queue
+# =============================================================================
+# Ambiguous cases that are "neither the big side's nor the small side's — a
+# human's" must not vanish into an UNKNOWN bucket. Each one becomes a first-class
+# work item with an OWNER here, and the validator (scripts/escalation/escalation.py)
+# fails closed if any pending case lacks human_owner / created / reason.
+#
+# The most common failure mode of an escalation path is that it exists on paper
+# and no one ever looks at it (M003 §10.1). The `resolution` field and the
+# validator's pending count exist so that "did this actually reach a human"
+# is measurable, not assumed.
+#
+# RULES
+#   * human_owner is a ROLE, never a real person's name or PII.
+#       jay           = the operator (personal knowledge: consent, brand reality,
+#                       visual confirmation only a human can do)
+#       legal-review  = third-party / PIPA classification judgement
+#   * No file contents, no image bytes, no personal records here — references,
+#     counts, and paths/filenames only.
+#   * status: pending | resolved.  A resolved case MUST have a non-empty
+#     resolution or the validator rejects it.
+#   * created is an ISO-8601 date/time. classification_candidates lists the
+#     possible classifications a human is choosing between.
+# =============================================================================
+
+schema_version: 1
+
+cases:
+  - case_id: ESC-0001
+    reason: >-
+      25 lab documents each mention a counterparty name 2-4 times. Too few to be
+      clearly a third-party document, too many to be clearly incidental —
+      classification is genuinely ambiguous (lab-authored-about-them vs
+      third-party material). M003 left these with nowhere to go.
+    evidence:
+      - "M003 inventory: 25 documents, counterparty name frequency 2-4 each"
+      - "Actual paths live in the private vault only (not exported per data rule)"
+    classification_candidates:
+      - "lab-authored (about a counterparty) — publishable per lab policy"
+      - "third-party material — must not be redistributed"
+    risk_if_false_negative: "Redistributing a counterparty's material without basis"
+    risk_if_false_positive: "Over-suppressing the lab's own analysis/notes"
+    recommended_action: >-
+      Human samples the 25, sets a per-document call, and records a frequency
+      threshold + rule so future docs auto-route instead of returning here.
+    human_owner: legal-review
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
+
+  - case_id: ESC-0002
+    reason: >-
+      A brand name appears on a publicly-served product demo page. It reads as a
+      fabricated brand but that cannot be confirmed; if it is a real company used
+      without authorization it becomes a third-party issue (M003 §3.8).
+    evidence:
+      - "M003 §3.8: brand name on a live demo page, fabricated-vs-real unconfirmed"
+    classification_candidates:
+      - "fabricated demo brand — safe to keep"
+      - "real company used without authorization — remove / obtain permission"
+    risk_if_false_negative: "Unauthorized use of a real company's brand, publicly"
+    risk_if_false_positive: "Needlessly pulling a working demo page"
+    recommended_action: "Human confirms whether the brand is fabricated or real."
+    human_owner: jay
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
+
+  - case_id: ESC-0003
+    reason: >-
+      22 adult person photos are publicly served (adult-edu 7, columns 4,
+      members 9, workshop banner/edu 2) with no consent basis found. "Not found"
+      is not "does not exist" — records may be on paper/email/Drive. Only the
+      operator can confirm. Held at consent_status=unknown in the lab manifest.
+    evidence:
+      - "M003 §2.3: 22 adult photos, consent basis not found in exhaustive search"
+      - "hypeprooflab web/asset-consent-manifest.yaml (22 adult unknown entries)"
+    classification_candidates:
+      - "consent exists offline — record ref + set verified"
+      - "no consent — remove or acknowledge as interim exposure"
+    risk_if_false_negative: "Publishing adults' images with no consent basis"
+    risk_if_false_positive: "Removing images that are in fact consented"
+    recommended_action: >-
+      Operator confirms consent per event; sets verified where a record exists,
+      otherwise adds acknowledged_pending (with this case_id) or removes.
+    human_owner: jay
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
+
+  - case_id: ESC-0004
+    reason: >-
+      One workshop image (workshop/kid-coding.png) has a filename indicating a
+      child subject, from a separate event where the age-band evidence does not
+      apply. Whether a child is identifiably shown requires visual confirmation,
+      which only a human may perform (M003 §2.2 "확인필요 1"). Held as minor/unknown
+      in the manifest (fail-closed) until confirmed.
+    evidence:
+      - "M003 §2.2: filename indicates child subject; image NOT opened by agents"
+      - "hypeprooflab manifest asset_id workshop/kid-coding (minor, unknown)"
+    classification_candidates:
+      - "identifiable minor — requires guardian consent or removal"
+      - "not a person / not identifiable — reclassify"
+    risk_if_false_negative: "A minor published without guardian consent"
+    risk_if_false_positive: "Blocking a non-person or non-identifiable image"
+    recommended_action: "Human visually confirms; sets subject_type + consent accordingly."
+    human_owner: jay
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
+
+  - case_id: ESC-0005
+    reason: >-
+      The public web/public/_sediment-docs/ tree mixes lab-authored docs with
+      material that may reference third parties. M003 partially resolved the
+      classification but a residual set needs a human call on lab-doc vs
+      third-party before the exposure question is closed.
+    evidence:
+      - "M003 §3: _sediment-docs classification partially resolved"
+      - "hypeprooflab web/public/_sediment-docs (46 tracked docs served HTTP 200)"
+    classification_candidates:
+      - "lab-authored documentation — publishable"
+      - "contains third-party material — restrict"
+    risk_if_false_negative: "Publishing third-party material as lab docs"
+    risk_if_false_positive: "Suppressing the lab's own public documentation"
+    recommended_action: >-
+      Human reviews the residual set and records a keep/restrict decision per
+      subtree so the classifier can encode the rule.
+    human_owner: legal-review
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
+
+  - case_id: ESC-0006
+    reason: >-
+      Two workshop directory-level images (workshop/banner.png, workshop/edu.png)
+      were flagged by M003 as "workshop photos" missed by the deletion glob.
+      Whether they contain persons (possibly minors) is not established from the
+      filename. Held as subject_type=unknown in the manifest (fail-closed).
+    evidence:
+      - "M003 §2.1: 3 workshop directory-level files missed by deletion glob"
+      - "hypeprooflab manifest asset_ids workshop/banner, workshop/edu (unknown/unknown)"
+    classification_candidates:
+      - "contains identifiable person(s) — classify adult/minor + consent"
+      - "no person — reclassify none with basis"
+    risk_if_false_negative: "An unclassified person (or minor) stays public"
+    risk_if_false_positive: "Blocking a non-person banner graphic"
+    recommended_action: "Human inspects; sets subject_type + consent, or none+basis."
+    human_owner: jay
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
+
+  - case_id: ESC-0007
+    reason: >-
+      The 10 workshop/dental-studio screenshots were classified subject_type=none
+      (product UI walkthrough) from filename evidence alone. A human should
+      confirm no incidental person is visible before that classification is final,
+      since `none` bypasses the consent gate.
+    evidence:
+      - "hypeprooflab manifest asset_ids workshop/dental-studio/01..10 (none, basis=app UI)"
+      - "Classification from numbered app-flow filenames only; images NOT opened"
+    classification_candidates:
+      - "confirmed app UI, no person — none classification stands"
+      - "incidental person visible — reclassify adult/minor + consent"
+    risk_if_false_negative: "A person slips past the gate under a `none` label"
+    risk_if_false_positive: "Extra review effort on genuine UI screenshots"
+    recommended_action: "Human spot-checks the 10; confirms or reclassifies."
+    human_owner: jay
+    status: pending
+    created: "2026-07-22T00:00:00Z"
+    resolution: ""
