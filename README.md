@@ -28,6 +28,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/hype-review/` | PR 리뷰 요청 확인 + 역할별 리뷰 워크시트 스킬 | 3 consumers `.claude/skills/` |
 | `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
+| `skills/demo-video-harness/` | 웹 앱/페이지를 timeline YAML + Playwright + ffmpeg로 내레이션 있는 데모 mp4로 렌더링하는, 특정 회사/제품에 종속되지 않는 generic 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
 | `docs/AGENT-GUIDE.ko.md` | Claude Code · Codex · OpenClaw 공통 에이전트 규약 | 3 consumers `docs/` |
 | `docs/DOCS-CONTRACT.ko.md` | 제품 repo가 유지해야 하는 dev docs 계약 | 3 consumers `docs/` |
