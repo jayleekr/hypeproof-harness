@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UserName</key>
+  <string>hypeproof-agent</string>
+  <key>GroupName</key>
+  <string>staff</string>
+  <key>Label</key>
+  <string>com.hypeproof.agent.cron.issue-solver</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>source /Users/hypeproof-agent/runtime/hypeprooflab/cron-prompts/cron-env.sh &amp;&amp; /Users/hypeproof-agent/runtime/hypeprooflab/cron-prompts/run-job.sh issue-solver</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>9</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/dev/null</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/hypeproof-agent/runtime/hypeprooflab/cron-reports/launchd-issue-solver.err</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/hypeproof-agent/runtime/hypeprooflab</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/hypeproof-agent</string>
+    <key>PATH</key>
+    <string>/Users/hypeproof-agent/.local/bin:/Users/hypeproof-agent/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
