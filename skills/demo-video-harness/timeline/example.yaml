@@ -1,0 +1,59 @@
+# Fully self-contained example — no network, no server, no company-specific
+# setup. `capture.scene` loads assets/example/page.html via file://, so this
+# builds on a clean clone with just the local tools from references/TIMELINE.md
+# installed:
+#
+#   bash scripts/build.sh timeline/example.yaml
+#
+# Swap `capture.scene` for `base_url` + `capture.path` to record your own app,
+# and replace assets/example/page.html, assets/sfx/*.wav with your own.
+video: example
+title: "acme-app walkthrough (harness example)"
+gates:
+  max_duration_s: 30
+  width: 1280
+  height: 720
+  fps: 30
+  auto_fit: true
+  fit_pad: 0.4
+tts_engine: say
+bgm:
+  file: assets/sfx/bed.wav
+  gain: 0.16
+cuts:
+- id: intro
+  type: card
+  duration: 4
+  min_s: 3
+  card:
+    heading: "acme-app"
+    sub: "a 20-second walkthrough"
+  narration: "This is a short walkthrough of the acme app home screen."
+- id: home
+  type: capture
+  duration: 7
+  min_s: 5
+  capture:
+    scene: assets/example/page.html
+    record_s: 8
+    actions:
+    - wait: 1.5
+    - click: "#cta"
+    - wait: 2
+  sfx: tick
+  caption: "Clicking the primary action reveals the next step, inline."
+- id: home-detail
+  type: slice
+  src_capture: home
+  start_at: 3
+  duration: 4
+  min_s: 3
+  narration: "No page reload, no spinner — the detail just expands in place."
+- id: outro
+  type: card
+  duration: 4
+  min_s: 3
+  card:
+    heading: "That's it"
+    sub: "swap base_url or scene for your own app next"
+  narration: "Point base_url at your own app, or swap this scene file, and you're recording your own demo."
