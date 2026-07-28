@@ -2,3 +2,23 @@
 # Honors MEMBER-GUIDE §4.3 "harness 변경은 항상 피어리뷰" and AGENT-GUIDE "리뷰와 배포 권한"
 # — any member's review satisfies the gate.
 *                       @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr
+
+# Control-plane paths (see policy/control-plane.yaml) — MAINTAINERS ONLY.
+# Last match wins in CODEOWNERS, so these override the `*` rule above: a
+# contributor's review does NOT satisfy the gate for these files; only an
+# admin/maintainer code owner does. This is the SERVER-SIDE backstop for the
+# A7 transport gap: a fine-grained PAT can be denied the "Workflows" permission
+# so it cannot edit .github/workflows/** over https, but an SSH deploy key is
+# NOT scope-limited and can. CODEOWNERS + required review closes that on merge
+# to main regardless of transport. Requires branch protection with
+# require_code_owner_reviews:true and required_approving_review_count>=1
+# (harness-core profile already declares both; live is currently 0 — human fix).
+/policy/                        @jayleekr @JeHyeong2
+/scripts/repo-governance/       @jayleekr @JeHyeong2
+/scripts/security/              @jayleekr @JeHyeong2
+/.github/workflows/             @jayleekr @JeHyeong2
+/.github/CODEOWNERS             @jayleekr @JeHyeong2
+/.githooks/                     @jayleekr @JeHyeong2
+/CLAUDE.md                      @jayleekr @JeHyeong2
+/AGENTS.md                      @jayleekr @JeHyeong2
+/SECURITY.md                    @jayleekr @JeHyeong2

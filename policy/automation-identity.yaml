@@ -1,0 +1,127 @@
+version: 1
+
+# Machine-readable automation-identity + permission model for M004 WS1.
+# Encodes the target separation between Jay's human owner identity and the
+# delegated automation worker, hardened against the adversarially-verified
+# boundary failures A6 and A7 (boundary-verifier, 2026-07-22).
+#
+# A6 (meta-boundary): the data plane IS server-enforced — enforce_admins:true
+#   makes GitHub itself reject admin --admin merge, main push, force-push,
+#   delete, and self-merge across gh / raw-git / REST. BUT the same principal
+#   that holds Administration:write can `PUT enforce_admins:false` (no-op PUT
+#   returns 200), push, then restore. So protection is only as strong as the
+#   WEAKEST holder of Administration:write. Automation must therefore never hold
+#   Administration:write.
+# A7 (transport asymmetry): withholding the fine-grained "Workflows" permission
+#   makes an https/token `contents` PUT of a .github/workflows/** file 404 —
+#   BUT a raw git SSH push is not scope-limited and succeeds on a non-protected
+#   branch. Token-scope protection of workflow files therefore only holds on the
+#   https path. Automation must use https + fine-grained PAT (not an SSH deploy
+#   key) so the Workflows-scope denial is real, AND workflow files must ALSO be
+#   protected server-side (required check + CODEOWNERS) to cover any SSH path.
+
+# ---------------------------------------------------------------------------
+# MEASURED current state (the thing being replaced), 2026-07-22
+# ---------------------------------------------------------------------------
+current_principal:
+  identity: jayleekr            # human OWNER token is what automation uses today
+  measured_by: "gh auth status; git log; cron-prompts/cron-env.sh:9"
+  gh_token_type: oauth          # gho_...
+  gh_token_scopes: [repo, admin:public_key, delete_repo, gist, read:org]
+  git_transport: ssh            # gh auth status: "Git operations protocol: ssh"
+  ssh_key_passphrase: none      # audited: passphrase-less key on disk
+  can_modify_branch_protection: true   # A6 — owner/admin principal
+  unnecessary_for_autonomy: [delete_repo, admin:public_key]   # never needed by a worker
+  runs_as_uid: jaylee           # ROOT CONSTRAINT — see uid_isolation below
+
+# ---------------------------------------------------------------------------
+# TARGET automation identity
+# ---------------------------------------------------------------------------
+target_identity:
+  login: hypeproof-automation   # dedicated machine user (WS1 recommendation)
+  credential:
+    type: fine-grained-pat      # NOT an SSH deploy key (A7): keeps Workflows-scope denial effective
+    transport: https
+    max_lifetime_days: 365
+    resource_owner: hypeproof-automation
+    repositories:               # least-privilege: only repos the worker writes to
+      write:
+        - jayleekr/hypeprooflab      # cron issue-solver / issue-filer / content PRs
+      read:
+        - jayleekr/hypeproof-harness # governance audit reads policy + protection
+        - jayleekr/hypeproof-studio
+        - jayleekr/sediment
+
+  # Fine-grained permission grants. Anything not listed = NOT GRANTED.
+  permissions:
+    grant:
+      Metadata: read            # mandatory baseline
+      Contents: write           # create branch, push feature branch
+      Pull requests: write      # open PR, comment
+      Issues: write             # file/triage issues (cron issue-filer)
+      Administration: read      # A6: observe branch protection for briefs, CANNOT modify
+      Actions: read             # read CI results
+      Checks: read
+    deny:                       # explicit MUST-NOT — each maps to a verified breakout
+      Administration: write     # A6 breakout: could disable enforce_admins, push, restore
+      Secrets: write            # could swap CI secrets / exfil path
+      Environments: write
+      Workflows: write          # A7: blocks .github/workflows/** edits ON THE HTTPS PATH
+      # Actions: write (workflow_dispatch) — grant ONLY per-job if a trigger is
+      # actually required; withheld by default.
+
+# ---------------------------------------------------------------------------
+# Capability matrix (Mission 2) — least privilege per action
+# ---------------------------------------------------------------------------
+actions:
+  read_repository:        { permission: "Contents:read/Metadata:read", automation: allow }
+  create_branch:          { permission: "Contents:write",              automation: allow }
+  push_feature_branch:    { permission: "Contents:write",              automation: allow }
+  open_pr:                { permission: "Pull requests:write",         automation: allow }
+  comment:                { permission: "Pull requests:write",         automation: allow }
+  read_ci:                { permission: "Actions:read + Checks:read",  automation: allow }
+  trigger_workflow:       { permission: "Actions:write",               automation: conditional, note: "grant only if a job needs workflow_dispatch" }
+  merge:                  { permission: "Contents:write + protection reviews", automation: deny, enforced_by: branch_protection }
+  modify_rulesets:        { permission: "Administration:write",        automation: deny, breakout: A6 }
+  modify_branch_protection: { permission: "Administration:write",      automation: deny, breakout: A6 }
+  modify_secrets:         { permission: "Secrets:write",               automation: deny }
+  modify_workflow_files:  { permission: "Workflows:write (https) / SSH bypasses", automation: deny, enforced_by: "token-scope(https) + CODEOWNERS + required check(any transport)", breakout: A7 }
+  modify_own_credentials: { permission: "-",                           automation: deny }
+  merge_control_plane_pr: { permission: "-",                           automation: deny, enforced_by: "control-plane-gate + CODEOWNERS maintainers-only" }
+
+# ---------------------------------------------------------------------------
+# Two-layer model — narrowing the identity is necessary but NOT sufficient
+# ---------------------------------------------------------------------------
+defense_layers:
+  layer_1_narrow_identity:
+    status: preparable_now
+    what: "Create hypeproof-automation + fine-grained PAT with the grants above; switch cron to https+PAT; stop using Jay's owner token/ssh for automation."
+    closes: "A6 (no Administration:write) and A7-https (no Workflows scope)."
+    human_gate: [create_machine_user, create_pat, add_collaborator_write, store_token_for_launchd]
+
+  layer_2_uid_isolation:
+    status: infra_change_human_gate
+    what: "Run automation sessions under a separate OS user / sandbox so Jay's ~/.gitconfig, keychain, and ssh keys are NOT readable by the session."
+    why: "ROOT CONSTRAINT — while the session runs as uid `jaylee`, narrowing the token is reversible: the session can still read the owner's ssh key / keychain and re-acquire owner rights. Layer 1 alone is bypassable without this."
+    human_gate: [separate_os_user_or_sandbox, filesystem_perms_on_owner_creds]
+
+# ---------------------------------------------------------------------------
+# Exact human-run procedure for LAYER 1 (settings/credentials NOT changed here)
+# ---------------------------------------------------------------------------
+layer_1_procedure:
+  - step: "1. Create machine user hypeproof-automation (new GitHub account, separate email). Cost 0."
+  - step: "2. Add it as collaborator with WRITE (not admin) on jayleekr/hypeprooflab."
+    cmd: "gh api -X PUT repos/jayleekr/hypeprooflab/collaborators/hypeproof-automation -f permission=push"
+  - step: |
+      3. As hypeproof-automation, create a fine-grained PAT at
+      https://github.com/settings/personal-access-tokens/new
+      resource owner = hypeproof-automation; selected repos = hypeprooflab (+ read on others);
+      permissions = Contents RW, Pull-requests RW, Issues RW, Metadata R, Administration R, Actions R, Checks R.
+      DO NOT grant Administration write, Secrets, Environments, or Workflows.
+  - step: |
+      4. Store as GH_TOKEN for the launchd jobs (keychain or chmod 600 env file sourced by
+      cron-env.sh); set the git remote to https so the PAT (not the ssh key) is used.
+  - step: "5. Verify least privilege — both of these MUST fail for the new token:"
+    verify_deny:
+      - "gh api -X PUT repos/jayleekr/hypeprooflab/branches/main/protection ...   -> expect 403 (Administration read-only)"
+      - "gh api -X PUT repos/jayleekr/hypeprooflab/contents/.github/workflows/x.yml ...   -> expect 404 (no Workflows scope)"
