@@ -210,6 +210,17 @@ whose deadline is an event, not the coming Monday.
 - Never file issues without showing the drafts and getting confirmation.
 - Never invent an owner — ask.
 - Never set an ETA after the cycle date — split the work instead.
+- Never close a cycle issue without evidence. Leave `Evidence: <GitHub PR /
+  commit / issue-comment permalink>` in the closing comment, or state one of
+  the four enumerated exemptions — `Evidence-Exemption: cancelled | duplicate |
+  administrative | no-deliverable` — or close it as "not planned" (dropped
+  work). Applies to issues closed on or after 2026-07-22 00:00 KST; the
+  `no-evidence-needed` label no longer exempts anything. `check.py` enforces
+  this daily in `repo-governance live audit` — see WEEKLY-LOOP.ko.md §6.1.
+- Never "fix" a violation by editing a historical issue. The gate exempts
+  pre-cutoff work from `closedAt`; report violations, do not paper over them.
+- Never pass `--skip-evidence-gate` in anything automated. It is refused under
+  CI and exists only for local triage.
 - One issue closes in one repo; split cross-repo items.
 - No secrets in issue bodies; meeting notes may contain internal detail —
   summarize, do not paste tokens/URLs with credentials.

@@ -24,65 +24,407 @@ jobs:
       - name: Install policy deps
         run: python -m pip install --quiet pyyaml
 
+      - name: Resolve policy repos
+        run: |
+          set -eo pipefail
+          python - <<'PY' > preflight-repos.txt
+          import yaml
+          policy = yaml.safe_load(open("policy/repos.yaml", encoding="utf-8"))
+          for repo in policy.get("repositories", []):
+              print(f"{repo['owner']}/{repo['name']}")
+          PY
+          count=$(grep -c . preflight-repos.txt || true)
+          echo "policy declares $count repo(s)"
+          # Non-vacuity: an audit with nothing to audit has not passed.
+          [ "$count" -gt 0 ] || { echo "::error::policy/repos.yaml declares no repositories" >&2; exit 2; }
+
+      # `gh api repos/X` succeeds on a public repo even without admin, but omits
+      # allow_auto_merge and the other admin-visible fields. audit.py reads them
+      # as None and calls every one drift — 42 phantoms in the 2026-07-22 run —
+      # while the genuinely drifted settings it cannot reach stay invisible.
+      #
+      # This step ONLY classifies. It never exits non-zero and never skips the
+      # audit. An earlier revision failed here and skipped the audit whenever a
+      # single repo was shallow, which meant a repo transferred away — losing us
+      # admin, which IS governance drift — would be reclassified as "credential
+      # problem" and silence the drift report for every other repo too. A
+      # control must not reclassify an incident as a normal condition, and a
+      # failure that summons a human must not erase what they came to see.
+      - name: Classify repo visibility
+        run: |
+          set -eo pipefail
+          : > preflight-classification.txt
+          while read -r full; do
+            [ -n "$full" ] || continue
+            if ! body=$(gh api "repos/$full" 2>/dev/null); then
+              echo "unreachable $full" >> preflight-classification.txt
+            elif ! printf '%s' "$body" | grep -q '"allow_auto_merge"'; then
+              echo "shallow $full" >> preflight-classification.txt
+            else
+              echo "ok $full" >> preflight-classification.txt
+            fi
+          done < preflight-repos.txt
+          cat preflight-classification.txt
+
+      # No `set +e … exit 0`: this job used to discard audit.py's exit code and
+      # report success while its own artifact said `status: drift`. The status
+      # is recorded here so the summary can still be written, and enforced in
+      # the final step. The audit runs unconditionally — see above.
+
+      # No `set +e … exit 0`: this job used to discard audit.py's exit code and
+      # report success while its own artifact said `status: drift`. The status
+      # is recorded here so the summary can still be written, and enforced in
+      # the final step.
       - name: Run live audit
+        id: audit
         run: |
           set +e
           python scripts/repo-governance/audit.py --all --json > repo-governance-audit.json
           status=$?
+          set -e
           echo "$status" > repo-governance-audit.exitcode
-          exit 0
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "audit.py exited $status"
 
       - name: Write summary
+        if: always()
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
+          import os
+
           from collections import Counter
 
+          klass = {}
+          if os.path.exists("preflight-classification.txt"):
+              for line in open("preflight-classification.txt", encoding="utf-8"):
+                  parts = line.split()
+                  if len(parts) == 2:
+                      klass[parts[1]] = parts[0]
+          shallow = sorted(r for r, k in klass.items() if k == "shallow")
+          unreachable = sorted(r for r, k in klass.items() if k == "unreachable")
+          readable = sorted(r for r, k in klass.items() if k == "ok")
+
+          print("# Repo Governance Live Audit")
+          print()
+          if not os.path.exists("repo-governance-audit.json"):
+              print("audit.py produced no report — see the job log.")
+              raise SystemExit
           with open("repo-governance-audit.json", encoding="utf-8") as fh:
               data = json.load(fh)
           findings = data.get("findings", [])
-          print("# Repo Governance Live Audit")
-          print()
+
+          # Findings from a shallow repo are null-driven phantoms: audit.py read
+          # hidden fields as None. They are ANNOTATED, never suppressed — the
+          # human decides. Findings from readable repos, and the "unreachable"
+          # finding itself, are trustworthy.
+          def trustworthy(item):
+              return klass.get(item.get("repo", ""), "ok") != "shallow"
+
+          trusted = [f for f in findings if trustworthy(f)]
+          unreliable = [f for f in findings if not trustworthy(f)]
+
           print(f"Status: `{data.get('status')}`")
-          print(f"Findings: `{len(findings)}`")
+          print(f"Findings: `{len(findings)}` "
+                f"(trustworthy `{len(trusted)}` · unreliable `{len(unreliable)}`)")
           print()
+          print("## Coverage — non-vacuity")
+          print()
+          print(f"- repos declared by policy: {len(klass)}")
+          print(f"- readable at admin visibility: {len(readable)}")
+          print(f"- unreachable: {len(unreachable)} {' '.join(unreachable)}")
+          print(f"- readable but admin fields hidden: {len(shallow)} {' '.join(shallow)}")
+          print()
+          if shallow:
+              print("> **Findings from the repos above are annotated `unreliable`.** We lost")
+              print("> admin visibility on them, so audit.py read their settings as null.")
+              print("> That loss is itself a drift candidate — a repo transferred away or a")
+              print("> permission revoked looks exactly like this — and it is reported, not")
+              print("> silenced. Everything else below is unaffected.")
+              print()
           if not findings:
               print("No drift found.")
               raise SystemExit
 
-          by_severity = Counter(item.get("severity", "unknown") for item in findings)
-          by_module = Counter(item.get("module", "unknown") for item in findings)
-          print("## Severity")
-          print()
-          for key, count in sorted(by_severity.items()):
-              print(f"- `{key}`: {count}")
-          print()
-          print("## Module")
-          print()
-          for key, count in sorted(by_module.items()):
-              print(f"- `{key}`: {count}")
-          print()
-          print("## Findings")
-          print()
-          print("| Repo | Severity | Module | Field | Expected | Actual |")
-          print("|---|---|---|---|---|---|")
-          for item in findings:
-              print(
-                  "| {repo} | {severity} | {module} | {field} | `{expected}` | `{actual}` |".format(
-                      repo=item.get("repo", ""),
-                      severity=item.get("severity", ""),
-                      module=item.get("module", ""),
-                      field=item.get("field", ""),
-                      expected=json.dumps(item.get("expected"), ensure_ascii=False),
-                      actual=json.dumps(item.get("actual"), ensure_ascii=False),
+          for label, items in (("Trustworthy", trusted), ("Unreliable", unreliable)):
+              if not items:
+                  continue
+              by_severity = Counter(i.get("severity", "unknown") for i in items)
+              by_module = Counter(i.get("module", "unknown") for i in items)
+              print(f"## {label} findings ({len(items)})")
+              print()
+              print("Severity: " + ", ".join(f"`{k}` {v}" for k, v in sorted(by_severity.items())))
+              print()
+              print("Module: " + ", ".join(f"`{k}` {v}" for k, v in sorted(by_module.items())))
+              print()
+              print("| Repo | Severity | Module | Field | Expected | Actual |")
+              print("|---|---|---|---|---|---|")
+              for item in items:
+                  print(
+                      "| {repo} | {severity} | {module} | {field} | `{expected}` | `{actual}` |".format(
+                          repo=item.get("repo", ""),
+                          severity=item.get("severity", ""),
+                          module=item.get("module", ""),
+                          field=item.get("field", ""),
+                          expected=json.dumps(item.get("expected"), ensure_ascii=False),
+                          actual=json.dumps(item.get("actual"), ensure_ascii=False),
+                      )
                   )
-              )
+              print()
           PY
 
       - name: Upload audit artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: repo-governance-audit
+          if-no-files-found: ignore
           path: |
             repo-governance-audit.json
             repo-governance-audit.exitcode
+            preflight-classification.txt
+
+      # The step that turns a recorded status into a failed job. Splitting it
+      # out keeps the report above intact on a red run — the report is what a
+      # human acts on, and it must survive the failure that summons them.
+      #
+      # Red means one of three things and says which, because they need
+      # different action: a credential to provision, a permission loss to
+      # investigate, or drift to remediate.
+      - name: Enforce
+        if: always()
+        env:
+          STATUS: ${{ steps.audit.outputs.status }}
+        run: |
+          python - <<'PY'
+          import json, os, sys
+
+          klass = {}
+          if os.path.exists("preflight-classification.txt"):
+              for line in open("preflight-classification.txt", encoding="utf-8"):
+                  parts = line.split()
+                  if len(parts) == 2:
+                      klass[parts[1]] = parts[0]
+          readable = [r for r, k in klass.items() if k == "ok"]
+          shallow = sorted(r for r, k in klass.items() if k == "shallow")
+          unreachable = sorted(r for r, k in klass.items() if k == "unreachable")
+          status = os.environ.get("STATUS", "")
+
+          findings = []
+          if os.path.exists("repo-governance-audit.json"):
+              findings = json.load(open("repo-governance-audit.json", encoding="utf-8")).get("findings", [])
+          trusted = [f for f in findings if klass.get(f.get("repo", ""), "ok") != "shallow"]
+
+          reasons = []
+          if not klass:
+              reasons.append("visibility was never classified — the audit examined nothing")
+          elif not readable:
+              # Same threshold both ways: only a wholly blind run is a credential
+              # verdict. Any partial blindness is a drift candidate instead, so
+              # that losing admin on one repo can never mute the other eight.
+              reasons.append(
+                  f"every policy repo is blind (shallow {len(shallow)}, unreachable "
+                  f"{len(unreachable)}) — provision HYPEPROOF_GOVERNANCE_TOKEN with admin "
+                  "read on every repo in policy/repos.yaml. Until then this job cannot "
+                  "distinguish drift from blindness."
+              )
+          else:
+              if shallow:
+                  reasons.append(
+                      "lost admin visibility on: " + " ".join(shallow) +
+                      " — investigate as permission drift (transfer, revoked access, or a "
+                      "token too weak for these repos). Their findings are annotated "
+                      "unreliable in the summary, not suppressed."
+                  )
+              if trusted:
+                  reasons.append(f"{len(trusted)} trustworthy governance drift finding(s) — see the summary")
+          if status == "4":
+              reasons.append("policy/repos.yaml is invalid — a policy error, not drift")
+          elif status not in ("0", "2", "3", ""):
+              reasons.append(f"audit.py exited {status} (unexpected)")
+          elif status == "" :
+              reasons.append("audit.py did not record an exit status")
+
+          print(f"classified {len(klass)} repo(s): readable {len(readable)}, "
+                f"shallow {len(shallow)}, unreachable {len(unreachable)}")
+          print(f"findings: {len(findings)} total, {len(trusted)} trustworthy")
+          if not reasons:
+              print("no governance drift")
+              raise SystemExit(0)
+          for reason in reasons:
+              print(f"::error::{reason}", file=sys.stderr)
+          raise SystemExit(1)
+          PY
+
+  weekly-loop-gate:
+    # The weekly-loop rules (Owner/ETA on open issues, evidence on closed ones)
+    # are organizational facts about GitHub issues, so they can only be enforced
+    # where live issues can be read — not at PR time. This audit is that
+    # enforcement point; the PR-time counterpart in test.yml enforces the gate
+    # code itself against a fixed adversarial corpus.
+    name: weekly-loop owner/ETA + evidence gate (live)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN || github.token }}
+      # Marks this as an enforcement path: check.py refuses --skip-evidence-gate
+      # and treats "examined nothing" as a failure rather than a pass.
+      HYPEPROOF_ENFORCE: "true"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # This audit reads issues in three OTHER repos, which the per-repo
+      # GITHUB_TOKEN cannot do. Without a cross-repo token every `gh issue
+      # list` 404s and the gate fails closed with a GraphQL error that reads
+      # like a bug. Say what is actually wrong, once, before the gate runs.
+      - name: Preflight — cross-repo issue read access
+        run: |
+          set -e
+          missing=""
+          for repo in jayleekr/hypeprooflab jayleekr/hypeproof-studio jayleekr/sediment; do
+            if ! gh issue list --repo "$repo" --limit 1 --json number >/dev/null 2>&1; then
+              missing="$missing $repo"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::cannot read issues in:$missing" >&2
+            echo "The weekly-loop gate audits issues across the product repos, which the" >&2
+            echo "per-repo GITHUB_TOKEN cannot see. Set the HYPEPROOF_GOVERNANCE_TOKEN" >&2
+            echo "repository secret to a token with read access to those repos." >&2
+            echo "Failing closed: an audit that cannot see the issues has not passed them." >&2
+            exit 2
+          fi
+          echo "issue read access confirmed for all three product repos"
+
+      - name: Resolve the cycles under audit
+        id: cycles
+        run: |
+          python - >> "$GITHUB_OUTPUT" <<'PY'
+          import datetime as dt
+
+          # Cycle labels are named for the Monday meeting they feed. Audit the
+          # upcoming cycle (open work) and the one before it (closed work, where
+          # the evidence requirement actually bites).
+          kst = dt.timezone(dt.timedelta(hours=9))
+          today = dt.datetime.now(kst).date()
+          upcoming = today + dt.timedelta(days=(0 - today.weekday()) % 7)
+          previous = upcoming - dt.timedelta(days=7)
+          print(f"labels=weekly-{previous.isoformat()} weekly-{upcoming.isoformat()}")
+          PY
+
+      - name: Run the gate against live issues
+        env:
+          LABELS: ${{ steps.cycles.outputs.labels }}
+        run: |
+          set -eo pipefail
+          for label in $LABELS; do
+            set +e
+            # --min-issues 0 per label: a cycle that has not been filed yet is
+            # legitimately empty. The aggregate non-vacuity check below is what
+            # refuses to call an empty audit a pass.
+            python scripts/weekly-harness/check.py \
+              --cycle "$label" --min-issues 0 --json > "weekly-gate-$label.json"
+            rc=$?
+            set -e
+            if [ "$rc" = "2" ]; then
+              echo "checker errored for $label (config / gh / truncation)" >&2
+              exit 2
+            fi
+          done
+
+      - name: Write violation report
+        run: |
+          set -eo pipefail
+          python - <<'PY' | tee weekly-gate-summary.md >> "$GITHUB_STEP_SUMMARY"
+          import glob, json
+
+          reports = [json.load(open(p, encoding="utf-8")) for p in sorted(glob.glob("weekly-gate-*.json"))]
+          total = {}
+          for report in reports:
+              for key, value in report["counts"].items():
+                  total[key] = total.get(key, 0) + value
+
+          print("# weekly-loop gate — live audit")
+          print()
+          print(f"Cutoff: `{reports[0]['cutoff'] if reports else 'n/a'}` "
+                "(issues closed earlier are exempt, derived from `closedAt`)")
+          print()
+          print("## Coverage — non-vacuity")
+          print()
+          print("| metric | value |")
+          print("|---|---:|")
+          for key in ("repos_examined", "issues_examined", "open_examined",
+                      "closed_examined", "comments_examined", "clean_accepted",
+                      "violations_detected", "exempt_pre_cutoff",
+                      "exempt_not_planned", "exempt_code", "ok_github_linked",
+                      "ok_syntax_valid", "evidence_gate_skipped"):
+              print(f"| {key} | {total.get(key, 0)} |")
+          print()
+
+          rows = [
+              (report["cycle"], item)
+              for report in reports
+              for item in report["issues"]
+              if item["status"] == "violation"
+          ]
+          # An issue carrying two cycle labels is audited once per cycle, so the
+          # row count double-counts it. Say both numbers: "2 violations" reads as
+          # two problems when it can be one issue seen twice.
+          distinct = {(item["repo"], item["number"]) for _, item in rows}
+          print("## Violations")
+          print()
+          if not rows:
+              print("None.")
+          else:
+              print(f"**{len(distinct)} distinct issue(s)**, {len(rows)} cycle-occurrence(s) "
+                    "— an issue labelled for two cycles is audited, and listed, once per cycle.")
+              print()
+              # Issue numbers and rule names only — no issue content is copied
+              # into the summary, and nothing here edits an issue.
+              print("| cycle | repo | issue | rule | reasons |")
+              print("|---|---|---|---|---|")
+              for cycle, item in rows:
+                  link = f"[#{item['number']}]({item['url']})" if item["url"] else f"#{item['number']}"
+                  print(f"| {cycle} | {item['repo']} | {link} | {item['rule']} | "
+                        f"{len(item['violations'])} |")
+          PY
+
+      - name: Upload gate report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: weekly-loop-gate
+          path: |
+            weekly-gate-*.json
+            weekly-gate-summary.md
+
+      - name: Enforce
+        run: |
+          python - <<'PY'
+          import glob, json, sys
+
+          reports = [json.load(open(p, encoding="utf-8")) for p in sorted(glob.glob("weekly-gate-*.json"))]
+          examined = sum(r["counts"]["issues_examined"] for r in reports)
+          violations = sum(r["counts"]["violations_detected"] for r in reports)
+          skipped = sum(r["counts"]["evidence_gate_skipped"] for r in reports)
+          distinct = len({
+              (item["repo"], item["number"])
+              for report in reports for item in report["issues"]
+              if item["status"] == "violation"
+          })
+
+          if not reports or examined == 0:
+              sys.exit(f"examined {examined} issue(s) across {len(reports)} cycle(s) — "
+                       "a control that examined nothing has not passed")
+          if skipped:
+              sys.exit(f"{skipped} closed issue(s) bypassed the evidence gate on an "
+                       "enforcement path")
+          print(f"examined {examined} issue(s); {violations} violation(s) "
+                f"across {distinct} distinct issue(s)")
+          if violations:
+              sys.exit(f"weekly-loop gate failed — {distinct} distinct issue(s) need an "
+                       "Owner/ETA or an Evidence ref; see the job summary")
+          PY
