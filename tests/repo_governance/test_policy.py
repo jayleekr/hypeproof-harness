@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 AUDIT = ROOT / "scripts" / "repo-governance" / "audit.py"
@@ -161,30 +163,52 @@ def test_release_artifact_collaborators_are_maintainer_only_for_personal_repos()
     assert desired == {"jayleekr": "admin", "JeHyeong2": "write"}
 
 
+def _retired_repos(policy) -> list:
+    """Every repo declared under the retired-repository profile.
+
+    Keyed on the PROFILE, not a repo name: a retirement ends with the repo
+    actually being deleted and its entry removed (Claude-Code-Remote, #40), so
+    hardcoding one would break the suite the moment a retirement completes.
+    """
+    return [
+        item
+        for item in policy["repos"]["repositories"]
+        if item.get("profile") == "retired-repository"
+    ]
+
+
 def test_retired_repository_tracks_deletion_and_owner_only_access() -> None:
     module = load_audit_module()
     policy = module.load_policy()
-    repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "Claude-Code-Remote")
+    repos = _retired_repos(policy)
+    if not repos:
+        pytest.skip("no repo currently declared retired-repository (last retirement completed)")
     profile = policy["profiles"]["retired-repository"]
-    desired = module.desired_collaborators(policy["members"], profile, repo)
 
-    assert repo["lifecycle"] == "retired"
-    assert repo["retirement"]["issue"] == "jayleekr/hypeproof-harness#40"
-    assert "delete_repo" in repo["retirement"]["reason"]
-    assert desired == {"jayleekr": "admin"}
+    for repo in repos:
+        desired = module.desired_collaborators(policy["members"], profile, repo)
+        assert repo["lifecycle"] == "retired"
+        # A retirement must name the issue that authorises it and say why.
+        assert repo["retirement"]["issue"].startswith("jayleekr/")
+        assert repo["retirement"]["reason"]
+        assert desired == {"jayleekr": "admin"}
 
 
 def test_retired_repository_audit_checks_archive_and_disabled_features(monkeypatch) -> None:
     module = load_audit_module()
     policy = module.load_policy()
-    repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "Claude-Code-Remote")
+    repos = _retired_repos(policy)
+    if not repos:
+        pytest.skip("no repo currently declared retired-repository (last retirement completed)")
+    repo = repos[0]
     profile = policy["profiles"]["retired-repository"]
+    full_name = f"{repo['owner']}/{repo['name']}"
 
     def fake_gh(path: str):
-        if path == "repos/jayleekr/Claude-Code-Remote":
+        if path == f"repos/{full_name}":
             return 0, {
-                "visibility": "public",
-                "default_branch": "master",
+                "visibility": repo.get("visibility", "public"),
+                "default_branch": repo.get("default_branch", "main"),
                 "archived": False,
                 "has_issues": True,
                 "has_wiki": True,
