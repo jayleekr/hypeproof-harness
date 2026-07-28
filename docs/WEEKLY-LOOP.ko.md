@@ -53,9 +53,19 @@ cycle의 이름은 **다음 회의 날짜**다. 라벨 `weekly-YYYY-MM-DD`가 �
 3. **사람은 방향, AI는 실행.** 이슈의 Context와 판단은 사람이 쓰고, 반복
    실행·조사·초안은 자율주행 루프(에이전트)에 위임한다. `human-needed`
    라벨이 없는 이슈는 AI가 먼저 시도해도 된다 (§MEMBER-GUIDE 4.1).
-4. **모든 산출물은 Sediment에 증거로 축적한다.** 실행이 끝나면 결과물이
-   Sediment에 ingest돼야 완료다. 한 일이 증거로 남지 않으면 다음 주에
-   같은 조사를 반복하게 된다.
+4. **모든 산출물은 증거로 축적한다 — 증거 없이 닫은 이슈는 완료가 아니다.**
+   실행이 끝나면 결과물이 Sediment에 ingest되고, 이슈에는 **`Evidence:` 참조**가
+   남아야 한다 (§6.1). 한 일이 증거로 남지 않으면 다음 주에 같은 조사를
+   반복하게 된다.
+
+   **지금 이 원칙이 강제되는 범위는 정확히 이만큼이다**: `check.py`가 cycle 라벨이
+   붙은 closed 이슈를 기계적으로 검사하고, `Evidence:` 참조도 면제도 없으면
+   non-zero로 실패한다. 이 검사는 이제 두 곳에 배선돼 있다 —
+   `repo-governance live audit` 워크플로의 `weekly-loop-gate` job이 매일
+   03:17 UTC에 세 repo의 살아있는 이슈를 검사하고 위반이 있으면 red가 되며,
+   PR CI(`test.yml`)는 고정된 적대적 코퍼스로 게이트 코드 자체를 검사해
+   우회 경로가 다시 열리면 머지를 막는다. **적용 대상은 2026-07-22 00:00 KST
+   이후에 닫힌 이슈다** (§6.1).
 5. **문서 single source — members 포털 + harness canonical.** 프로세스
    문서는 harness가 원천이고, 멤버가 읽는 곳은 members 포털과 vendored
    사본이다. 같은 내용을 두 군데에 따로 쓰지 않는다.
@@ -139,6 +149,21 @@ Claude Code에서:
 python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 ```
 
+### 회의록 아카이브 (놓친 사람용)
+
+이슈 발행과 함께 그 주 회의록을 **큐레이션본**으로 아카이브한다 — 요약 ·
+다음 단계 · 상세만, 스크립트 전사와 이메일은 제외(멤버 게이트 + PII 스캔).
+회의를 놓친 멤버가 `/members/meetings`에서 따라잡는다.
+
+- 저장: consumer(site) repo의 `web/src/content/private/meeting-notes/YYYY-MM-DD.md`
+  (주당 1파일). **이메일·개인 전사 금지** — PII email scan이 막는다.
+- 인덱스: `node web/scripts/gen-meetings.mjs` → `meetings.index.json` 재생성.
+- 페이지: `/members/meetings`(목록) · `/members/meetings/<date>`(상세). 멤버
+  전용 + noindex.
+
+회의록은 실행(이슈)과 함께 굴러 올라간다 — 각 회의록 상세는 그 주 `주간 보드`·
+`로드맵`으로 링크된다.
+
 ---
 
 ## 6. 주중 — 실행과 증거
@@ -149,6 +174,58 @@ python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
   가장 비싸다.
 - 산출물(보고서, 문서, 배포 URL)은 members 포털에 게시하고 Sediment에
   ingest한다 (원칙 4). 이슈를 닫을 때 산출물 링크를 코멘트로 남긴다.
+
+### 6.1 완료 게이트 — `Evidence:` 참조
+
+이슈를 닫기 전에, 본문이나 **닫는 코멘트**에 한 줄을 남긴다:
+
+```
+Evidence: https://github.com/jayleekr/sediment/pull/42
+```
+
+`증거:` 도 같다. URL은 **GitHub 퍼머링크 3종** 중 하나여야 한다 — 새 ID 체계를
+만들지 않고 이미 있는 식별자를 그대로 쓴다:
+
+| 형태 | 언제 |
+|---|---|
+| `.../pull/<n>` | 작업이 PR로 들어갔을 때 (대부분) |
+| `.../commit/<sha>` | PR 없이 직접 커밋했을 때 |
+| `.../issues/<n>#issuecomment-<id>` | 산출물이 코멘트 자체일 때 (조사 결과, 리포트) |
+
+`Evidence:` 마커와 퍼머링크 형태를 **둘 다** 요구한다. 본문에 그냥 붙여둔 링크는
+일상적인 이슈 대화라서, 실수로 게이트를 통과시키면 안 된다.
+
+마커는 **주장으로 쓴 문장에서만** 인정한다. 코드 펜스, 4칸 들여쓴 코드 블록,
+인라인 코드, 인용문(`>`), HTML 주석 안의 `Evidence:`는 이 문서를 붙여넣은
+것이지 이 이슈가 뭘 만들었다는 주장이 아니다. `ETA:`/`Owner:`도 같은 규칙을
+따른다.
+
+**적용 시점 — 2026-07-22 00:00 KST 이후에 닫힌 이슈부터.** 그 전에 닫힌 이슈는
+GitHub이 기록한 `closedAt`을 근거로 자동 면제된다. 라벨로 면제하지 않는 이유는
+간단하다: 아무나 붙일 수 있는 라벨은 감사 기록이 아니다. **과거 이슈를 게이트에
+맞추려고 일괄 수정하는 일은 없다.**
+
+**면제 — 산출물이 없는 일은 막지 않는다.** 열거된 경로만 있다:
+
+| 면제 | 어떻게 | 언제 |
+|---|---|---|
+| `Evidence-Exemption: cancelled` | 본문/코멘트에 한 줄 | 작업이 중단돼 산출물이 없다 |
+| `Evidence-Exemption: duplicate` | 본문/코멘트에 한 줄 | 다른 이슈에서 처리됐다 |
+| `Evidence-Exemption: administrative` | 본문/코멘트에 한 줄 | 설정·라벨 등 산출물 없는 운영 작업 |
+| `Evidence-Exemption: no-deliverable` | 본문/코멘트에 한 줄 | 논의·결정만 남았다 |
+| "closed as not planned" | `gh issue close <n> --repo <owner/name> --reason "not planned"` | 회의에서 drop한 일 — 만든 게 없다 |
+
+코드는 **위 네 개뿐**이다. `Evidence-Exemption: 그냥 필요 없어서` 같은 자유
+서술은 거부된다 — 아무렇게나 쓸 수 있는 면제는 아무도 감사할 수 없다.
+`no-evidence-needed` 라벨은 더 이상 면제가 아니다 (위와 같은 이유).
+
+면제는 게이트 출력에 `EXEMPT`로 이유와 함께 찍힌다. 조용히 빠져나갈 수는 없다.
+
+**통과 상태는 두 가지로 구분해서 찍힌다.** 이슈를 닫은 PR을 GitHub이 직접
+기록해 둔 경우(`closedByPullRequestsReferences`)는 `existence verified by
+GitHub`, 사람이 적은 `Evidence:` 한 줄만 있는 경우는 `syntax_valid,
+existence_unverified`다. 게이트는 URL을 열어보지 않으므로, 형식만 맞는 참조와
+GitHub이 보증하는 참조를 같은 것으로 보고하지 않는다.
 
 ---
 
@@ -202,13 +279,35 @@ carry-over(새 cycle 라벨로 이관 + ETA 재설정)하거나 명시적으로 
 | 도구 | 무엇을 검증 | 실패 시 |
 |---|---|---|
 | `scripts/weekly-harness/check.py` | cycle 라벨이 붙은 모든 open 이슈에 `ETA:` 라인 + `Owner`/담당 섹션이 있고, ETA ≤ cycle 날짜 | non-zero exit + 위반 목록 |
+| `scripts/weekly-harness/check.py` | cycle 라벨이 붙은 모든 **closed** 이슈에 `Evidence:` 퍼머링크 또는 명시적 면제(§6.1)가 있는가 | non-zero exit + 위반 목록 |
 | `scripts/weekly-harness/burndown.py` | (검증 아님) pre-meeting 번다운 리포트 생성 | gh 실패 시 non-zero |
 | harness `tests/run.sh` T-V13 | weekly-loop 자산군이 harness에 온전히 등록돼 있는가 | 게이트 실패 |
 
 ```bash
-# 위반이 있으면 exit 1 — CI나 cron에 그대로 걸 수 있다
+# 위반이 있으면 exit 1
 python3 scripts/weekly-harness/check.py --cycle weekly-2026-07-21
 ```
+
+### 9.1 지금 실제로 자동화된 것과 아닌 것
+
+과장하지 않기 위해 정확히 적는다.
+
+| | 상태 |
+|---|---|
+| 규칙이 코드로 존재하고 non-zero로 실패하는가 | **그렇다** (open: Owner/ETA · closed: Evidence) |
+| 테스트로 덮여 있는가 | **그렇다** (`tests/weekly_loop/`, CI에서 pytest로 실행) |
+| **누가 실행하는가** | **매일 자동으로 돈다.** `repo-governance live audit` 워크플로의 `weekly-loop-gate` job (03:17 UTC, `workflow_dispatch`로 수동 실행 가능) |
+| 게이트 코드 자체는 누가 지키는가 | PR CI(`test.yml` → `repo-governance` job)가 고정 코퍼스로 재현 — 주입한 위반 19건 검출 · clean 16건 통과가 정확히 맞아야 머지된다 |
+| 우회로 | `--skip-evidence-gate`는 `CI` / `GITHUB_ACTIONS` / `HYPEPROOF_ENFORCE`가 켜져 있으면 **exit 2로 거부된다.** 로컬 분류 작업 전용 |
+
+**소급 적용 문제는 라벨이 아니라 시각으로 풀었다.** 2026-07-22 00:00 KST 이전에
+닫힌 이슈는 `closedAt` 기준으로 자동 면제되므로 과거 이슈를 손댈 필요가 없다.
+게이트는 그 시각 이후에 닫히는 이슈부터 적용된다.
+
+**아직 안 하는 것 — URL 실재 검증.** 게이트는 `Evidence:` URL을 열어보지
+않는다. GitHub이 기록한 closing PR이 있는 경우만 `existence verified by
+GitHub`으로 찍히고, 나머지는 `syntax_valid, existence_unverified`로 구분해
+보고한다. 없는 PR 번호를 가리키는 형식만 맞는 링크는 여전히 통과한다.
 
 ---
 
