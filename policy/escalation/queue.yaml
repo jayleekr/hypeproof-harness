@@ -68,9 +68,9 @@ cases:
 
   - case_id: ESC-0003
     reason: >-
-      22 adult person photos are publicly served (adult-edu 7, columns 4,
-      members 9, workshop banner/edu 2) with no consent basis found. "Not found"
-      is not "does not exist" — records may be on paper/email/Drive. Only the
+      22 adult person photos are publicly served with no consent basis found.
+      "Not found" is not "does not exist" — records may be on paper/email/Drive.
+      Per-section breakdown lives in the private lab manifest only. Only the
       operator can confirm. Held at consent_status=unknown in the lab manifest.
     evidence:
       - "M003 §2.3: 22 adult photos, consent basis not found in exhaustive search"
@@ -90,14 +90,15 @@ cases:
 
   - case_id: ESC-0004
     reason: >-
-      One workshop image (workshop/kid-coding.png) has a filename indicating a
-      child subject, from a separate event where the age-band evidence does not
-      apply. Whether a child is identifiably shown requires visual confirmation,
+      One workshop image is flagged as a possible child subject; the asset id is
+      held in the private lab manifest. It comes from a separate event where the
+      age-band evidence does not apply. Whether a child is identifiably shown
+      requires visual confirmation,
       which only a human may perform (M003 §2.2 "확인필요 1"). Held as minor/unknown
       in the manifest (fail-closed) until confirmed.
     evidence:
       - "M003 §2.2: filename indicates child subject; image NOT opened by agents"
-      - "hypeprooflab manifest asset_id workshop/kid-coding (minor, unknown)"
+      - "hypeprooflab manifest: the flagged asset id (minor, unknown) — private vault only"
     classification_candidates:
       - "identifiable minor — requires guardian consent or removal"
       - "not a person / not identifiable — reclassify"
@@ -133,13 +134,13 @@ cases:
 
   - case_id: ESC-0006
     reason: >-
-      Two workshop directory-level images (workshop/banner.png, workshop/edu.png)
-      were flagged by M003 as "workshop photos" missed by the deletion glob.
+      Two workshop directory-level images were flagged by M003 as "workshop
+      photos" missed by the deletion glob. Asset ids live in the private vault.
       Whether they contain persons (possibly minors) is not established from the
       filename. Held as subject_type=unknown in the manifest (fail-closed).
     evidence:
       - "M003 §2.1: 3 workshop directory-level files missed by deletion glob"
-      - "hypeprooflab manifest asset_ids workshop/banner, workshop/edu (unknown/unknown)"
+      - "hypeprooflab manifest: the two flagged asset ids (unknown/unknown) — private vault only"
     classification_candidates:
       - "contains identifiable person(s) — classify adult/minor + consent"
       - "no person — reclassify none with basis"
@@ -153,12 +154,13 @@ cases:
 
   - case_id: ESC-0007
     reason: >-
-      The 10 workshop/dental-studio screenshots were classified subject_type=none
-      (product UI walkthrough) from filename evidence alone. A human should
+      A set of 10 product-walkthrough screenshots was classified subject_type=none
+      (product UI walkthrough) from filename evidence alone; the asset ids live in
+      the private lab manifest. A human should
       confirm no incidental person is visible before that classification is final,
       since `none` bypasses the consent gate.
     evidence:
-      - "hypeprooflab manifest asset_ids workshop/dental-studio/01..10 (none, basis=app UI)"
+      - "hypeprooflab manifest: the 10 flagged asset ids (none, basis=app UI) — private vault only"
       - "Classification from numbered app-flow filenames only; images NOT opened"
     classification_candidates:
       - "confirmed app UI, no person — none classification stands"
