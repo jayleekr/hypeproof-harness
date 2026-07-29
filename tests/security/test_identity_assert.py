@@ -5,6 +5,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+from _platform import BASH
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "identity-assert.sh"
@@ -54,9 +56,13 @@ def _run(
     env["GH_TOKEN"] = "ghp_" + "Z" * 36
 
     return subprocess.run(
-        ["bash", str(script), *(extra_args or [])],
+        [BASH, str(script), *(extra_args or [])],
         cwd=ROOT,
         text=True,
+        # Pin the decoder: `text=True` alone uses the machine's ANSI code page,
+        # so the guard's UTF-8 output would raise UnicodeDecodeError in
+        # subprocess's reader thread on a cp949 (Korean) Windows box.
+        encoding="utf-8",
         capture_output=True,
         check=False,
         env=env,
