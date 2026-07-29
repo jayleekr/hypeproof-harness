@@ -102,7 +102,21 @@ _KEY_OVERRIDE = None
 def _first_tab_title(sess, sid: str) -> str:
     r = sess.get(f"{API}/{sid}", params={"fields": "sheets.properties.title"})
     if r.status_code == 403:
-        raise PermissionError(f"403 — 이 시트가 서비스계정과 공유되지 않았습니다 (Viewer로 공유 필요): {sid}")
+        # 403은 두 가지다 — 구분하지 않으면 엉뚱한 곳(공유 설정)을 고치게 된다.
+        msg = ""
+        try:
+            msg = r.json().get("error", {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            pass
+        if "has not been used in project" in msg or "is disabled" in msg:
+            raise PermissionError(
+                "403 — 공유 문제가 아니라 프로젝트에 Sheets API가 꺼져 있습니다. "
+                f"콘솔에서 활성화 후 재시도: {msg}"
+            )
+        raise PermissionError(
+            f"403 — 이 시트가 서비스계정과 공유되지 않았습니다 (Viewer로 공유 필요): {sid}"
+            + (f" [{msg}]" if msg else "")
+        )
     if r.status_code == 404:
         raise FileNotFoundError(f"404 — 시트 ID를 찾을 수 없습니다: {sid}")
     r.raise_for_status()
