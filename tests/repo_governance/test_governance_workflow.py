@@ -30,6 +30,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from _platform import BASH, PYTHON, write_lf
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "repo-governance-live.yml"
 
@@ -43,8 +45,14 @@ NO_ADMIN = "cli/cli"
 def workflow_steps(job: str) -> dict[str, str]:
     spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"][job]
     steps = {s["name"]: s["run"] for s in spec["steps"] if "run" in s and "name" in s}
-    # CI runners expose `python`; developer machines may only have `python3`.
-    return {k: re.sub(r"(?m)^(\s*)python(\s|$)", r"\1python3\2", v) for k, v in steps.items()}
+    # The workflow text says `python`, which is what CI runners expose. Many
+    # developer machines only have `python3`, and some (Windows) only have
+    # `python` — so rewrite to whichever interpreter this machine actually has
+    # rather than hardcoding one. On CI this resolves to `python3`, i.e. the
+    # exact substitution this line has always made.
+    return {
+        k: re.sub(r"(?m)^(\s*)python(\s|$)", rf"\1{PYTHON}\2", v) for k, v in steps.items()
+    }
 
 
 AUDIT_STEPS = workflow_steps("audit")
@@ -53,7 +61,11 @@ GATE_STEPS = workflow_steps("weekly-loop-gate")
 
 def run_step(script: str, cwd: Path, env: dict[str, str] | None = None):
     return subprocess.run(
-        ["bash", "-e", "-c", script], cwd=cwd, capture_output=True, text=True,
+        [BASH, "-e", "-c", script], cwd=cwd, capture_output=True, text=True,
+        # Pin the decoder: `text=True` alone uses the machine's ANSI code page,
+        # so the workflow steps' UTF-8 output would raise UnicodeDecodeError in
+        # subprocess's reader thread on a cp949 (Korean) Windows box.
+        encoding="utf-8",
         env={**os.environ, **(env or {})},
     )
 
@@ -68,10 +80,12 @@ def workdir():
 
 
 def seed(workdir: Path, classification: str, findings: list[dict]) -> None:
-    (workdir / "preflight-classification.txt").write_text(classification, encoding="utf-8")
-    (workdir / "repo-governance-audit.json").write_text(
+    # LF, not the platform default: these are read by `while read -r` in the
+    # workflow steps, where a trailing \r silently corrupts the value.
+    write_lf(workdir / "preflight-classification.txt", classification)
+    write_lf(
+        workdir / "repo-governance-audit.json",
         json.dumps({"status": "drift" if findings else "pass", "findings": findings}),
-        encoding="utf-8",
     )
 
 
@@ -187,7 +201,7 @@ def _gh_authenticated() -> bool:
 def test_classification_step_never_aborts_the_audit(workdir):
     """It classifies; it does not decide. Deciding here is what silenced the
     audit before."""
-    (workdir / "preflight-repos.txt").write_text(f"{HARNESS}\n{NO_ADMIN}\n", encoding="utf-8")
+    write_lf(workdir / "preflight-repos.txt", f"{HARNESS}\n{NO_ADMIN}\n")
     proc = run_step(AUDIT_STEPS["Classify repo visibility"], workdir)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     classified = (workdir / "preflight-classification.txt").read_text(encoding="utf-8")

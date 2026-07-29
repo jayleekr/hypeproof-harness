@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from _platform import BASH
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "security" / "check-secrets.sh"
@@ -15,9 +17,15 @@ SYNTHETIC_SECRET = "GOCSPX-" + "Z" * 32
 
 def run_scan(*paths: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(SCRIPT), "--files", *[str(path) for path in paths]],
+        [BASH, str(SCRIPT), "--files", *[str(path) for path in paths]],
         cwd=ROOT,
         text=True,
+        # Pin the decoder. `text=True` alone decodes with the machine's ANSI
+        # code page, so on a stock Korean Windows (cp949) the scanner's UTF-8
+        # stderr — it prints the offending *filename* — raises
+        # UnicodeDecodeError inside subprocess's reader thread before any
+        # assertion runs. The script's output is UTF-8 on every platform.
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -147,9 +155,10 @@ def _make_repo_with_script(tmp_path: Path) -> Path:
 def _run_staged(repo: Path) -> subprocess.CompletedProcess[str]:
     script = repo / "scripts" / "security" / "check-secrets.sh"
     return subprocess.run(
-        ["bash", str(script), "staged"],
+        [BASH, str(script), "staged"],
         cwd=repo,
         text=True,
+        encoding="utf-8",  # see run_scan: never inherit the ANSI code page
         capture_output=True,
         check=False,
     )
