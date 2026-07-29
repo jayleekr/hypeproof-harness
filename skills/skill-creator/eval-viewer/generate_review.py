@@ -50,6 +50,10 @@ MIME_OVERRIDES = {
 }
 
 MAX_FEEDBACK_BYTES = 1_000_000
+# Upper bound on how long we will wait while discarding the body of a request
+# we have already rejected. A client that declares a Content-Length and then
+# does not send it must not be able to pin the single-threaded server.
+DRAIN_TIMEOUT_SECONDS = 2.0
 CSRF_HEADER = "X-Eval-Viewer-CSRF"
 ALLOWED_FEEDBACK_STATUSES = {"in_progress", "complete"}
 
@@ -420,17 +424,60 @@ class ReviewHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def _drain_request_body(self) -> None:
+        """Discard the body of a request we are rejecting, before replying.
+
+        Writing an error response while the request body still sits unread in
+        the kernel receive buffer makes the subsequent close abortive: Windows
+        answers the leftover bytes with an RST, which discards the response the
+        client has not read yet. The client then raises
+        ConnectionAbortedError (WinError 10053) instead of seeing our 403/415.
+        Reading the body first lets the close be graceful.
+
+        Deliberately does nothing when no valid Content-Length was declared (we
+        would not know when to stop) or when the declared length is over the
+        limit — refusing to read an oversized body is the whole point of the
+        413 path, so that one stays abortive by design.
+        """
+        length = _parse_content_length(self.headers.get("Content-Length"))
+        if not length or length > MAX_FEEDBACK_BYTES:
+            return
+        try:
+            previous_timeout = self.connection.gettimeout()
+        except OSError:
+            return
+        try:
+            self.connection.settimeout(DRAIN_TIMEOUT_SECONDS)
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(remaining, 65536))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            # Client vanished or stalled. We are closing the connection either
+            # way; a failed drain must never break the error response.
+            pass
+        finally:
+            try:
+                self.connection.settimeout(previous_timeout)
+            except OSError:
+                pass
+
     def do_POST(self) -> None:
         if self.path == "/api/feedback":
             if not _is_json_content_type(self.headers.get("Content-Type")):
+                self._drain_request_body()
                 _send_json(self, 415, {"error": "Expected application/json"})
                 return
 
             if not _is_allowed_origin(self.headers.get("Origin"), self.server.server_port):
+                self._drain_request_body()
                 _send_json(self, 403, {"error": "Invalid request origin"})
                 return
 
             if self.headers.get(CSRF_HEADER) != self.csrf_token:
+                self._drain_request_body()
                 _send_json(self, 403, {"error": "Invalid CSRF token"})
                 return
 
@@ -452,6 +499,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             except OSError:
                 _send_json(self, 500, {"error": "Failed to save feedback"})
         else:
+            self._drain_request_body()
             self.send_error(404)
 
     def log_message(self, format: str, *args: object) -> None:
