@@ -147,6 +147,14 @@ scan_file() {
     return 0
   fi
 
+  # 심볼릭 링크 자체는 경로 문자열일 뿐 비밀을 담을 수 없다. 링크가 디렉터리를
+  # 가리키면 -f가 거짓이라 아래 fail-closed 분기에 걸리는데, 그건 누락이 아니라
+  # 링크다 — 스킬을 등록할 때마다(.claude/skills/<name>) 오탐이 난다.
+  # 대상 파일이 추적된다면 그 파일 자체로 따로 스캔된다.
+  if [ -L "$path" ] || [ -L "$REPO_ROOT/$path" ]; then
+    return 0
+  fi
+
   local file
   file="$(resolve_file "$path")"
   if [ -z "$file" ]; then
