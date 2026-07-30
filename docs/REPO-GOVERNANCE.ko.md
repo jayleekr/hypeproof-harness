@@ -327,6 +327,25 @@ rotation/history purge와 #100의 PII sweep이 끝나기 전까지는 private로
 이 상태는 policy drift가 아니라 명시적인 security hold이며, exception 만료 전
 재검토해야 한다.
 
+### What a hold does and does not do
+
+- `target_visibility` is a **goal, not an action**. No tooling here acts on it:
+  `apply.py` never sends `visibility`/`private` to the GitHub API, and the live
+  audit compares `visibility` only. The only path to public is a human running
+  `gh repo edit --visibility public`, so the in-file warning is the control.
+- The valid values are `public` / `private` / `internal`. Inventing a value such
+  as `held` is a **critical** policy finding — `apply.py` exits 4 and the daily
+  governance audit goes red. That is an outage, not a hold.
+- Do not express a hold by deleting `target_visibility` or by setting it equal to
+  `visibility`. Both make the `public_readiness.blocked_by` and exception
+  requirements stop being validated, which retires the record of the hold.
+- `visibility: public` while `public_readiness.blocked_by` is non-empty is a
+  **critical** finding (`validate_policy`). Publishing is irreversible — clones,
+  forks and caches outlive any revert — so an unresolved blocker must invalidate
+  the policy rather than merely register as drift.
+- Release a hold by closing the blockers and then removing their entries. Never
+  remove an entry to unblock a flip.
+
 ## Collaborator Policy
 
 `policy/members.yaml`의 admins/writers가 contributor 권한의 원천이다.

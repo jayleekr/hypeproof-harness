@@ -136,6 +136,30 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
                 if not has_temporary_exception:
                     findings.append(_policy_error(full, "exceptions", "temporary-private-until-oauth-purge", None))
 
+        # A public-readiness HOLD must survive the flip it exists to prevent.
+        # The block above only runs while target_visibility != visibility, so
+        # setting visibility to public satisfied every rule at once: the hold
+        # evaporated in the same edit that violated it. Publishing a repo is
+        # irreversible (clones, forks and caches outlive any revert), so an
+        # unresolved blocker has to make the policy invalid, not merely drifted.
+        # Resolve blockers by closing them, then delete the entries; do not
+        # delete entries to unblock a flip.
+        open_blockers = (repo.get("public_readiness") or {}).get("blocked_by") or []
+        if open_blockers and visibility == "public":
+            findings.append(Finding(
+                repo=full,
+                module="policy",
+                severity="critical",
+                field="visibility",
+                expected="not public while public_readiness.blocked_by is non-empty",
+                actual=visibility,
+                apply_supported=False,
+                message="Public-readiness hold: {} unresolved blocker(s) — {}".format(
+                    len(open_blockers),
+                    ", ".join(str(b.get("issue")) for b in open_blockers),
+                ),
+            ))
+
         checks = repo.get("required_status_checks", [])
         if checks is not None and not isinstance(checks, list):
             findings.append(_policy_error(full, "required_status_checks", "list", type(checks).__name__))
