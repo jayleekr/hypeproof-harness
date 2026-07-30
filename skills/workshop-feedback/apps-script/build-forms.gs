@@ -53,6 +53,12 @@ function buildOnly(key) {
   return made;
 }
 
+// Apps Script의 실행 드롭다운은 인자 없는 함수만 띄운다 — buildOnly(key)는 거기서
+// 고를 수 없다. 그래서 폼 종류마다 인자 없는 래퍼를 둔다. 이게 실제로 누르는 버튼이다.
+function buildPre()   { return buildOnly('pre'); }
+function buildPost()  { return buildOnly('post'); }
+function buildFollowup() { return buildOnly('followup'); }
+
 function buildForm(f) {
   var form = FormApp.create(f.title);
   form.setDescription('[' + f.when + ' · ' + f.channel + '] ' + (SPEC.meta.engagement || ''));

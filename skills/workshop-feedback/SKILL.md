@@ -45,7 +45,7 @@ Config lives in the consumer repo per engagement; copy a template:
 Only the topic slot + roles + retention change per lecture. The core does not.
 
 **2) Render to Google Forms (runs in Google — reference impl, validate there):**
-Paste `forms.spec.json` into `apps-script/build-forms.gs` `SPEC`, run `buildAll()` at script.google.com. It creates pre/post/follow-up forms + a **separate** re-contact form/sheet. See `apps-script/README.md`.
+Paste `forms.spec.json` into `apps-script/build-forms.gs` `SPEC`, run `buildAll()` at script.google.com. To rebuild ONE form without touching a sibling that already has live responses, run the zero-arg wrapper instead — `buildPost()` / `buildPre()` / `buildFollowup()` (Apps Script's run dropdown only lists functions that take no arguments). It creates pre/post/follow-up forms + a **separate** re-contact form/sheet. See `apps-script/README.md`.
 
 **3) Collect (token-based, no browser):**
 ```bash
