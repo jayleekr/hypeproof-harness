@@ -72,6 +72,43 @@ CORE_POST = [
     {"id": "AC5", "type": "text",
      "q": '기능을 나열하기보다 "실제로 불편하신 일"에서 시작한 오늘 방식은 어떠셨나요? (한 말씀)'},
 ]
+# ---- PRODUCT INTEREST (post) — 계속 쓸 의향 + 그 조건. -------------------------
+# 왜 코어인가: "강의는 좋았다"와 "이 도구를 계속 쓰겠다"는 다른 신호이고, 후자는
+# 로드맵 입력이다. 매 강의 같은 문항이어야 강의 간 비교가 된다.
+# 금지: 가격·출시·플랜을 암시하는 문구. 확인되지 않은 약속이 된다 (헌법 3조).
+# 그래서 "구독" 대신 "계속 써보고 싶다", 기능 문항은 전부 가정법으로 둔다.
+PRODUCT_FEATURES = [
+    "우리 조직 자료를 계속 기억하기",
+    "직원·동료와 함께 쓰기",
+    "만든 결과물이 자동으로 저장·정리되기",
+    "휴대폰에서도 보기",
+    "오늘 다룬 것 외의 업무(문서·이미지 등)",
+    "막힐 때 사람에게 물어보기",
+    "오늘 배운 것을 복습할 자료",
+]
+
+
+def product_interest(cfg: dict) -> list[dict]:
+    """계속 쓸 의향(분포) + 그러려면 필요한 것(복수) + 자유서술.
+
+    제품명은 config의 product.name (없으면 '오늘 쓰신 도구'). 기능 보기는 코어이며,
+    config product.extra_features 로 덧붙일 수만 있다 — 코어를 갈아끼우지 않는다.
+    """
+    p = (cfg.get("product") or {}) if isinstance(cfg.get("product"), dict) else {}
+    name = str(p.get("name") or "오늘 쓰신 도구")
+    feats = list(PRODUCT_FEATURES) + [str(x) for x in (p.get("extra_features") or [])]
+    return [
+        {"id": "AC6", "type": "choice", "aggregate": "distribution",
+         "options": ["예, 계속 써보고 싶다", "아직 모르겠다", "아니오"],
+         "q": f"{name}를 강의 이후에도 계속 써 보고 싶으신가요?"},
+        {"id": "AC7", "type": "choice_multi", "options": feats + ["기타"],
+         "depends_on": {"id": "AC6", "not": "아니오"},
+         "q": "만약 계속 쓰신다면, 어떤 점이 갖춰져 있어야 실제로 쓰실 것 같으세요? (여러 개 선택 가능)"},
+        {"id": "AC8", "type": "text",
+         "q": "그 밖에 “이런 게 되면 쓰겠다” 싶은 것이 있으시면 한 가지만 적어 주세요."},
+    ]
+
+
 CORE_FOLLOWUP = [
     {"id": "F1", "type": "choice", "options": ["거의 안 씀", "가끔", "자주", "거의 매일"],
      "q": "지난 한 달, 강의에서 배운 방법을 실제로 써 보셨나요?"},
@@ -140,7 +177,7 @@ def build_spec(cfg: dict) -> dict:
         "meta": {
             "engagement": eng,
             "join_key": "participant_code + phone_last4",
-            "fixed_core": ["PC1", "PC2", "PC3", "AC1-5", "F1-5"],
+            "fixed_core": ["PC1", "PC2", "PC3", "AC1-5", "AC6-8", "F1-5"],
             "note": "Fixed core owned by harness; only topic slot is per-engagement.",
             "retention_months": months,
             # build-forms.gs auto-shares each response sheet with this reader SA at
@@ -162,6 +199,7 @@ def build_spec(cfg: dict) -> dict:
                  {"name": "식별", "items": [IDENTITY]},
                  {"name": "고정 코어(사후)", "items": CORE_POST},
                  {"name": "주제", "items": [tpost]},
+                 {"name": "앞으로 (선택)", "items": product_interest(cfg)},
                  {"name": "재접촉 동의(분리 저장)", "items": [RECONTACT]},
              ]},
             {"key": "followup", "when": "D+30", "channel": "opt-in only",
@@ -194,8 +232,11 @@ def main(argv=None) -> int:
     spec = build_spec(cfg)
 
     topic = cfg.get("topic", {}) or {}
+    prod = cfg.get("product") or {}
     hits = scan_banned(str(topic.get("pre", {}).get("q", "")) + " "
-                       + str(topic.get("post", {}).get("q", "")))
+                       + str(topic.get("post", {}).get("q", "")) + " "
+                       + " ".join(str(x) for x in (prod.get("extra_features") or []))
+                       + " " + str(prod.get("name", "")))
     if hits:
         msg = f"§5 금지표현 (주제 슬롯): {', '.join(hits)}"
         if args.strict:

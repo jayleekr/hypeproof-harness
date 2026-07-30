@@ -16,6 +16,12 @@ Turn one engagement config into **three** feedback forms — **pre** (D-7, remot
 - **Fixed core + topic slot.** The core (confidence baseline, value, NPS, sustained-use) is identical for every lecture — that's what lets you compare cohorts and measure the confidence delta (PC3→AC2→F2). Only the **topic slot** changes per engagement. The core lives in `form_spec_generator.py`, not in config, on purpose.
 - **Own the noun, rent the surface.** The form is a rentable surface (Google Forms today, Tally/Studio tomorrow). What we own = the **question schema** (this skill) and the **feedback record** (`workshop.yaml`). The generator is the single source of truth; Apps Script is one renderer.
 - **Two tracks, physically separate.** The feedback track is anonymous (participant code + phone-last-4 rejoin key). The **re-contact track** (name/contact, opt-in) is `internal_only` and must land in a **different sheet** — never mixed into anonymous feedback, or sales collateral is contaminated. This is how a one-off becomes an ongoing relationship: consented contact is the `cap.identity` Contact record.
+- **Continued-use intent is a separate signal from satisfaction.** "강의가 좋았다"(AC1/AC4) and
+  "이 도구를 계속 쓰겠다"(AC6) are different answers, and only the second is a product signal.
+  AC6→AC7 asks *whether* and *under what condition* — the condition list is the roadmap input.
+  Phrasing rule: hypothetical only ("만약 계속 쓰신다면"), never price, plan, or launch timing —
+  an unshipped subscription must not be implied by a survey. Product name comes from
+  `product.name` in config; `product.extra_features` appends to the core list, never replaces it.
 - **Sustained use is the real proof.** Workshop-day satisfaction is weak evidence. The follow-up form (D+30) measures whether the tool is still used — the recurring-value (AX Care) signal.
 
 ## Which agent creates the forms, and when
@@ -30,7 +36,7 @@ This is recurring **operations** (`cap.automation`: job = prompt + schedule + bu
 **1) Generate the spec (runs here / CI — verified):**
 ```bash
 python3 skills/workshop-feedback/form_spec_generator.py CONFIG.yaml -o forms.spec.json --strict
-# -> 3 forms, ~21 items. Fixed core + this engagement's topic slot.
+# -> 3 forms, ~24 items. Fixed core + this engagement's topic slot.
 ```
 Config lives in the consumer repo per engagement; copy a template:
 - `templates/feedback.config.example.dental.yaml` (7/29 치과, filled)

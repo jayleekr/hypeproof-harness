@@ -92,7 +92,12 @@ function addItem(form, it) {
       form.addMultipleChoiceItem().setTitle(it.q).setChoiceValues(it.options).setRequired(!!it.required);
       break;
     case 'choice_multi':
-      form.addCheckboxItem().setTitle(it.q).setChoiceValues(it.options);
+      var cb = form.addCheckboxItem().setTitle(it.q).setChoiceValues(it.options);
+      // Google Forms 분기는 섹션 단위라 문항 단위 depends_on을 그대로 못 옮긴다.
+      // 강제하지 않고 안내 문구로 낮춘다 — 조건 불충족 응답은 집계에서 걸러낸다.
+      if (it.depends_on && it.depends_on.not) {
+        cb.setHelpText('앞 문항에서 “' + it.depends_on.not + '”를 고르셨다면 건너뛰셔도 됩니다.');
+      }
       break;
     default:
       form.addTextItem().setTitle(it.q);
