@@ -55,6 +55,9 @@ function buildOnly(key) {
 
 // Apps Script의 실행 드롭다운은 인자 없는 함수만 띄운다 — buildOnly(key)는 거기서
 // 고를 수 없다. 그래서 폼 종류마다 인자 없는 래퍼를 둔다. 이게 실제로 누르는 버튼이다.
+/** 이미 만든 폼의 참가자 링크를 다시 찍는다 — 로그를 놓쳤거나 edit URL만 가진 경우. */
+function printPublishedUrl(formId) { return FormApp.openById(formId).getPublishedUrl(); }
+
 function buildPre()   { return buildOnly('pre'); }
 function buildPost()  { return buildOnly('post'); }
 function buildFollowup() { return buildOnly('followup'); }
@@ -71,7 +74,10 @@ function buildForm(f) {
   var ss = SpreadsheetApp.create(f.title + ' — 응답');
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
   shareWithReader(ss); // auto-share so fetch_responses.py can read — no manual step
-  return f.key + ' -> form:' + form.getEditUrl() + '  sheet:' + ss.getUrl();
+  // 참가자에게 보내는 건 published URL이다. edit URL만 찍으면 그걸 그대로 배포해
+  // 참가자가 폼 편집 화면을 열게 된다 — 반드시 둘 다 남긴다.
+  return f.key + ' -> 참가자링크:' + form.getPublishedUrl()
+       + '\n         편집:' + form.getEditUrl() + '\n         응답시트:' + ss.getUrl();
 }
 
 // Grant the response sheet to the reader service account at creation time, so no
@@ -100,7 +106,8 @@ function buildRecontactForm(parent) {
   var ss = SpreadsheetApp.create(parent.title + ' — 연락처(INTERNAL)');
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
   shareWithReader(ss);
-  return 'recontact -> form:' + form.getEditUrl() + '  sheet(INTERNAL):' + ss.getUrl();
+  return 'recontact -> 참가자링크:' + form.getPublishedUrl()
+       + '\n              편집:' + form.getEditUrl() + '\n              응답시트(INTERNAL):' + ss.getUrl();
 }
 
 function addItem(form, it) {
