@@ -31,6 +31,28 @@ function buildAll() {
   return made;
 }
 
+/**
+ * Rebuild ONE form (and its re-contact companion, if it has that block):
+ *   buildOnly('post')
+ * Why: a form with live responses must not be recreated, but a sibling that
+ * hasn't shipped yet still needs the current schema. buildAll() would clobber
+ * the whole set with fresh URLs; this touches only the key you name.
+ * Creates NEW form + sheet — the old one is left untouched, retire it by hand.
+ */
+function buildOnly(key) {
+  if (!SPEC.forms) throw new Error('SPEC empty — paste forms.spec.json into SPEC.');
+  var target = null;
+  SPEC.forms.forEach(function (f) { if (f.key === key) target = f; });
+  if (!target) throw new Error('no form with key: ' + key);
+  var made = [buildForm(target)];
+  var hasRecontact = target.sections.some(function (s) {
+    return s.items.some(function (i) { return i.type === 'recontact'; });
+  });
+  if (hasRecontact) made.push(buildRecontactForm(target));
+  Logger.log('Created (' + key + '):\n' + made.join('\n'));
+  return made;
+}
+
 function buildForm(f) {
   var form = FormApp.create(f.title);
   form.setDescription('[' + f.when + ' · ' + f.channel + '] ' + (SPEC.meta.engagement || ''));
