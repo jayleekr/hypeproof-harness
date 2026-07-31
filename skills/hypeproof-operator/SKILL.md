@@ -46,13 +46,14 @@ Never patch vendored copies inside consumer repos when the canonical file lives 
 ## Default Workflow
 
 1. Scope: identify the exact HypeProof repo set and reject accidental personal/side repos.
-2. Inspect: read policy, current PRs/issues, CI, deploy state, and local dirty worktrees before mutating.
+2. Inspect: read policy, current PRs/issues, CI, deploy state, and local dirty worktrees before mutating. Skip issues already carrying a fresh `wip` claim — another session owns them.
 3. Track: create or update a GitHub issue for governance/security/docs/deploy work unless the task is a tiny read-only check.
-4. Branch: use `fix/`, `feat/`, `docs/`, or `chore/`; avoid direct `main` pushes.
-5. Change: keep edits narrow and aligned with the target repo.
-6. Validate: run the smallest meaningful local tests plus repo-specific checks.
-7. PR: include `Closes #...` or a clear issue link, request all HypeProof reviewers, and explain risk.
-8. Monitor: watch CI, reviews, branch protection, deploys, and merge status until the work is merged or blocked by an external condition.
+4. Claim: before touching code, take the issue — `gh issue edit <N> --add-label wip --add-assignee @me` plus a comment naming your session and branch. Drop `wip` when done; a merged `Closes #<N>` PR releases it implicitly. A claim older than 24h (by its comment timestamp) is stale and reclaimable. Convention only — no CI check enforces it (WEEKLY-LOOP.ko.md §6.0).
+5. Branch: use `fix/`, `feat/`, `docs/`, or `chore/`; avoid direct `main` pushes.
+6. Change: keep edits narrow and aligned with the target repo.
+7. Validate: run the smallest meaningful local tests plus repo-specific checks.
+8. PR: include `Closes #...` or a clear issue link, request all HypeProof reviewers, and explain risk.
+9. Monitor: watch CI, reviews, branch protection, deploys, and merge status until the work is merged or blocked by an external condition.
 
 ## Governance Tasks
 
