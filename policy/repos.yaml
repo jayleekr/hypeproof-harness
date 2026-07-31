@@ -64,6 +64,44 @@ repositories:
   - owner: jayleekr
     name: hypeprooflab
     visibility: private
+    # ========================= HOLD — DO NOT FLIP =========================
+    # `target_visibility: public` records the eventual GOAL. It is NOT an
+    # instruction, NOT a queued action, and NOT clearance.
+    #
+    # Nothing in this harness acts on it. Verified consumers of the key:
+    #   - scripts/repo-governance/audit.py:119-137 (validate_policy) — the only
+    #     semantic consumer: enum-checks the value and, when it differs from
+    #     `visibility`, REQUIRES a non-empty `public_readiness.blocked_by` and
+    #     the `temporary-private-until-oauth-purge` exception.
+    #   - tests/repo_governance/test_policy.py:53-57 — pins this exact state.
+    #   - docs/REPO-GOVERNANCE.ko.md "Public Readiness Holds" — the convention.
+    #   - apply.py NEVER sends `visibility`/`private` to the GitHub API, and the
+    #     live audit compares only `visibility` (audit.py:235). No automation can
+    #     flip this repo.
+    # So the only path to public is a human — or an agent following
+    # skills/hypeproof-operator — running `gh repo edit --visibility public`
+    # because this field said "public". That is the risk this comment exists to
+    # stop.
+    #
+    # Going public publishes the ENTIRE origin/main history, not just HEAD, and
+    # is IRREVERSIBLE: clones, forks, and search/LLM caches survive any revert.
+    # That history is NOT cleared. Prerequisites, in order: third-party
+    # confidentiality clearance, then the coordinated history purge. See
+    # TENANT-BOUNDARY-v0.1.md — finding B-7, remediation P-1-4 (this hold),
+    # P-1-3 (clearance), P-1-8 (purge). Purge before clearance destroys the
+    # forensic record; do not reorder them.
+    #
+    # HOW TO EXPRESS THE HOLD — the enforced part is `public_readiness.blocked_by`
+    # below, not this comment. Do NOT invent a `target_visibility` value: the enum
+    # is public/private/internal only, so `held`/`blocked`/anything else is a
+    # CRITICAL policy error that makes `apply.py` exit 4 and fails the daily
+    # governance audit. That is a broken pipeline, not a hold.
+    # Equally, do NOT "quiet" this by deleting `target_visibility` or setting it
+    # to `private`: both make `target_visibility == visibility`, which switches
+    # off the blocked_by and exception requirements entirely (verified: 0
+    # findings) and silently retires the record of the hold.
+    # Clearing a blocker means closing it in reality, not deleting the line.
+    # ======================================================================
     target_visibility: public
     profile: content-vault
     lifecycle: product
@@ -82,6 +120,19 @@ repositories:
           reason: Rotate/revoke the exposed Google OAuth client secret and verify the historical commit is no longer fetchable by SHA.
         - issue: jayleekr/hypeprooflab#100
           reason: Complete tracked text/PDF/image PII sweep before making the content repo public again.
+        # Deliberately NOT filed as a GitHub issue in hypeprooflab: a tracker
+        # entry describing what is in the history is itself an unpurgeable
+        # disclosure to that repo's non-employee collaborators, and no git
+        # operation removes an issue. Tracked in this policy file and in the
+        # offline decision record instead. Closing #96 and #100 does NOT clear
+        # this item — it is separate work with a separate approver.
+        - issue: jayleekr/hypeproof-harness#98
+          reason: >-
+            HELD pending third-party confidentiality clearance and the coordinated
+            history purge. HEAD cleanliness is not sufficient — a public flip
+            exposes the full origin/main history and cannot be undone. Sequence and
+            scope are in TENANT-BOUNDARY-v0.1.md (B-7; P-1-3 clearance, then P-1-8
+            purge). Requires a named human approver, not a passing CI run.
       verifier:
         pr: jayleekr/hypeprooflab#120
         workflow: OAuth purge verification
@@ -119,8 +170,22 @@ repositories:
         expires_at: 2026-12-31
       - id: temporary-private-until-oauth-purge
         owner: jayleekr
+        # NOTE: audit.py:126-137 hard-requires THIS id whenever
+        # target_visibility differs from visibility. It expires 2026-08-31, which
+        # will make the whole policy invalid (expired-exception finding -> apply.py
+        # exit 4 -> red governance audit). That failure is fail-closed and must be
+        # resolved by re-dating this exception after review, NOT by removing
+        # target_visibility and NOT by flipping visibility to public.
         reason: Target visibility is public, but the repo must remain private until the exposed OAuth credential is rotated and the historical commit purge verifier passes.
         expires_at: 2026-08-31
+      - id: lab-public-readiness-tenant-history-clearance
+        owner: jayleekr
+        reason: >-
+          Keep private until third-party confidentiality clearance and the
+          coordinated history purge are both complete (TENANT-BOUNDARY-v0.1.md
+          B-7, P-1-3, P-1-8). Expiry is a re-review trigger only — reaching
+          expires_at is NOT clearance and must never be read as one.
+        expires_at: 2026-12-31
       - id: private-branch-protection-plan-limit
         owner: jayleekr
         reason: Personal private repo branch protection requires GitHub Pro/Team or Organization before hard enforcement.
