@@ -119,6 +119,12 @@ AI는 실행).
    comment the new context on the existing issue instead, and ensure it
    carries the cycle label and a valid ETA (add/update if the user agrees).
 
+   An open issue carrying a `wip` label is already claimed by another session
+   (WEEKLY-LOOP.ko.md §6.0). Treat it as work in progress: add context as a
+   comment, never file a parallel issue and never start executing it. A claim
+   whose `claim:` comment is more than 24h old is stale and may be reclaimed —
+   say so in a comment before taking it.
+
 7. Show the full plan (repo, title, body, **theme**, dedup verdicts) and get
    the user's confirmation. Apply their edits.
 
@@ -208,6 +214,10 @@ whose deadline is an event, not the coming Monday.
 ## Guardrails
 
 - Never file issues without showing the drafts and getting confirmation.
+- Never start execution on an issue carrying someone else's fresh `wip` claim,
+  and never leave your own `wip` behind — drop it when the work lands (a merged
+  `Closes #<N>` PR releases it implicitly). This is a convention, not a gate:
+  nothing in CI checks it (WEEKLY-LOOP.ko.md §6.0, §9.1).
 - Never invent an owner — ask.
 - Never set an ETA after the cycle date — split the work instead.
 - Never close a cycle issue without evidence. Leave `Evidence: <GitHub PR /
