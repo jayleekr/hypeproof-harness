@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hypeproof studio quality dash board</title>
+  <style>
+    :root {
+      --bg: #eef3f6;
+      --paper: #ffffff;
+      --ink: #13202b;
+      --muted: #637280;
+      --line: #d7e0e7;
+      --blue: #2369a8;
+      --red: #df493f;
+      --yellow: #c99300;
+      --green: #12956f;
+      --shadow: 0 12px 30px rgba(36, 56, 72, .09);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    main { max-width: 1220px; margin: 0 auto; padding: 40px 24px 72px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 56px;
+      align-items: start;
+      padding: 22px 0 28px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 16px;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      background: var(--blue);
+      transform: rotate(45deg);
+    }
+    h1 {
+      max-width: 760px;
+      margin: 0 0 18px;
+      font-size: 72px;
+      line-height: .95;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+    h2 { margin: 0; font-size: 24px; letter-spacing: 0; }
+    h3 { margin: 0; font-size: 20px; letter-spacing: 0; }
+    p { margin: 0; color: var(--muted); }
+    .settings, .panel, .issue, .report {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .settings { padding: 18px; }
+    .settings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 62px;
+      height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      color: white;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .badge.Red { background: var(--red); }
+    .badge.Yellow { background: var(--yellow); }
+    .badge.Green, .badge.Ready { background: var(--green); }
+    .badge.Today { background: var(--blue); }
+    .badge.NotReady { background: var(--red); }
+    label { display: block; color: #26333e; font-size: 12px; font-weight: 800; margin: 12px 0 6px; }
+    input, select {
+      width: 100%;
+      height: 42px;
+      border: 1px solid #cbd6de;
+      border-radius: 6px;
+      padding: 0 12px;
+      color: var(--ink);
+      background: white;
+      font: inherit;
+      font-weight: 700;
+    }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    button {
+      min-height: 42px;
+      border-radius: 6px;
+      border: 1px solid #a9bfce;
+      background: white;
+      color: #174d7e;
+      font-weight: 850;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.primary { background: var(--blue); border-color: var(--blue); color: white; }
+    .section {
+      display: grid;
+      grid-template-columns: 380px minmax(0, 1fr);
+      gap: 36px;
+      align-items: start;
+      padding: 36px 0 0;
+      border-top: 1px solid rgba(19, 32, 43, .06);
+    }
+    .section-note { padding-top: 8px; }
+    .ready-card {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) 210px;
+      gap: 20px;
+      align-items: center;
+      min-height: 112px;
+      padding: 18px;
+    }
+    .number {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #e5f1fb;
+      color: var(--blue);
+      font-size: 22px;
+      font-weight: 900;
+    }
+    .url-box {
+      border: 1px dashed var(--blue);
+      border-radius: 6px;
+      padding: 14px;
+      font-weight: 850;
+      color: #164c7e;
+      overflow-wrap: anywhere;
+    }
+    .issues {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .issue { padding: 16px; }
+    .issue-top { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+    .mini { color: var(--red); font-size: 12px; font-weight: 900; text-transform: uppercase; }
+    .issue dl { display: grid; grid-template-columns: 82px 1fr; margin: 12px 0 0; gap: 0; }
+    .issue dt, .issue dd {
+      margin: 0;
+      padding: 7px 0;
+      border-top: 1px solid #e6edf2;
+      font-size: 13px;
+    }
+    .issue dd { text-align: right; color: #31414e; }
+    .gate { grid-column: 1 / -1; }
+    .gate-head {
+      display: grid;
+      grid-template-columns: 108px minmax(0, 1fr) 82px;
+      align-items: stretch;
+      border: 1px solid var(--line);
+      border-radius: 8px 8px 0 0;
+      overflow: hidden;
+      background: white;
+    }
+    .gate + .gate { margin-top: 16px; }
+    .gate-id {
+      display: grid;
+      place-items: center;
+      color: white;
+      font-size: 31px;
+      font-weight: 900;
+      min-height: 96px;
+    }
+    .gate-id span { display: block; font-size: 12px; text-align: center; }
+    .gate-id.G1 { background: var(--red); }
+    .gate-id.G2 { background: var(--yellow); }
+    .gate-id.G3 { background: var(--green); }
+    .gate-title { padding: 20px; }
+    .counter {
+      display: grid;
+      place-items: center;
+      color: inherit;
+      font-size: 35px;
+      font-weight: 900;
+    }
+    .counter.Red { color: var(--red); }
+    .counter.Yellow { color: var(--yellow); }
+    .counter.Green { color: var(--green); }
+    .checks {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: white;
+      border: 1px solid var(--line);
+      border-top: 0;
+      border-radius: 0 0 8px 8px;
+      overflow: hidden;
+    }
+    .check {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      align-items: center;
+      min-height: 48px;
+      gap: 8px;
+      padding: 10px 14px;
+      border-top: 1px solid #e6edf2;
+      font-size: 13px;
+      font-weight: 750;
+    }
+    .check:nth-child(odd) { border-right: 1px solid #e6edf2; }
+    .check input { width: 16px; height: 16px; padding: 0; }
+    .reports {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .report { padding: 18px; min-height: 130px; }
+    .report strong { display: block; font-size: 12px; margin-bottom: 6px; }
+    .report strong.G1 { color: var(--red); }
+    .report strong.G2 { color: var(--yellow); }
+    .report strong.G3 { color: var(--green); }
+    .report strong.REVIEW { color: #5a49ad; }
+    .report b { display: block; font-size: 17px; margin-bottom: 10px; overflow-wrap: anywhere; }
+    .dropzone {
+      display: grid;
+      gap: 6px;
+      place-items: center;
+      min-height: 84px;
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px dashed #9eb6c8;
+      border-radius: 6px;
+      background: #f6fafc;
+      color: #315166;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 800;
+      transition: .15s;
+    }
+    .dropzone.dragover {
+      border-color: var(--blue);
+      background: #e8f3fb;
+      color: var(--blue);
+    }
+    .dropzone.uploaded {
+      place-items: start;
+      border-style: solid;
+      border-color: #add8ca;
+      background: #f1fbf7;
+      color: #126b54;
+      text-align: left;
+    }
+    .dropzone small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .prep {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 16px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 13px 14px; border-top: 1px solid #e6edf2; text-align: left; }
+    th { border-top: 0; font-size: 13px; }
+    td { font-size: 14px; }
+    .verdict-row {
+      display: grid;
+      grid-template-columns: 70px minmax(0, 1fr) 92px;
+      gap: 14px;
+      align-items: center;
+      padding: 13px 14px;
+      border-top: 1px solid #e6edf2;
+      font-size: 14px;
+    }
+    .footnote {
+      margin-top: 28px;
+      border-left: 4px solid var(--blue);
+      background: #f7fbfe;
+      padding: 18px 20px;
+      color: #26333e;
+    }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      max-width: 360px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      background: #13202b;
+      color: white;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: .2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 900px) {
+      main { padding: 22px 14px 48px; }
+      .hero, .section, .prep { grid-template-columns: 1fr; gap: 20px; }
+      h1 { font-size: 46px; }
+      .ready-card, .gate-head { grid-template-columns: 1fr; }
+      .issues, .reports, .checks { grid-template-columns: 1fr; }
+      .check:nth-child(odd) { border-right: 0; }
+      .buttons { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div>
+        <div class="eyebrow">강의별 Studio 사용 판정</div>
+        <h1>hypeproof studio quality dash board</h1>
+        <p>이 페이지는 강의 오픈 조건이 아니다. 각 강의에서 HypeProof Studio를 사용해도 되는지 강의별로 판정하는 운영 대시보드다. 강의가 정해지면 단일 준비 페이지가 생기고, GitHub 이슈, 체크리스트, 증거 리포트, 리뷰 상태가 모두 그 강의 단위로 묶인다.</p>
+      </div>
+      <aside class="settings">
+        <div class="settings-head">
+          <h2>강의 설정</h2>
+          <span class="badge Red" id="topStatus">Red</span>
+        </div>
+        <label for="course">강의명</label>
+        <input id="course">
+        <label for="date">강의 날짜</label>
+        <input id="date" type="date">
+        <label for="readyPage">단일 준비 페이지</label>
+        <input id="readyPage">
+        <div class="buttons">
+          <button class="primary" id="copyIssues">GitHub 이슈 명령</button>
+          <button id="resetDemo">데모 초기화</button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section">
+      <h2>단일 준비 페이지</h2>
+      <p class="section-note">모두가 같은 곳을 본다. 다운로드 링크, 토큰 발급, 세션 열기, 커리큘럼, 체크리스트, 리포트, GitHub 이슈가 강의별로 하나에 모인다.</p>
+      <div class="panel ready-card">
+        <div class="number">1</div>
+        <div>
+          <h3 id="readyTitle"></h3>
+          <p>이 강의에서 Studio를 사용하기 위한 준비 상태만 본다. 다른 강의, 다른 링크, 다른 문서를 섞지 않는다.</p>
+        </div>
+        <div class="url-box" id="readyUrl"></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>강의별 GitHub 이슈</h2>
+      <p class="section-note">강의 날짜가 정해지면 강의명-날짜 prefix로 G1/G2/G3 이슈가 발행된다. 각 이슈에는 담당자, 완료 예정일, 리포트, 리뷰 상태가 붙는다.</p>
+      <div class="issues" id="issues"></div>
+    </section>
+
+    <section class="section">
+      <h2>Studio 사용 게이트</h2>
+      <p class="section-note">체크는 강의별로 닫힌다. 한 강의에서 통과했다고 다른 강의가 자동 통과되는 것은 아니다.</p>
+      <div id="gates" class="gate"></div>
+    </section>
+
+    <section class="section">
+      <h2>보고서와 리뷰</h2>
+      <p class="section-note">보고서는 “여기 적어둔 설명”이 아니라 강의별 증거 파일이다. 각 리포트가 올라가고 AI 또는 사람이 리뷰해야 Green으로 간다.</p>
+      <div class="reports" id="reports"></div>
+    </section>
+
+    <section class="section">
+      <h2>강의 준비판</h2>
+      <p class="section-note">현재 선택된 강의 기준으로 Red/Yellow/Green 전환 예정일을 잡는다. 날짜 없는 Red/Yellow는 관리되고 있는 상태가 아니다.</p>
+      <div class="prep">
+        <div class="panel">
+          <table>
+            <thead><tr><th colspan="3">Green 전환 계획</th></tr></thead>
+            <tbody id="plan"></tbody>
+          </table>
+        </div>
+        <div class="panel" id="verdict"></div>
+      </div>
+    </section>
+
+    <div class="footnote">한 줄 정의: 이 페이지는 “강의를 열어도 되는가”가 아니라 “이 강의에서 HypeProof Studio를 써도 되는가”를 판정한다. 강의별 단일 페이지, GitHub 이슈, 체크리스트, 리포트, AI/사람 리뷰가 모두 있어야 Studio 사용 가능이다.</div>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const seed = {
+      title: "hypeproof studio quality dash board",
+      course: "SK 바이오팜 AI 게임 창작 워크숍",
+      date: "2026-08-17",
+      slug: "sk-biopharm-2026-08-17",
+      repo: "jayleekr/hypeproof-studio",
+      ready_page: "https://studio.hypeproof.ai/ready/sk-biopharm-2026-08-17",
+      verdict: "Not Ready",
+      gates: [
+        {
+          id: "G1",
+          name: "설치 후 Studio 첫 응답까지 간다",
+          owner: "Studio Ops",
+          due: "2026-08-07",
+          report: "install-session-trace.md",
+          review: "AI 1차, 사람 최종",
+          status: "Red",
+          items: [
+            "설치 화면이 단일 준비 페이지에 있고 학생도 접근 가능",
+            "토큰 발급과 세션 열기 화면이 단일 준비 페이지에 있음",
+            "토큰 발급과 세션 열기가 3분 안에 완료",
+            "토큰 끊김, 만료, 권한 오류의 복구 행동이 보임",
+            "Mac/Windows 공개계 설치가 각각 10분 안에 완료",
+            "강의 필수 라이브러리가 양쪽 OS에 설치됨",
+            "Mac/Windows가 fallback 없이 같은 SDK 로직으로 작동",
+            "자기 workspace path와 실행 컨텍스트를 정확히 읽음"
+          ].map(text => ({ text, done: false }))
+        },
+        {
+          id: "G2",
+          name: "커리큘럼을 끝까지 완수한다",
+          owner: "Curriculum Ops",
+          due: "2026-08-10",
+          report: "participant-runthroughs.md",
+          review: "커리큘럼 owner 승인",
+          status: "Red",
+          items: [
+            "커리큘럼이 확정되고 리뷰 완료",
+            "모든 참가자가 Studio로 커리큘럼을 직접 완수",
+            "참가자별 완주 증거가 G2 이슈에 업로드됨",
+            "강의를 방해하는 과도한 보안/승인/안전 장치가 없음",
+            "이미지, 프롬프트, 요구사항이 산출물에 실제 반영됨",
+            "파일 저장은 실제 write와 존재 확인까지 완료",
+            "preview 또는 브라우저에서 결과물을 직접 확인",
+            "최종 유저가 파일, URL, 저장소, harness 중 하나를 가져감"
+          ].map(text => ({ text, done: false }))
+        },
+        {
+          id: "G3",
+          name: "정해진 시간보다 20분 일찍 끝낸다",
+          owner: "Performance Ops",
+          due: "2026-08-12",
+          report: "timebox-benchmark.md",
+          review: "운영 리허설 승인",
+          status: "Red",
+          items: [
+            "에이전트 응답 속도 Cursor 대비 분석 리포트 존재",
+            "tool calling 속도 Cursor 대비 분석 리포트 존재",
+            "강의 skill과 cohort 시스템 프롬프트가 분리됨",
+            "skill Lazy Loading이 trace로 증명됨",
+            "강의 skill 최적화 리포트 존재",
+            "제한 시간보다 20분 일찍 완주",
+            "브라우저/tool 예산이 결과 검증 단계까지 남음",
+            "동시 접속, 429, 대기, 복구 흐름이 검증됨"
+          ].map(text => ({ text, done: false }))
+        }
+      ],
+      reports: [
+        { id: "G1 REPORT", file: "install-session-trace.md", description: "Mac/Windows 설치 시간, 토큰 발급, 세션 열기, 끊김 복구, 첫 응답 캡처." },
+        { id: "G2 REPORT", file: "participant-runthroughs.md", description: "모든 참가자의 완주 trace, 산출물 URL, 실패/복구 로그, take-home 산출물." },
+        { id: "G3 REPORT", file: "timebox-benchmark.md", description: "Cursor 대비 응답/tool 호출 속도, 제한시간 20분 전 완주 여부, 동시 접속 결과." },
+        { id: "REVIEW", file: "ai-human-approval.md", description: "AI 1차 리뷰, 사람 최종 리뷰, Red/Yellow 항목의 Green 전환 예정일." }
+      ],
+      green_plan: [
+        { when: "D-14", status: "Today", text: "강의 날짜 확정, 단일 준비 페이지 생성, GitHub 이슈 발행" },
+        { when: "D-10", status: "Red", text: "G1 설치/토큰/세션 리포트 업로드 및 리뷰" },
+        { when: "D-7", status: "Yellow", text: "G2 참가자 전원 인간 완주 증거 제출" },
+        { when: "D-5", status: "Yellow", text: "G3 속도/툴/동시접속/20분 버퍼 검증" },
+        { when: "D-3", status: "Green", text: "AI 또는 사람 최종 리뷰 완료, Studio 사용 가능 판정" }
+      ]
+    };
+
+    const key = "hypeproof-studio-quality-dashboard";
+    const cohortSource = "../quality/studio/cohorts/sk-biopharm-2026-08-17.json";
+    let state = seed;
+    const $ = selector => document.querySelector(selector);
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+
+    function slugify(value) {
+      return value.toLowerCase().trim().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "") || "cohort";
+    }
+
+    function normalizeReadyPage() {
+      state.slug = `${slugify(state.course)}-${state.date}`;
+      if (!state.ready_page || state.ready_page.includes("/ready/")) {
+        state.ready_page = `https://studio.hypeproof.ai/ready/${state.slug}`;
+      }
+    }
+
+    function gateStatus(gate) {
+      const done = gate.items.filter(item => item.done).length;
+      if (done === gate.items.length) return "Green";
+      if (done > 0) return "Yellow";
+      return "Red";
+    }
+
+    function recalc() {
+      state.gates.forEach(gate => { gate.status = gateStatus(gate); });
+      state.verdict = state.gates.every(gate => gate.status === "Green") ? "Ready" : "Not Ready";
+      localStorage.setItem(key, JSON.stringify(state));
+    }
+
+    function issueCommand(gate) {
+      const title = `${state.course} - ${state.date} - ${gate.id} ${gate.name}`;
+      const labels = [`studio-quality`, `cohort:${state.slug}`, gate.id.toLowerCase(), `due:${gate.due}`];
+      return `python3 scripts/studio-quality-dashboard/dashboard.py create-issues quality/studio/cohorts/${state.slug}.json --apply\n\n# ${title}\n# labels: ${labels.join(", ")}`;
+    }
+
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+      const units = ["B", "KB", "MB", "GB"];
+      const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      const value = bytes / Math.pow(1024, exponent);
+      return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+    }
+
+    function normalizeReports() {
+      state.reports = state.reports.map(report => ({
+        accepts_upload: report.id.startsWith("G"),
+        uploaded: null,
+        ...report
+      }));
+    }
+
+    function render() {
+      normalizeReadyPage();
+      normalizeReports();
+      recalc();
+      $("#topStatus").textContent = state.gates.find(g => g.status === "Red") ? "Red" : state.gates.find(g => g.status === "Yellow") ? "Yellow" : "Green";
+      $("#topStatus").className = `badge ${$("#topStatus").textContent}`;
+      $("#course").value = state.course;
+      $("#date").value = state.date;
+      $("#readyPage").value = state.ready_page;
+      $("#readyTitle").textContent = `${state.course} - ${state.date}`;
+      $("#readyUrl").textContent = state.ready_page;
+
+      $("#issues").innerHTML = state.gates.map(gate => `
+        <article class="issue">
+          <div class="issue-top">
+            <div>
+              <div class="mini">${gate.status === "Green" ? "발행 가능" : "미발행"}</div>
+              <h3>${gate.id} ${escapeHtml(gate.name)}</h3>
+            </div>
+            <span class="badge ${gate.status}">Draft</span>
+          </div>
+          <dl>
+            <dt>담당</dt><dd>${escapeHtml(gate.owner)}</dd>
+            <dt>완료 예정</dt><dd>${escapeHtml(gate.due)}</dd>
+            <dt>리포트</dt><dd>${escapeHtml(gate.report)}</dd>
+            <dt>리뷰</dt><dd>${escapeHtml(gate.review)}</dd>
+          </dl>
+        </article>
+      `).join("");
+
+      $("#gates").innerHTML = state.gates.map((gate, gateIndex) => {
+        const done = gate.items.filter(item => item.done).length;
+        return `
+          <article class="gate">
+            <div class="gate-head">
+              <div class="gate-id ${gate.id}">${gate.id}<span>${gate.id === "G1" ? "첫 실행" : gate.id === "G2" ? "완주" : "시간"}</span></div>
+              <div class="gate-title">
+                <h3>${escapeHtml(gate.name)}</h3>
+                <p>${gate.id === "G1" ? "학생 기기와 운영 기기 모두에서 설치, 토큰 발급, 세션 열기, 첫 응답이 막히지 않아야 한다." : gate.id === "G2" ? "내부 준비자만 한 번 해보는 것이 아니라, 모든 참가자가 유저로서 직접 끝까지 가야 한다." : "완주는 기본이고, 수업 시간 안에서 설명, 오류 대응, 산출물 확인까지 들어와야 한다."}</p>
+              </div>
+              <div class="counter ${gate.status}">${done}/${gate.items.length}</div>
+            </div>
+            <div class="checks">
+              ${gate.items.map((item, itemIndex) => `
+                <label class="check">
+                  <input type="checkbox" data-gate="${gateIndex}" data-item="${itemIndex}" ${item.done ? "checked" : ""}>
+                  <span>${escapeHtml(item.text)}</span>
+                </label>
+              `).join("")}
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      $("#reports").innerHTML = state.reports.map(report => `
+        <article class="report">
+          <strong class="${report.id.split(" ")[0]}">${escapeHtml(report.id)}</strong>
+          <b>${escapeHtml(report.file)}</b>
+          <p>${escapeHtml(report.description)}</p>
+          ${report.accepts_upload ? `
+            <div class="dropzone ${report.uploaded ? "uploaded" : ""}" data-report="${escapeHtml(report.id)}">
+              ${report.uploaded ? `
+                <span>${escapeHtml(report.uploaded.name)}</span>
+                <small>${formatBytes(report.uploaded.size)} · ${escapeHtml(report.uploaded.uploaded_at)}</small>
+              ` : `
+                <span>보고서 파일 드래그앤드롭</span>
+                <small>Markdown, PDF, 이미지, 로그 파일</small>
+              `}
+            </div>
+          ` : ""}
+        </article>
+      `).join("");
+
+      $("#plan").innerHTML = state.green_plan.map(row => `
+        <tr>
+          <td><b>${escapeHtml(row.when)}</b></td>
+          <td>${escapeHtml(row.text)}</td>
+          <td><span class="badge ${row.status}">${escapeHtml(row.status)}</span></td>
+        </tr>
+      `).join("");
+
+      $("#verdict").innerHTML = `
+        <table>
+          <thead><tr><th colspan="3">현재 판정</th></tr></thead>
+        </table>
+        ${state.gates.map(gate => `
+          <div class="verdict-row">
+            <b>${gate.id}</b>
+            <span>${gate.status === "Green" ? "증거와 리뷰 완료" : gate.status === "Yellow" ? "일부 증거가 있으나 완료 전" : "단일 링크와 증거가 아직 필요"}</span>
+            <span class="badge ${gate.status}">${gate.status}</span>
+          </div>
+        `).join("")}
+        <div class="verdict-row">
+          <b>결론</b>
+          <span>${state.verdict === "Ready" ? "이 강의에서 Studio 사용 가능" : "지금은 이 강의에서 Studio 사용 승인 전"}</span>
+          <span class="badge ${state.verdict.replace(" ", "")}">${state.verdict}</span>
+        </div>
+      `;
+
+      document.querySelectorAll(".check input").forEach(input => {
+        input.addEventListener("change", event => {
+          const gate = Number(event.currentTarget.dataset.gate);
+          const item = Number(event.currentTarget.dataset.item);
+          state.gates[gate].items[item].done = event.currentTarget.checked;
+          render();
+        });
+      });
+      document.querySelectorAll(".dropzone").forEach(zone => {
+        zone.addEventListener("dragover", event => {
+          event.preventDefault();
+          zone.classList.add("dragover");
+        });
+        zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+        zone.addEventListener("drop", event => {
+          event.preventDefault();
+          zone.classList.remove("dragover");
+          const file = event.dataTransfer.files[0];
+          if (!file) return;
+          const report = state.reports.find(item => item.id === zone.dataset.report);
+          if (!report) return;
+          report.uploaded = {
+            name: file.name,
+            size: file.size,
+            type: file.type || "application/octet-stream",
+            uploaded_at: new Date().toISOString()
+          };
+          recalc();
+          render();
+          showToast(`${report.id} 보고서를 연결했습니다.`);
+        });
+      });
+    }
+
+    $("#course").addEventListener("input", event => { state.course = event.target.value; render(); });
+    $("#date").addEventListener("input", event => { state.date = event.target.value; render(); });
+    $("#readyPage").addEventListener("input", event => { state.ready_page = event.target.value; recalc(); });
+    $("#resetDemo").addEventListener("click", async () => {
+      localStorage.removeItem(key);
+      state = await loadSource();
+      render();
+      showToast("데모 상태를 초기화했습니다.");
+    });
+    $("#copyIssues").addEventListener("click", async () => {
+      const text = state.gates.map(issueCommand).join("\n\n---\n\n");
+      await navigator.clipboard.writeText(text);
+      showToast("GitHub 이슈 발행 명령을 복사했습니다.");
+    });
+
+    async function loadSource() {
+      const saved = JSON.parse(localStorage.getItem(key) || "null");
+      if (saved) return saved;
+      try {
+        const response = await fetch(cohortSource, { cache: "no-store" });
+        if (!response.ok) throw new Error(`source fetch failed: ${response.status}`);
+        return await response.json();
+      } catch {
+        return JSON.parse(JSON.stringify(seed));
+      }
+    }
+
+    loadSource().then(data => {
+      state = data;
+      render();
+    });
+  </script>
+</body>
+</html>
