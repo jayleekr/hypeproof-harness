@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "hype-pr" / "pr.py"
@@ -29,22 +31,9 @@ def active_members_from_policy() -> list[str]:
     아니라 소음이고, 소음이 반복되면 사람이 빨간 걸 무시하게 된다. 여기서 확인할 것은
     "정본과 같은가" 이지 "그 이름이 무엇인가" 가 아니다.
     """
-    text = (ROOT / "policy" / "members.yaml").read_text(encoding="utf-8")
-    groups: dict[str, list[str]] = {"admins": [], "writers": []}
-    section = None
-    for raw in text.splitlines():
-        line = raw.split("#")[0].rstrip()
-        if not line.strip():
-            continue
-        key = line.strip().rstrip(":")
-        if key in groups and line.strip().endswith(":"):
-            section = key
-            continue
-        if line.strip().startswith("- ") and section:
-            groups[section].append(line.strip()[2:].strip())
-        elif line.strip().endswith(":") and not line.startswith(" " * 4):
-            section = None
-    return groups["admins"] + groups["writers"]
+    doc = yaml.safe_load((ROOT / "policy" / "members.yaml").read_text(encoding="utf-8"))
+    members = doc.get("members", {}) or {}
+    return list(members.get("admins") or []) + list(members.get("writers") or [])
 
 
 def load_module():

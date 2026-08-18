@@ -19,6 +19,9 @@ permissions:
 jobs:
   lint:
     name: lint (bash -n + path hygiene)
+    # 본문 편집(`edited`)으로는 코드가 바뀌지 않는다. 본문을 읽는 pr-policy 만
+    # 다시 돌면 되고, 무거운 잡까지 매번 도는 것은 낭비다.
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +102,9 @@ jobs:
 
   gate:
     name: gate (tests/run.sh against mock consumers)
+    # 본문 편집(`edited`)으로는 코드가 바뀌지 않는다. 본문을 읽는 pr-policy 만
+    # 다시 돌면 되고, 무거운 잡까지 매번 도는 것은 낭비다.
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -126,6 +132,9 @@ jobs:
 
   repo-governance:
     name: repo-governance (policy validation)
+    # 본문 편집(`edited`)으로는 코드가 바뀌지 않는다. 본문을 읽는 pr-policy 만
+    # 다시 돌면 되고, 무거운 잡까지 매번 도는 것은 낭비다.
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
