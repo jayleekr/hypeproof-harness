@@ -57,7 +57,11 @@ def matches(path: str, patterns: list[str]) -> bool:
 
 def control_plane_hits(files: list[str], policy: dict) -> list[str]:
     patterns = [p["path"] for p in policy.get("protected_paths", [])]
-    return [f for f in files if matches(f, patterns)]
+    # 면제가 보호보다 강하다. 넓은 글롭(`policy/**`) 안에서 한 파일만 빼려면 이 방향뿐이다.
+    # 면제 목록은 policy/control-plane.yaml 이 정하고, 그 파일 자체는 보호 대상이라
+    # 면제를 늘리는 변경은 여전히 사람 승인을 받는다.
+    exempt = [p["path"] for p in policy.get("exempt_paths", [])]
+    return [f for f in files if matches(f, patterns) and not matches(f, exempt)]
 
 
 def check_pr(number: str, policy: dict) -> list[str]:
