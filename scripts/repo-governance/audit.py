@@ -164,6 +164,29 @@ def validate_policy(policy: dict[str, Any], today: dt.date | None = None) -> lis
         if checks is not None and not isinstance(checks, list):
             findings.append(_policy_error(full, "required_status_checks", "list", type(checks).__name__))
 
+        # waiver 는 지적을 덮으므로 exceptions 와 같은 무게로 검사한다.
+        # owner·reason·expires_at 이 없으면 "누가 왜 언제까지"가 없는 은폐가 된다.
+        for waiver in repo.get("waivers", []) or []:
+            missing = [k for k in ("id", "owner", "reason", "expires_at", "waives") if not waiver.get(k)]
+            if missing:
+                findings.append(_policy_error(full, "waivers", "id/owner/reason/expires_at/waives", missing))
+                continue
+            if not isinstance(waiver.get("waives"), list):
+                findings.append(_policy_error(
+                    full, f"waiver:{waiver['id']}:waives", "list", type(waiver.get("waives")).__name__))
+                continue
+            for target in waiver["waives"]:
+                # `<module>.<field>` 형식만 받는다. 오타는 아무것도 못 덮고 조용히 통과하므로
+                # 형식이라도 강제한다.
+                if not isinstance(target, str) or target.count(".") != 1:
+                    findings.append(_policy_error(
+                        full, f"waiver:{waiver['id']}:waives", "<module>.<field>", target))
+            try:
+                dt.date.fromisoformat(str(waiver["expires_at"]))
+            except ValueError:
+                findings.append(_policy_error(
+                    full, f"waiver:{waiver['id']}:expires_at", "YYYY-MM-DD", waiver.get("expires_at")))
+
         for exc in repo.get("exceptions", []) or []:
             missing = [k for k in ("id", "owner", "reason", "expires_at") if not exc.get(k)]
             if missing:
@@ -294,7 +317,59 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict
     findings.extend(_audit_collaborators(full, repo, members, profile, gh_json))
     findings.extend(_audit_actions(full, repo, profile))
     findings.extend(_audit_branch(full, repo, profile))
-    return findings
+    return apply_waivers(full, repo, findings)
+
+
+def waived_fields(repo: dict[str, Any], today: dt.date | None = None) -> dict[str, dict[str, Any]]:
+    """`<module>.<field>` → 그것을 덮는 waiver. 만료된 waiver 는 덮지 않는다."""
+    today = today or dt.date.today()
+    out: dict[str, dict[str, Any]] = {}
+    for waiver in repo.get("waivers", []) or []:
+        try:
+            if dt.date.fromisoformat(str(waiver.get("expires_at"))) < today:
+                continue  # 만료 — 지적이 다시 보여야 한다
+        except (TypeError, ValueError):
+            continue  # 형식이 틀린 waiver 는 아무것도 덮지 않는다 (validate_policy 가 따로 잡는다)
+        for target in waiver.get("waives", []) or []:
+            out[str(target)] = waiver
+    return out
+
+
+def apply_waivers(full: str, repo: dict[str, Any], findings: list[Finding]) -> list[Finding]:
+    """정책적으로 받아들이기로 한 드리프트를 지적에서 뺀다.
+
+    **왜 이 기능이 필요한가.** 못 고치거나 안 고치기로 한 항목이 매주 빨갛게 뜨면 사람이
+    그 화면을 안 읽게 되고, 그 순간 옆에 있는 진짜 드리프트도 같이 안 읽힌다.
+    hypeprooflab 이 정확히 그 상태였다 — 3건 중 2건은 **개인 계정 private repo 라
+    GitHub 이 변경 자체를 막는** 항목이었다.
+
+    지우는 것이 아니라 **기록하고 만료시킨다.** waiver 에는 owner·reason·expires_at 이
+    있어야 하고(validate_policy 가 강제), 기한이 지나면 지적이 저절로 돌아온다.
+    무엇을 덮었는지는 리포트에 남는다 — 조용히 사라지면 waiver 도 같은 실패가 된다.
+    """
+    waived = waived_fields(repo)
+    if not waived:
+        return findings
+
+    kept: list[Finding] = []
+    for finding in findings:
+        key = f"{finding.module}.{finding.field}"
+        waiver = waived.get(key)
+        if waiver is None:
+            kept.append(finding)
+            continue
+        kept.append(Finding(
+            repo=full,
+            module=finding.module,
+            severity="info",
+            field=finding.field,
+            expected=finding.expected,
+            actual=finding.actual,
+            apply_supported=False,
+            message=(f"waived by {waiver.get('id')} ({waiver.get('owner')}) "
+                     f"until {waiver.get('expires_at')} — {waiver.get('reason')}"),
+        ))
+    return kept
 
 
 def _audit_labels(full: str, profile: dict[str, Any]) -> list[Finding]:
@@ -584,17 +659,29 @@ def main(argv: list[str] | None = None) -> int:
             profile = policy["profiles"][repo["profile"]]
             findings.extend(live_audit_repo(repo, profile, policy["members"]))
 
-    status = "pass" if not findings else "drift"
+    # severity=info 는 waiver 로 받아들인 항목이다. 판정에서는 빼되 **출력에는 남긴다** —
+    # 조용히 사라지면 waiver 가 곧 은폐가 된다. 만료되면 원래 severity 로 돌아온다.
+    actionable = [f for f in findings if f.severity != "info"]
+    status = "pass" if not actionable else "drift"
     if args.json:
-        print(json.dumps({"status": status, "findings": [f.as_dict() for f in findings]}, ensure_ascii=False, indent=2))
+        print(json.dumps({
+            "status": status,
+            "findings": [f.as_dict() for f in actionable],
+            "waived": [f.as_dict() for f in findings if f.severity == "info"],
+        }, ensure_ascii=False, indent=2))
     else:
-        print(render_text(findings))
+        print(render_text(actionable))
+        waived = [f for f in findings if f.severity == "info"]
+        if waived:
+            print("\n-- waived (기록됨 · 만료되면 되살아난다) --")
+            for f in waived:
+                print("%s\t%s.%s\t%s" % (f.repo, f.module, f.field, f.message))
 
-    if any(f.module == "policy" and f.severity == "critical" for f in findings):
+    if any(f.module == "policy" and f.severity == "critical" for f in actionable):
         return 4
-    if any(not f.apply_supported for f in findings):
+    if any(not f.apply_supported for f in actionable):
         return 3
-    if findings:
+    if actionable:
         return 2
     return 0
 
