@@ -92,3 +92,27 @@ protected_paths:
 
   - path: scripts/repo-governance/check_control_plane.py
     neutralizes: The checker that enforces this policy. If it can be edited freely, the gate is moot.
+
+# ── 면제 ─────────────────────────────────────────────────────────────────────
+#
+# 보호 글롭 안에 있지만 사람 승인을 요구하지 않는 경로. 면제가 보호보다 강하다.
+#
+# 면제는 게이트를 약하게 만든다. 그래도 두는 이유는, **매번 우회되는 게이트는 게이트가
+# 아니라 통행세**이기 때문이다. 통행세는 규칙을 지키려는 사람에게만 비용을 물리고
+# 잡아내는 것은 없다. 실제로 그런 일이 있었다 (2026-08-18, PR #111 — 멤버 한 명 추가에
+# 승인자가 한 명뿐이라 관리자 권한으로 넘겼다).
+exempt_paths:
+  - path: policy/members.yaml
+    why: >-
+      멤버 명단은 자주 바뀌고(합류·이탈), 변경 내용이 한눈에 보이며, 되돌리기 쉽다.
+      human_approver 가 사실상 한 명뿐인 지금은 멤버 한 줄을 늘리는 일마다 게이트가
+      우회되고, 그러면 게이트 전체의 무게가 사라진다. 2026-08-18 결정 (Jay).
+    residual_risk: >-
+      이 파일은 apply.py 가 GitHub collaborator 로 그대로 PUT 한다. 따라서 면제는
+      "한 사람이 리뷰 없이 push 권한을 줄 수 있다"를 뜻한다. **`admins:` 에 추가하면
+      repo admin 이 나간다** — 그건 이 면제가 상정한 '멤버 한 줄'보다 무거운 변경이다.
+      더 좁히려면 `admins:` 변경일 때만 게이트를 거는 내용 인지 규칙이 필요하다
+      (지금은 없다 — 필요해지면 그때 만든다).
+    detection: >-
+      hypeprooflab 의 scripts/members_audit.py 가 이 파일을 다섯 번째 축으로 읽고
+      주간 리포트에서 로스터와 대조한다. 명단에 없는 사람이 들어오면 거기서 드러난다.
