@@ -119,6 +119,12 @@ GitHub UI에서 PR URL을 복사한 뒤 `--repo`, `--pr`로 먼저 연습해도 
 | `xoqhdgh1002` | `contributor`, `product` |
 | `JinyongShin` | `backend`, `deploy` |
 | `TJ-kr` | `frontend`, `product` |
+| `rabqatab` | `contributor`, `product` |
+| `J3llyBe4n` | `contributor`, `backend`, `deploy` |
+
+> 이 표는 사본이다. **정본은 `policy/members.yaml` 의 `review_lenses`** 이고 스킬이 읽는
+> 것도 그쪽이다. 위 두 줄은 그 사본이 갈라져 있어서(멤버 둘이 빠져 있었다) 채워 넣은
+> 것이다 — 멤버가 늘면 두 곳을 같이 고쳐라.
 
 변경 파일 경로에서 보안, 배포, 데이터, UI, 문서, governance 위험이 감지되면 risk
 lens 질문도 자동으로 붙는다. 누락된 위험은 `--risk security --risk deploy`처럼

@@ -10,6 +10,7 @@ members:
     - JinyongShin
     - TJ-kr
     - rabqatab
+    - J3llyBe4n
 
 roles:
   maintainer:
@@ -25,3 +26,5 @@ review_lenses:
   JinyongShin: [backend, deploy]
   TJ-kr: [frontend, product]
   rabqatab: [contributor, product]
+  # 2026-08-17 합류. 서버·데이터인프라·시스템이 전공이라 backend/deploy 를 준다.
+  J3llyBe4n: [contributor, backend, deploy]
