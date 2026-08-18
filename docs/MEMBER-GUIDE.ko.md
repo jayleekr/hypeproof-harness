@@ -63,7 +63,8 @@ Jay에게 알려주면 된다.
 |---|---|---|---|
 | **GitHub** (`jayleekr/*` 4개 repo) | 코드 · PR · 머지 | Write | GitHub 알림/이메일에서 초대 4건 수락 |
 | **Vercel** (`hype-proof-lab` 팀) | web(hypeproof-ai.xyz) 등 프론트 배포 | Developer | 이메일 초대 수락 (같은 이메일로 Vercel 가입) |
-| **Supabase** (`sediment` org) | Sediment 프로덕션 Postgres | Developer | 이메일 초대 수락 (같은 이메일로 Supabase 가입) |
+| **HypeProof 포털** (`hypeproof-ai.xyz/members`) | 멤버 문서·재무·기회 보드 | 접근 원장 등재 (admin 이 `/members/admin` 에서) | 등재된 이메일로 로그인 |
+| **Supabase** (`sediment` org) | Sediment 프로덕션 Postgres 직접 조회 | Developer | 이메일 초대 수락 — **DB 를 직접 봐야 하는 사람만** |
 | **Cloudflare** | Studio Worker(api.hypeproof-ai.xyz) 배포 | Jay 계정 경유 | 직접 배포가 필요해지면 Jay에게 요청 |
 | **Fly.io** | Sediment 백엔드 런타임 | Jay 계정 경유 | 직접 배포가 필요해지면 Jay에게 요청 |
 
@@ -71,9 +72,22 @@ Jay에게 알려주면 된다.
 
 1. GitHub: `gh api -X PUT repos/jayleekr/<repo>/collaborators/<github-id> -f permission=push` × 4개 repo (hypeprooflab · hypeproof-studio · sediment · hypeproof-harness)
 2. Vercel: `hype-proof-lab` 팀 → Members → Invite (Developer)
-3. Supabase: `sediment` org → Team → Invite (Developer)
-4. `hypeprooflab/data/members.json`에 멤버 엔트리 추가
+3. **접근 원장: `hypeproof-ai.xyz/members/admin` → 이메일·displayName·역할 등재**
+4. `hypeprooflab/data/members.json`에 멤버 엔트리 추가 (PR)
 5. Discord 채널 초대
+6. Supabase: `sediment` org → Team → Invite (Developer) — **Sediment DB 를 직접 봐야 하는 사람만**
+
+> **3번이 빠지면 그 사람은 `hypeproof-ai.xyz/members` 에 못 들어간다.** 4번(로스터)만
+> 해두면 `/creators` 에는 보이는데 로그인은 안 되고, 화면 어디에도 이유가 안 뜬다.
+> 2026-08-17 에 이 목록에 3번이 없어서 세 명이 그 상태였다 — 본인이 말하기 전까지 몰랐다.
+>
+> 6번(Supabase)은 **멤버 관리 목적으로는 필요 없다.** 접근 원장은 3번의 화면에서 고치고,
+> 그 org 권한은 다른 테넌트의 대화·과금 기록까지 함께 여는 넓은 문이다.
+>
+> 전부 됐는지는 hypeprooflab 에서 한 번에 확인한다 (다섯 축 대조):
+> ```bash
+> APP_DB_URL=<dsn> python3 scripts/members_audit.py
+> ```
 
 ### 머지 정책 (2026-07-07부터)
 
