@@ -3,6 +3,11 @@ name: test
 on:
   pull_request:
     branches: [main]
+    # `edited` 를 명시한다. 기본 타입은 opened/synchronize/reopened 뿐이라, PR 본문에
+    # `Closes #` 를 나중에 채워 넣으면 **다시 검사할 방법이 없었다** — 재실행은 옛 페이로드를
+    # 그대로 replay 해서 고친 본문을 못 본다. 그래서 커밋을 하나 더 만드는 것 말고는
+    # 빨간 게이트를 통과시킬 길이 없었고, 그건 게이트가 아니라 통행세다 (2026-08-18).
+    types: [opened, reopened, synchronize, edited]
   push:
     branches: [main]
   workflow_dispatch:
