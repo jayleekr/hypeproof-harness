@@ -1,0 +1,82 @@
+{
+  "title": "hypeproof studio quality dash board",
+  "course": "SK 바이오팜 AI 게임 창작 워크숍",
+  "date": "2026-08-22",
+  "slug": "sk-biopharm-2026-08-22",
+  "repo": "jayleekr/hypeproof-studio",
+  "ready_page": "https://studio.hypeproof.ai/ready/sk-biopharm-2026-08-22",
+  "created_at": "2026-08-05T11:53:27+00:00",
+  "verdict": "Not Ready",
+  "gates": [
+    {
+      "id": "G1",
+      "name": "설치 후 Studio 첫 응답까지 간다",
+      "owner": "Studio Ops",
+      "due": "2026-08-09",
+      "report": "install-session-trace.md",
+      "review": "AI 1차, 사람 최종",
+      "status": "Red",
+      "items": [
+        {"text": "설치 화면이 단일 준비 페이지에 있고 학생도 접근 가능", "done": false},
+        {"text": "토큰 발급과 세션 열기 화면이 단일 준비 페이지에 있음", "done": false},
+        {"text": "토큰 발급과 세션 열기가 3분 안에 완료", "done": false},
+        {"text": "토큰 끊김, 만료, 권한 오류의 복구 행동이 보임", "done": false},
+        {"text": "Mac/Windows 공개계 설치가 각각 10분 안에 완료", "done": false},
+        {"text": "강의 필수 라이브러리가 양쪽 OS에 설치됨", "done": false},
+        {"text": "Mac/Windows가 fallback 없이 같은 SDK 로직으로 작동", "done": false},
+        {"text": "자기 workspace path와 실행 컨텍스트를 정확히 읽음", "done": false}
+      ]
+    },
+    {
+      "id": "G2",
+      "name": "커리큘럼을 끝까지 완수한다",
+      "owner": "Curriculum Ops",
+      "due": "2026-08-12",
+      "report": "participant-runthroughs.md",
+      "review": "커리큘럼 owner 승인",
+      "status": "Red",
+      "items": [
+        {"text": "커리큘럼이 확정되고 리뷰 완료", "done": false},
+        {"text": "모든 참가자가 Studio로 커리큘럼을 직접 완수", "done": false},
+        {"text": "참가자별 완주 증거가 G2 이슈에 업로드됨", "done": false},
+        {"text": "강의를 방해하는 과도한 보안/승인/안전 장치가 없음", "done": false},
+        {"text": "이미지, 프롬프트, 요구사항이 산출물에 실제 반영됨", "done": false},
+        {"text": "파일 저장은 실제 write와 존재 확인까지 완료", "done": false},
+        {"text": "preview 또는 브라우저에서 결과물을 직접 확인", "done": false},
+        {"text": "최종 유저가 파일, URL, 저장소, harness 중 하나를 가져감", "done": false}
+      ]
+    },
+    {
+      "id": "G3",
+      "name": "정해진 시간보다 20분 일찍 끝낸다",
+      "owner": "Performance Ops",
+      "due": "2026-08-16",
+      "report": "timebox-benchmark.md",
+      "review": "운영 리허설 승인",
+      "status": "Red",
+      "items": [
+        {"text": "에이전트 응답 속도 Cursor 대비 분석 리포트 존재", "done": false},
+        {"text": "tool calling 속도 Cursor 대비 분석 리포트 존재", "done": false},
+        {"text": "강의 skill과 cohort 시스템 프롬프트가 분리됨", "done": false},
+        {"text": "skill Lazy Loading이 trace로 증명됨", "done": false},
+        {"text": "강의 skill 최적화 리포트 존재", "done": false},
+        {"text": "제한 시간보다 20분 일찍 완주", "done": false},
+        {"text": "브라우저/tool 예산이 결과 검증 단계까지 남음", "done": false},
+        {"text": "동시 접속, 429, 대기, 복구 흐름이 검증됨", "done": false}
+      ]
+    }
+  ],
+  "reports": [
+    {"id": "G1 REPORT", "file": "install-session-trace.md", "description": "Mac/Windows 설치 시간, 토큰 발급, 세션 열기, 끊김 복구, 첫 응답 캡처.", "accepts_upload": true, "uploaded": null},
+    {"id": "G2 REPORT", "file": "participant-runthroughs.md", "description": "모든 참가자의 완주 trace, 산출물 URL, 실패/복구 로그, take-home 산출물.", "accepts_upload": true, "uploaded": null},
+    {"id": "G3 REPORT", "file": "timebox-benchmark.md", "description": "Cursor 대비 응답/tool 호출 속도, 제한시간 20분 전 완주 여부, 동시 접속 결과.", "accepts_upload": true, "uploaded": null},
+    {"id": "REVIEW", "file": "ai-human-approval.md", "description": "AI 1차 리뷰, 사람 최종 리뷰, Red/Yellow 항목의 Green 전환 예정일.", "accepts_upload": false, "uploaded": null}
+  ],
+  "green_plan": [
+    {"when": "D-14", "status": "Today", "text": "강의 날짜 확정, 단일 준비 페이지 생성, GitHub 이슈 발행"},
+    {"when": "D-10", "status": "Red", "text": "G1 설치/토큰/세션 리포트 업로드 및 리뷰"},
+    {"when": "D-7", "status": "Yellow", "text": "G2 참가자 전원 인간 완주 증거 제출"},
+    {"when": "D-5", "status": "Yellow", "text": "G3 속도/툴/동시접속/20분 버퍼 검증"},
+    {"when": "D-3", "status": "Green", "text": "AI 또는 사람 최종 리뷰 완료, Studio 사용 가능 판정"}
+  ]
+}

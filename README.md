@@ -41,6 +41,8 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
 | `scripts/hype-pr/` | PR 생성 시 active 멤버 reviewer 요청 + auto-merge eligibility 판정 | 3 consumers `scripts/hype-pr/` |
 | `scripts/weekly-harness/` | weekly cycle 이슈 Owner/ETA 검증 + 번다운 리포트 | 3 consumers `scripts/weekly-harness/` |
+| `docs/studio-quality-dashboard.html` | 강의별 HypeProof Studio 사용 가능 여부를 보는 quality dashboard | (harness-local) |
+| `scripts/studio-quality-dashboard/` | 강의별 단일 JSON 생성 + G1/G2/G3 GitHub 이슈 발행 CLI | (harness-local) |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
 | `scripts/register-skills.sh` | harness-local `.claude/skills/<name>` 심링크 생성/검증 (`--check`) | (harness-local) |
 | `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V13) | (maintainer) |
@@ -153,6 +155,30 @@ python3 scripts/hype-pr/pr.py request-reviewers \
 무조건 켜지지 않는다. repo profile이 허용하고, PR이 draft가 아니며, 변경 파일이
 보안/배포/데이터/dependency/governance risk에 걸리지 않을 때만 eligible이다.
 자세한 기준은 [`docs/HYPE-PR.ko.md`](docs/HYPE-PR.ko.md).
+
+### 🧪 Studio 강의 quality dashboard
+
+강의별로 HypeProof Studio를 사용해도 되는지 판정하는 대시보드는 정적 HTML로
+볼 수 있고, 같은 강의 JSON으로 GitHub 이슈 발행 계획을 만든다.
+G1/G2/G3 보고서 카드는 파일을 드래그앤드롭하면 업로드 파일명, 크기, 시간이
+브라우저 상태에 저장되어 리허설 중 증거 제출 흐름을 바로 확인할 수 있다.
+
+```bash
+python3 -m http.server 8879
+open http://127.0.0.1:8879/docs/studio-quality-dashboard.html
+
+python3 scripts/studio-quality-dashboard/dashboard.py init \
+  --course "SK 바이오팜 AI 게임 창작 워크숍" \
+  --date 2026-08-17 \
+  --slug sk-biopharm-2026-08-17
+
+python3 scripts/studio-quality-dashboard/dashboard.py plan-issues \
+  quality/studio/cohorts/sk-biopharm-2026-08-17.json
+
+# 실제 GitHub 이슈 발행은 명시적으로 --apply를 붙일 때만 실행된다.
+python3 scripts/studio-quality-dashboard/dashboard.py create-issues \
+  quality/studio/cohorts/sk-biopharm-2026-08-17.json --apply
+```
 
 ### 🔁 다른 머신에서 운영 — 워크스페이스 경로 해석
 
