@@ -163,16 +163,20 @@ def test_collaborator_audit_marks_pending_invitation() -> None:
     repo = next(item for item in policy["repos"]["repositories"] if item["name"] == "sediment")
     profile = policy["profiles"][repo["profile"]]
 
+    # 협업자 목록은 정본에서 만든다 — TJ-kr 한 명만 빼고 전원이 이미 붙어 있는 상태로.
+    # 이름을 손으로 적어두면 멤버가 늘 때마다 findings 가 하나씩 늘어 이 테스트가
+    # "초대 대기 한 건을 잡는다"가 아니라 "멤버 수가 그대로다"를 검사하게 된다.
+    desired = module.desired_collaborators(policy["members"], profile, repo)
+    already = [
+        {"login": login,
+         "permissions": {"admin": True} if perm == "admin" else {"push": True, "pull": True}}
+        for login, perm in desired.items()
+        if login != "TJ-kr"
+    ]
+
     def fake_gh(path: str):
         if path.endswith("/collaborators"):
-            return 0, [
-                {"login": "jayleekr", "permissions": {"admin": True}},
-                {"login": "JeHyeong2", "permissions": {"admin": True}},
-                {"login": "ico1036", "permissions": {"push": True, "pull": True}},
-                {"login": "xoqhdgh1002", "permissions": {"push": True, "pull": True}},
-                {"login": "JinyongShin", "permissions": {"push": True, "pull": True}},
-                {"login": "rabqatab", "permissions": {"push": True, "pull": True}},
-            ]
+            return 0, already
         if path.endswith("/invitations"):
             return 0, [{"invitee": {"login": "TJ-kr"}, "permissions": "write"}]
         raise AssertionError(path)

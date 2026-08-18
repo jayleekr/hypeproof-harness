@@ -22,6 +22,31 @@ def run_pr(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def active_members_from_policy() -> list[str]:
+    """정본(policy/members.yaml)의 활성 멤버를 admins → writers 순으로 준다.
+
+    테스트가 이름 목록을 직접 들고 있으면 멤버가 한 명 늘 때마다 빨개진다. 그건 회귀가
+    아니라 소음이고, 소음이 반복되면 사람이 빨간 걸 무시하게 된다. 여기서 확인할 것은
+    "정본과 같은가" 이지 "그 이름이 무엇인가" 가 아니다.
+    """
+    text = (ROOT / "policy" / "members.yaml").read_text(encoding="utf-8")
+    groups: dict[str, list[str]] = {"admins": [], "writers": []}
+    section = None
+    for raw in text.splitlines():
+        line = raw.split("#")[0].rstrip()
+        if not line.strip():
+            continue
+        key = line.strip().rstrip(":")
+        if key in groups and line.strip().endswith(":"):
+            section = key
+            continue
+        if line.strip().startswith("- ") and section:
+            groups[section].append(line.strip()[2:].strip())
+        elif line.strip().endswith(":") and not line.startswith(" " * 4):
+            section = None
+    return groups["admins"] + groups["writers"]
+
+
 def load_module():
     spec = importlib.util.spec_from_file_location("hype_pr", SCRIPT)
     assert spec and spec.loader
@@ -46,16 +71,11 @@ def test_plan_requests_every_active_member_except_author() -> None:
 
     assert data["repo"] == "jayleekr/hypeproof-studio"
     assert data["review_request"]["exclude_author"] is True
-    assert data["review_request"]["active_members"] == [
-        "jayleekr",
-        "JeHyeong2",
-        "ico1036",
-        "xoqhdgh1002",
-        "JinyongShin",
-        "TJ-kr",
-        "rabqatab",
-    ]
-    assert data["reviewers"] == ["jayleekr", "JeHyeong2", "ico1036", "xoqhdgh1002", "TJ-kr", "rabqatab"]
+    # 멤버 이름을 여기 박지 않는다. 정본은 policy/members.yaml 이고, 사람이 늘 때마다
+    # 이 테스트가 빨개지면 그건 회귀가 아니라 소음이다 (2026-08-18: Yoda 합류 때 그랬다).
+    # 검증할 값어치가 있는 것은 **정본과 일치하는가**와 **저자 제외 규칙**이다.
+    assert data["review_request"]["active_members"] == active_members_from_policy()
+    assert data["reviewers"] == [m for m in active_members_from_policy() if m != "JinyongShin"]
 
 
 def test_auto_merge_is_blocked_when_profile_disallows_it() -> None:
@@ -123,7 +143,8 @@ def test_auto_merge_can_be_eligible_when_profile_and_risk_allow_it() -> None:
 
     assert data["auto_merge"]["eligible"] is True
     assert data["auto_merge"]["blocked_by"] == []
-    assert data["reviewers"] == ["jayleekr", "JeHyeong2", "ico1036", "xoqhdgh1002", "JinyongShin", "rabqatab"]
+    # 저자(TJ-kr)만 빠지고 나머지 활성 멤버 전원이 리뷰어다. 이름은 정본에서 온다.
+    assert data["reviewers"] == [m for m in active_members_from_policy() if m != "TJ-kr"]
 
 
 def test_create_is_dry_run_by_default_and_includes_reviewers() -> None:
