@@ -65,8 +65,30 @@ Jay에게 알려주면 된다.
 | **Vercel** (`hype-proof-lab` 팀) | web(hypeproof-ai.xyz) 등 프론트 배포 | Developer | 이메일 초대 수락 (같은 이메일로 Vercel 가입) |
 | **HypeProof 포털** (`hypeproof-ai.xyz/members`) | 멤버 문서·재무·기회 보드 | 접근 원장 등재 (admin 이 `/members/admin` 에서) | 등재된 이메일로 로그인 |
 | **Supabase** (`sediment` org) | Sediment 프로덕션 Postgres 직접 조회 | Developer | 이메일 초대 수락 — **DB 를 직접 봐야 하는 사람만** |
-| **Cloudflare** | Studio Worker(api.hypeproof-ai.xyz) 배포 | Jay 계정 경유 | 직접 배포가 필요해지면 Jay에게 요청 |
-| **Fly.io** | Sediment 백엔드 런타임 | Jay 계정 경유 | 직접 배포가 필요해지면 Jay에게 요청 |
+| **Cloudflare** | Studio Worker(api.hypeproof-ai.xyz) 런타임 | **계정 권한 불필요** | repo write 만 있으면 Actions 로 배포된다 (아래) |
+| **Fly.io** | Sediment 백엔드 런타임 | **계정 권한 불필요** | repo write 만 있으면 Actions 로 배포된다 (아래) |
+
+### 배포 자격증명은 사람이 아니라 CI 가 갖는다
+
+Cloudflare 와 Fly 는 **개인 계정 초대도 개인 토큰도 주지 않는다.** 배포 토큰은 repo
+시크릿에 하나만 있고, 배포는 GitHub Actions 가 한다.
+
+| 대상 | 워크플로 | 어떻게 |
+|---|---|---|
+| Studio Worker (Cloudflare) | `hypeproof-studio` → `deploy-worker.yml` | Actions 탭에서 **Run workflow** |
+| Sediment 백엔드 (Fly) | `sediment` → `fly-deploy.yml` | `main` 머지 시 자동 · 수동 재배포는 Run workflow |
+
+**즉 "배포할 수 있는 사람 = repo 에 write 가 있는 사람"** 이다. 새 멤버에게 따로 해줄
+것이 없고, 회수는 collaborator 제거 하나로 끝나며, 누가 언제 배포했는지가 Actions 실행
+기록에 남는다. 사람마다 토큰을 쥐여주면 이 셋이 전부 깨진다.
+
+> 이 표는 2026-08-19 까지 두 줄 다 "Jay 계정 경유 · 직접 배포가 필요해지면 Jay에게 요청"
+> 이라고 적혀 있었다. **위임은 CI 로 이미 끝나 있었고 문서만 안 따라왔다.** 그래서 멤버가
+> 계속 Jay 에게 권한을 요청했고, 하마터면 개인 Cloudflare 계정 토큰을 발급할 뻔했다.
+> 위임을 코드로 해놓고 문서에 안 적으면 위임이 안 된 것과 같다.
+
+**계정 자체를 봐야 하는 일**(대시보드 확인, 시크릿 추가, DNS)은 여전히 Jay 다. 그건
+권한 문제가 아니라 **계정 소유자가 Jay 개인** 이기 때문이고, 별건으로 다룬다.
 
 메인테이너 체크리스트 (새 멤버 조인 시):
 
