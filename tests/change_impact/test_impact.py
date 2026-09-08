@@ -265,3 +265,31 @@ def test_missing_api_key_is_explicit_pending(monkeypatch, tmp_path):
     task = json.loads(output.read_text())["tasks"][0]
     assert task["reasoning_status"] == "not-configured"
     assert task["review_status"] == "pending"
+
+
+@pytest.mark.parametrize("mutation", ["delete", "stage", "owner", "source"])
+def test_consumer_manifest_cannot_redefine_protected_canon(mutation):
+    repo = "jayleekr/hypeprooflab"
+    original = {"id": "LAB-PHILOSOPHY", "stage": "philosophy", "owner": "jayleekr",
+                "sources": [{"path": "PHILOSOPHY.md"}]}
+    edited = copy.deepcopy(original)
+    if mutation == "stage":
+        edited["stage"] = "intent"
+    elif mutation == "owner":
+        edited["owner"] = "other-member"
+    elif mutation == "source":
+        edited["sources"] = [{"path": "unrelated.md"}]
+    class Reader:
+        def resolve(self, *_):
+            return "a" * 40
+        def read(self, _repo, _sha, path):
+            if path == "config/traceability.json":
+                return json.dumps({"version": 1, "repository": repo,
+                                   "nodes": [] if mutation == "delete" else [edited]})
+            return "source content"
+    policy = {"repositories": {repo: {"manifest": "config/traceability.json"}},
+              "members": ["jayleekr", "other-member"], "canon_owner": "jayleekr",
+              "protected_nodes": {"LAB-PHILOSOPHY": {"repo": repo, "stage": "philosophy",
+                                  "owner": "jayleekr", "path": "PHILOSOPHY.md"}}}
+    with pytest.raises(ValueError):
+        m.snapshot(Reader(), policy, {})
