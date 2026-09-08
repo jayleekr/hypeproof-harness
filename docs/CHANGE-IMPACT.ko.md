@@ -124,6 +124,24 @@ not-configured이며 검토를 완료 처리하지 않는다. 키·권한 설정
 초기 매핑에서 빠진 Intent/REQ는 새로
 지어내지 않고 onboarding 검토에서 작성·연결한다.
 
+## 운영 시험과 장애 처리
+
+`test.yml`의 수동 입력 `operational_smoke=true`는 실제 운영 token으로 세 저장소의
+읽기·이슈 생성·갱신·재실행·관리 영역 밖 본문 보존·댓글 작성을 시험한다. PR 이벤트에서는
+실행되지 않는다. 시험 이슈는 별도 marker를 쓰고 finally에서 닫으며 실제 review/checkpoint로
+세지 않는다. 2026-09-08 실행 34250669924에서 세 저장소 모두 통과했다.
+
+스케줄은 채택 변경 처리를 PR 미리보기보다 먼저 실행한다. 모델 장애·키 미설정이면
+미검토 이슈는 남기고 checkpoint를 전진시키지 않아 다음 실행에서 재시도한다. 예산 소진도
+checkpoint를 보존하되 이미 제안한 revision을 재사용한다. 소스/정책/권한 오류는 실패다.
+GitHub API와 git 호출은 60초 제한을 둔다.
+
+매 실행의 step summary와 `impact-status.json`은 pending review URL, 빠진 검토 기록,
+구조적 누락을 표시한다. 미해결 사람 검토(exit 1)는 정상적인 backlog이며 시스템 오류
+(exit 2)와 구분한다. 담당자는 링크된 검토 이슈를 처리한다. Discord/email 전송은 없다.
+`/impact-resolve <revision> unknown <reason>` 또는 `change-required`를 나중에 남기면
+이전 수용 결정을 철회한다. 운영상 이슈 close만으로 완료되지 않는다.
+
 현재 한계: PR 미리보기는 graph 기반이며 main에서 semantic review한다. 의미 검토는
 예산 내 첫 항목부터 실행하고 나머지는 명시적 pending이다. 예산이 소진되면 checkpoint를
 유지하고 다음 실행에서 같은 revision의 제안을 재사용하여 나머지 항목을 이어서 검토한다. 기준 변경 시 이미 열린

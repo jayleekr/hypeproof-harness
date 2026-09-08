@@ -127,6 +127,10 @@ def test_ambiguous_markers_fail_instead_of_overwriting():
         m.find_marker([{"body": "marker"}, {"body": "marker"}], "marker")
 
 
+def test_issue_listing_prs_are_never_treated_as_tracker_issues():
+    assert m.find_marker([{"body": "marker", "pull_request": {"url": "pr"}}], "marker") is None
+
+
 def test_sync_replay_recovers_partial_writes_without_duplicate_issues(monkeypatch):
     store = {"jayleekr/hypeprooflab": []}
     count = 0

@@ -327,6 +327,13 @@ def managed_body(existing, block):
 
 def task_body(task, report, epic_url):
     # Deterministic text only: a private Lab excerpt must never reach a public Studio issue.
+    target_sha = report['head'].get(task['repo'], report['base'].get(task['repo']))
+    source_links = []
+    for repo, head in sorted(report['head'].items()):
+        base = report['base'].get(repo)
+        if base and base != head:
+            source_links.append(f"- [{repo} change](https://github.com/{repo}/compare/{base}...{head})")
+    changes = "\n".join(source_links) or "Initial registration: review the current source, not a historical change claim."
     return f"""{START}
 <!-- impact-task:{task['id']} -->
 ## Change-impact review — {task['id']}
@@ -338,6 +345,9 @@ Causes: {', '.join(task['causes'])}
 Upstream consistency: {', '.join(task['parents']) or '(root)'}
 Target source commit: `{report['head'].get(task['repo'], report['base'].get(task['repo']))}`
 Removed mapping: `{task['removed']}`
+
+[Target registry](https://github.com/{task['repo']}/blob/{target_sha}/config/traceability.json)
+{changes}
 
 Review question: {QUESTIONS[task['stage']]}
 Owner: {('@' + task['owner']) if task['owner'] else 'UNASSIGNED — designate the domain owner; do not infer delegation.'}
@@ -356,7 +366,7 @@ Source documents and detailed reasoning remain in their original access boundary
 
 
 def find_marker(issues, marker):
-    matches = [i for i in issues if marker in (i.get("body") or "")]
+    matches = [i for i in issues if "pull_request" not in i and marker in (i.get("body") or "")]
     if len(matches) > 1:
         raise ValueError("duplicate tracker marker; manual reconciliation required")
     return matches[0] if matches else None
