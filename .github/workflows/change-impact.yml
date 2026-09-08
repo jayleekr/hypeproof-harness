@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --quiet pyyaml
-      - name: Review PRs and adopted changes using trusted main code
+      - name: Review adopted changes using trusted main code
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -38,13 +38,41 @@ jobs:
           set -euo pipefail
           test -n "$GH_TOKEN" || { echo 'Cross-repo token not configured; review cannot run.'; exit 1; }
           scan_args=()
-          pr_args=()
           if [ "$APPLY" = true ]; then
             scan_args+=(--apply)
-            pr_args+=(--publish-reports)
           fi
-          python scripts/change-impact/impact.py prs "${pr_args[@]}" --output impact-prs.json
           python scripts/change-impact/impact.py scan --reason "${scan_args[@]}" --output impact-report.json
+      - name: Advisory PR reports
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$APPLY" = true ]; then args+=(--publish-reports); fi
+          python scripts/change-impact/impact.py prs "${args[@]}" --output impact-prs.json
+      - name: Report adoption status separately from successful processing
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
+        run: |
+          set +e
+          python scripts/change-impact/impact.py status --output impact-status.json
+          result=$?
+          if [ "$result" -gt 1 ]; then exit "$result"; fi
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path('impact-status.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## Change adoption\n\n')
+              out.write(f"Complete: {report['complete']}\n\n")
+              for url in report['pending_reviews']:
+                  out.write(f'- Pending review: {url}\n')
+              out.write(f"\nMissing review records: {len(report['missing_reviews'])}\n")
+              out.write(f"\nStructural gaps: {len(report['structural_gaps'])}\n")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

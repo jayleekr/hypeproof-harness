@@ -367,7 +367,10 @@ def upsert(repo, inventory, marker, title, block, owner=None):
     body = managed_body(old.get("body") or "", block) if old else block
     if old:
         if body != old.get("body"):
-            result = gh(f"repos/{repo}/issues/{old['number']}", "PATCH", {"body": body, "state": "open"})
+            payload = {"body": body, "state": "open"}
+            if owner:
+                payload["assignees"] = sorted({a["login"] for a in old.get("assignees", [])} | {owner})
+            result = gh(f"repos/{repo}/issues/{old['number']}", "PATCH", payload)
             old.update(result)
         return old
     payload = {"title": title, "body": body}
@@ -416,6 +419,8 @@ def resolution(task, comments, policy):
         if len(parts) != 2 or len(parts[1]) < 20:
             continue
         state, evidence = parts
+        if state in {"unknown", "change-required"}:
+            return None  # An explicit newer withdrawal must not resurrect an old acceptance.
         if state not in {"satisfied", "no-impact", "validated"}:
             continue
         if task["stage"] in {"implementation", "test", "validation"} and state == "satisfied":
@@ -428,6 +433,21 @@ def resolution(task, comments, policy):
 
 def mappings(items):
     return dict(item.split("=", 1) for item in items)
+
+
+def preflight(policy):
+    """Read access first across ALL repos; actual Issues write is tested by ops_smoke.py."""
+    result = []
+    actor = gh("user")["login"]
+    for repo, config in policy["repositories"].items():
+        info = gh(f"repos/{repo}")
+        if info.get("archived") or info.get("disabled"):
+            raise ValueError(f"inactive repository: {repo}")
+        gh(f"repos/{repo}/pulls?state=open&per_page=1")
+        gh(f"repos/{repo}/issues?state=open&per_page=1")
+        result.append({"repo": repo, "readable": True,
+                       "push_permission": bool(info.get("permissions", {}).get("push"))})
+    return {"actor": actor, "repositories": result, "issue_write": "requires operational probe"}
 
 
 def restore_recommendations(report, policy):
@@ -488,7 +508,7 @@ def pr_reports(reader, policy, after, reasoning, publish):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["report", "scan", "status", "prs"])
+    parser.add_argument("command", choices=["report", "scan", "status", "prs", "preflight"])
     parser.add_argument("--policy", default=str(ROOT / "policy/change-impact.json"))
     parser.add_argument("--root", action="append", default=[], help="owner/repo=local git path")
     parser.add_argument("--ref", action="append", default=[], help="owner/repo=immutable ref or main")
@@ -507,6 +527,11 @@ def main():
         parser.error("--apply is scan-only")
     if args.publish_reports and args.command != "prs":
         parser.error("--publish-reports is prs-only")
+    if args.command == "preflight":
+        Path(args.output).write_text(json.dumps(preflight(policy), indent=2) + "\n")
+        return 0
+    if args.apply or args.publish_reports:
+        preflight(policy)
     reader = Reader(mappings(args.root))
     refs = mappings(args.ref)
     for repo in set(refs) | set(mappings(args.base)) | set(reader.roots):
@@ -531,6 +556,10 @@ def main():
             if not match:
                 raise ValueError("invalid checkpoint; refusing to reset history")
             prior = json.loads(match[1])
+            if set(prior.get("commits", {})) != set(policy["repositories"]):
+                raise ValueError("checkpoint must cover every configured repository")
+            if not all(isinstance(v, str) and SHA.fullmatch(v) for v in prior["commits"].values()):
+                raise ValueError("checkpoint must contain immutable SHAs")
             # Reload old texts at pinned SHAs for semantic review; checkpoint has no source text.
             before = snapshot(reader, policy, prior["commits"])
         else:
@@ -548,6 +577,7 @@ def main():
                 task["reasoning_status"] = "not-configured"
     if args.command == "status":
         pending = []
+        tracked = set()
         # Check every persistent task, not only changes since the checkpoint.
         for repo in policy["repositories"]:
             for issue in pages(f"repos/{repo}/issues?state=all"):
@@ -556,10 +586,11 @@ def main():
                 if not match:
                     continue
                 nid = match[1]
+                tracked.add(nid)
                 rev = re.search(r" · revision: `([a-f0-9]{64})`", body)
                 target = re.search(r"Target revision: `([a-f0-9]{64}|[a-f0-9]{40}|removed)`", body)
                 node = after["nodes"].get(nid)
-                if nid.startswith("MAP-") and target and target[1] == after["commits"][repo]:
+                if nid.startswith("MAP-") and target:
                     node = {"owner": None, "stage": "strategy", "revision": target[1]}
                 if node is None and target and target[1] == "removed":
                     node = {"owner": None, "stage": "strategy", "revision": "removed"}
@@ -570,8 +601,10 @@ def main():
                 if not resolution(task, pages(f"repos/{repo}/issues/{issue['number']}/comments"), policy):
                     pending.append(issue["html_url"])
         report["pending_reviews"] = pending
+        report["missing_reviews"] = sorted(set(after["nodes"]) - tracked)
         report["complete"] = (not pending and not report["tasks"]
-                              and not report["structural_gaps"] and checkpoint is not None)
+                              and not report["structural_gaps"] and not report["missing_reviews"]
+                              and checkpoint is not None)
     Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     if args.apply:
         # Reject moving heads. Writes are restartable; checkpoint advances only after all succeed.
@@ -579,9 +612,10 @@ def main():
             if reader.resolve(repo, "main") != sha:
                 raise ValueError("main moved or non-main ref requested; run a fresh scan")
         sync(report, policy)
-        if any(t["reasoning_status"] == "budget-exhausted" for t in report["tasks"]):
-            print("Reasoning budget exhausted; issues saved, checkpoint retained for resumable next run.")
-            return 0
+        incomplete = {t["reasoning_status"] for t in report["tasks"]} & {"budget-exhausted", "failed", "not-configured"}
+        if incomplete:
+            print("Reasoning incomplete; issues saved, checkpoint retained for resumable next run.")
+            return 2 if incomplete & {"failed", "not-configured"} else 0
         block = (START + "\n<!-- impact-checkpoint:v1 -->\n"
                  "Processed source revisions; NOT evidence of completed reviews.\n```json\n"
                  + json.dumps({"commits": after["commits"]}, sort_keys=True) + "\n```\n" + END)

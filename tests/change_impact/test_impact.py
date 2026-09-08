@@ -233,6 +233,7 @@ def test_resumable_reasoning_uses_exact_revision_cache(monkeypatch):
 
 
 def test_checkpoint_is_not_written_after_partial_sync_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(m, "preflight", lambda _: {})
     after = snap(node("INT-A"))
     monkeypatch.setattr(m, "snapshot", lambda *_: after)
     monkeypatch.setattr(m.Reader, "resolve", lambda *_: "a" * 40)
@@ -245,6 +246,7 @@ def test_checkpoint_is_not_written_after_partial_sync_failure(monkeypatch, tmp_p
 
 
 def test_moving_main_prevents_any_issue_write(monkeypatch, tmp_path):
+    monkeypatch.setattr(m, "preflight", lambda _: {})
     after = snap(node("INT-A"))
     monkeypatch.setattr(m, "snapshot", lambda *_: after)
     monkeypatch.setattr(m.Reader, "resolve", lambda *_: "b" * 40)
@@ -293,3 +295,75 @@ def test_consumer_manifest_cannot_redefine_protected_canon(mutation):
                                   "owner": "jayleekr", "path": "PHILOSOPHY.md"}}}
     with pytest.raises(ValueError):
         m.snapshot(Reader(), policy, {})
+
+
+def test_later_unknown_revokes_earlier_acceptance():
+    task = {"owner": "owner", "revision": "v2", "stage": "intent"}
+    comments = [{"user": {"login": "owner"}, "html_url": "https://github.com/x/y/issues/1#c",
+                 "body": "/impact-resolve v2 satisfied " + "sufficient rationale " * 2},
+                {"user": {"login": "owner"}, "html_url": "https://github.com/x/y/issues/1#d",
+                 "body": "/impact-resolve v2 unknown " + "new contradictory evidence " * 2}]
+    assert m.resolution(task, comments, {"ownership_triage": []}) is None
+
+
+def test_failed_model_does_not_advance_checkpoint(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setattr(m, "preflight", lambda _: {})
+    monkeypatch.setattr(m, "snapshot", lambda *_: snap(node("INT-A")))
+    monkeypatch.setattr(m.Reader, "resolve", lambda *_: "a" * 40)
+    monkeypatch.setattr(m, "pages", lambda _: [])
+    monkeypatch.setattr(m, "model_call", lambda _: lambda _: (_ for _ in ()).throw(ValueError("provider outage")))
+    published = []
+    monkeypatch.setattr(m, "sync", lambda report, _: published.append(report))
+    monkeypatch.setattr(m, "upsert", lambda *_: pytest.fail("checkpoint advanced after model failure"))
+    monkeypatch.setattr("sys.argv", ["impact", "scan", "--reason", "--apply", "--output", str(tmp_path / "out.json")])
+    assert m.main() == 2
+    assert published[0]["tasks"][0]["reasoning_status"] == "failed"
+
+
+def test_partial_checkpoint_cannot_skip_repository_history(monkeypatch, tmp_path):
+    monkeypatch.setattr(m, "snapshot", lambda *_: snap(node("INT-A")))
+    monkeypatch.setattr(m, "pages", lambda _: [{"body": '<!-- impact-checkpoint:v1 -->\n```json\n{"commits":{}}\n```'}])
+    monkeypatch.setattr("sys.argv", ["impact", "scan", "--output", str(tmp_path / "out.json")])
+    with pytest.raises(ValueError, match="every configured repository"):
+        m.main()
+
+
+def test_preflight_checks_all_repos_before_writes(monkeypatch):
+    calls = []
+    def api(path, method="GET", payload=None):
+        calls.append((path, method))
+        if path == "user":
+            return {"login": "operator"}
+        if path.endswith("private-repo"):
+            raise ValueError("no read permission")
+        return {} if "?" not in path else []
+    monkeypatch.setattr(m, "gh", api)
+    with pytest.raises(ValueError):
+        m.preflight({"repositories": {"owner/first": {}, "owner/private-repo": {}}})
+    assert all(method == "GET" for _, method in calls)
+
+
+def test_operational_probe_cleans_up_after_partial_api_failure(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "impact", m)
+    spec = importlib.util.spec_from_file_location("ops_smoke", ROOT / "scripts/change-impact/ops_smoke.py")
+    ops = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ops)
+    monkeypatch.setattr(m, "preflight", lambda _: {})
+    monkeypatch.setattr(m, "pages", lambda _: [])
+    stored = {}
+    def api(path, method="GET", payload=None):
+        if path.endswith("/comments"):
+            raise ValueError("injected failure after write")
+        if method == "POST":
+            stored.update(number=1, html_url="https://github.com/owner/repo/issues/1", state="open", **payload)
+        if method == "PATCH":
+            stored.update(payload)
+        return copy.deepcopy(stored)
+    monkeypatch.setattr(m, "gh", api)
+    with pytest.raises(ValueError, match="after write"):
+        ops.run({"repositories": {"owner/repo": {}}})
+    assert stored["state"] == "closed"
+    assert "impact-task:" not in stored["body"]
+    assert "impact-checkpoint:" not in stored["body"]
