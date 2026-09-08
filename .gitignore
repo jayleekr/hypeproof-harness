@@ -28,3 +28,6 @@ tests/consumers.local.txt
 /repo-governance-audit.json
 /repo-governance-audit.exitcode
 /preflight-classification.txt
+
+# Local change-impact reports (source metadata; do not commit)
+/impact-*.json

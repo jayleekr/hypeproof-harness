@@ -45,6 +45,12 @@ automation_actors:
 #   data-plane server enforcement is only as strong as that scope's holders.
 
 protected_paths:
+  - path: scripts/change-impact/**
+    neutralizes: >-
+      Cross-repository issue publication, source revision checkpoints and review
+      authority checks. A weakened engine could publish private source text or
+      accept stale/unauthorized decisions as completed adoption.
+
   - path: policy/**
     neutralizes: >-
       Source of truth for repo settings, branch protection, required checks,

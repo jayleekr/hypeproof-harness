@@ -1,0 +1,54 @@
+name: Change impact
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Synchronize main review issues and advisory PR comments
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: change-impact-single-writer
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet pyyaml
+      - name: Review PRs and adopted changes using trusted main code
+        env:
+          GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN" || { echo 'Cross-repo token not configured; review cannot run.'; exit 1; }
+          scan_args=()
+          pr_args=()
+          if [ "$APPLY" = true ]; then
+            scan_args+=(--apply)
+            pr_args+=(--publish-reports)
+          fi
+          python scripts/change-impact/impact.py prs "${pr_args[@]}" --output impact-prs.json
+          python scripts/change-impact/impact.py scan --reason "${scan_args[@]}" --output impact-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: change-impact-reports
+          path: impact-*.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "repository": "jayleekr/hypeproof-harness",
+  "coverage": "Bootstrap scope only; unregistered product areas are not claimed covered.",
+  "nodes": [
+    {
+      "id": "HAR-INT-CHANGE",
+      "stage": "intent",
+      "owner": null,
+      "depends_on": [],
+      "sources": [
+        {
+          "path": "docs/CHANGE-IMPACT.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-CHANGE",
+      "stage": "requirement",
+      "owner": null,
+      "depends_on": [
+        "HAR-INT-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "docs/CHANGE-IMPACT.ko.md",
+          "section": "## 요구사항과 검증"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-CHANGE",
+      "stage": "design",
+      "owner": null,
+      "depends_on": [
+        "HAR-REQ-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "docs/CHANGE-IMPACT.ko.md",
+          "section": "## 설계"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-CHANGE",
+      "stage": "implementation",
+      "owner": null,
+      "depends_on": [
+        "HAR-DES-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "scripts/change-impact/impact.py"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-CHANGE",
+      "stage": "test",
+      "owner": null,
+      "depends_on": [
+        "HAR-REQ-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "tests/change_impact/test_impact.py"
+        }
+      ]
+    }
+  ]
+}

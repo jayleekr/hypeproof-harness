@@ -146,7 +146,7 @@ jobs:
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
       - name: Run Python tests
-        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop
+        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop tests/change_impact
 
       # The weekly-loop gate cannot be enforced against live issues at PR time —
       # a PR contains no issues. What IS enforced here is the gate itself: every
