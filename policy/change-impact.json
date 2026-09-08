@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "canon_owner": "jayleekr",
+  "ownership_triage": [
+    "jayleekr",
+    "JeHyeong2"
+  ],
+  "checkpoint_repo": "jayleekr/hypeproof-harness",
+  "model": "claude-sonnet-5",
+  "max_model_calls": 8,
+  "max_context_chars": 48000,
+  "repositories": {
+    "jayleekr/hypeproof-harness": {
+      "manifest": "config/traceability.json",
+      "watch_prefixes": [
+        "policy/",
+        "scripts/change-impact/",
+        "docs/CHANGE-IMPACT"
+      ]
+    },
+    "jayleekr/hypeprooflab": {
+      "manifest": "config/traceability.json",
+      "watch_prefixes": [
+        "PHILOSOPHY.md",
+        "MISSION.md",
+        "products/",
+        "web/src/app/",
+        "web/src/components/",
+        "web/src/lib/"
+      ]
+    },
+    "jayleekr/hypeproof-studio": {
+      "manifest": "config/traceability.json",
+      "watch_prefixes": [
+        "docs/requirements/",
+        "docs/testing/",
+        "docs/studio-requirements.md",
+        "extensions/hypeproof-chat/",
+        "worker/src/"
+      ]
+    }
+  },
+  "max_prs_per_repo": 10,
+  "protected_nodes": {
+    "LAB-PHILOSOPHY": {
+      "repo": "jayleekr/hypeprooflab",
+      "stage": "philosophy",
+      "owner": "jayleekr",
+      "path": "PHILOSOPHY.md"
+    },
+    "LAB-MISSION": {
+      "repo": "jayleekr/hypeprooflab",
+      "stage": "mission",
+      "owner": "jayleekr",
+      "path": "MISSION.md"
+    }
+  }
+}
