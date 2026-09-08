@@ -382,6 +382,7 @@ def test_operational_probe_cleans_up_after_partial_api_failure(monkeypatch):
     ("repos/jayleekr/hypeprooflab/contents/PHILOSOPHY.md?ref=abc", "GET", "source-reader"),
     ("repos/jayleekr/hypeprooflab/compare/a...b", "GET", "source-reader"),
     ("repos/jayleekr/hypeprooflab/issues", "POST", "issue-writer"),
+    ("repos/jayleekr/hypeprooflab/issues", "GET", "issue-writer"),
     ("repos/jayleekr/hypeprooflab/contents/file", "PUT", "issue-writer"),
     ("repos/jayleekr/hypeproof-harness/contents/file", "GET", "issue-writer"),
 ])
