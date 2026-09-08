@@ -49,9 +49,17 @@ def gh(path, method="GET", payload=None):
     args = ["gh", "api", path, "--method", method]
     if payload is not None:
         args += ["--input", "-"]
+    env = os.environ.copy()
+    parts = path.split("?")[0].split("/")
+    if (method == "GET" and len(parts) >= 4 and parts[0] == "repos"
+            and "/".join(parts[1:3]) == env.get("CHANGE_IMPACT_SOURCE_REPO")
+            and parts[3] in {"commits", "contents", "compare"}
+            and env.get("CHANGE_IMPACT_SOURCE_TOKEN")):
+        # The private source caller's read-only GITHUB_TOKEN never authorizes writes.
+        env["GH_TOKEN"] = env["CHANGE_IMPACT_SOURCE_TOKEN"]
     try:
         result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                                text=True, capture_output=True, check=True, timeout=60)
+                                text=True, capture_output=True, check=True, timeout=60, env=env)
     except subprocess.CalledProcessError as exc:
         status = re.search(r"HTTP (\d{3})", exc.stderr or "")
         parts = path.split("?")[0].split("/")

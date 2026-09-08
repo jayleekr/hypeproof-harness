@@ -375,3 +375,31 @@ def test_operational_probe_cleans_up_after_partial_api_failure(monkeypatch):
     assert stored["state"] == "closed"
     assert "impact-task:" not in stored["body"]
     assert "impact-checkpoint:" not in stored["body"]
+
+
+@pytest.mark.parametrize("path,method,expected", [
+    ("repos/jayleekr/hypeprooflab/commits/main", "GET", "source-reader"),
+    ("repos/jayleekr/hypeprooflab/contents/PHILOSOPHY.md?ref=abc", "GET", "source-reader"),
+    ("repos/jayleekr/hypeprooflab/compare/a...b", "GET", "source-reader"),
+    ("repos/jayleekr/hypeprooflab/issues", "POST", "issue-writer"),
+    ("repos/jayleekr/hypeprooflab/contents/file", "PUT", "issue-writer"),
+    ("repos/jayleekr/hypeproof-harness/contents/file", "GET", "issue-writer"),
+])
+def test_private_source_token_never_authorizes_writes_or_other_repos(monkeypatch, path, method, expected):
+    monkeypatch.setenv("GH_TOKEN", "issue-writer")
+    monkeypatch.setenv("CHANGE_IMPACT_SOURCE_REPO", "jayleekr/hypeprooflab")
+    monkeypatch.setenv("CHANGE_IMPACT_SOURCE_TOKEN", "source-reader")
+    def run(args, **kwargs):
+        assert kwargs["env"]["GH_TOKEN"] == expected
+        return subprocess.CompletedProcess(args, 0, "{}", "")
+    monkeypatch.setattr(m.subprocess, "run", run)
+    m.gh(path, method)
+
+
+def test_access_diagnostic_does_not_echo_source_or_credentials(monkeypatch):
+    def run(args, **_):
+        raise subprocess.CalledProcessError(1, args, stdout="PRIVATE RESPONSE", stderr="private detail (HTTP 403)")
+    monkeypatch.setattr(m.subprocess, "run", run)
+    with pytest.raises(m.GitHubAccessError) as error:
+        m.gh("repos/jayleekr/hypeprooflab/contents/private-filename?ref=abc")
+    assert str(error.value) == "GET repos/jayleekr/hypeprooflab/contents: HTTP 403"

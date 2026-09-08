@@ -1,8 +1,16 @@
 name: Change impact
 
 on:
-  schedule:
-    - cron: '23 * * * *'
+  workflow_call:
+    inputs:
+      apply:
+        type: boolean
+        default: false
+    secrets:
+      HYPEPROOF_GOVERNANCE_TOKEN:
+        required: true
+      ANTHROPIC_API_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       apply:
@@ -24,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          repository: jayleekr/hypeproof-harness
           ref: main
       - uses: actions/setup-python@v5
         with:
@@ -33,6 +42,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
+          CHANGE_IMPACT_SOURCE_TOKEN: ${{ github.token }}
           APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
         run: |
           set -euo pipefail
@@ -46,6 +57,8 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
+          CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
+          CHANGE_IMPACT_SOURCE_TOKEN: ${{ github.token }}
           APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
         run: |
           set -euo pipefail
@@ -56,6 +69,8 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
+          CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
+          CHANGE_IMPACT_SOURCE_TOKEN: ${{ github.token }}
         run: |
           set +e
           python scripts/change-impact/impact.py status --output impact-status.json

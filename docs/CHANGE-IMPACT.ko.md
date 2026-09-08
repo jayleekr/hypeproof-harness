@@ -106,8 +106,8 @@ git commit object에서 읽는다. manifest 도입 전 커밋과의 report 비�
 
 ## 자동 실행과 롤아웃
 
-`.github/workflows/change-impact.yml`은 trusted main 엔진으로 1시간마다 PR 미리보기와
-main 영향 검토를 실행하고, 수동 실행도 제공한다. source repo checkout의 코드는 실행하지
+`.github/workflows/change-impact.yml`은 재사용 가능한 trusted main 엔진이다. 비공개
+Lab의 얇은 호출 workflow가 1시간마다 실행하며 수동 실행도 제공한다. source repo checkout의 코드는 실행하지
 않는다. `HYPEPROOF_GOVERNANCE_TOKEN`에 세 저장소 Contents read, Issues write,
 Pull requests read와 PR comment 권한이 필요하다. ANTHROPIC_API_KEY 미설정은 명시적
 not-configured이며 검토를 완료 처리하지 않는다. 키·권한 설정을 이번 코드가 바꾸지는 않는다.
@@ -148,3 +148,19 @@ GitHub API와 git 호출은 60초 제한을 둔다.
 노드 이슈를 최신 version으로 갱신하며 GitHub 본문 이력과 사람의 댓글은 보존한다.
 독립 변경 wave의 Epic은 자동으로 닫지 않는다. URL 진위·배포 성공·실사용 효과는 기존
 검증과 책임자가 확인한다. 브랜치 보호의 필수 check 추가는 별도 정책 결정이다.
+
+## 비공개 소스의 실행 경계
+
+첫 실행 34251263873에서 기존 governance token은 issue 쓰기는 가능하지만 비공개
+Lab의 commits GET은 403임을 확인했다. 따라서 public Harness의 재사용 workflow를
+private Lab의 caller에서 실행한다. 엔진·정책·테스트의 정본은 계속 Harness main이다.
+
+- Lab caller의 기본 GITHUB_TOKEN: Contents read만 부여, Lab의 commits/contents/compare GET에만 사용.
+- 기존 HYPEPROOF_GOVERNANCE_TOKEN: 이슈·PR comment 등 기존 교차 저장소 작업에 사용.
+- Lab ANTHROPIC_API_KEY: 기존에 검증한 HypeProof 모델 credential을 사용하며 같은 호출 예산을 적용.
+- 개인 GitHub 토큰을 새 CI secret으로 복사하거나 기존 GitHub token 권한을 확대하지 않는다.
+- caller가 없거나 잘못된 scope라면 sanitized resource/status 오류로 중단한다. preflight는 metadata뿐 아니라 실제 manifest를 읽는다.
+
+소스 읽기 key 선택은 repo와 GET resource를 모두 확인한다. 쓰기나 다른 저장소 요청에
+caller token을 쓰지 않는 회귀 테스트가 있다. caller workflow는 고정된 Harness workflow SHA를
+참조하고, 그 workflow는 승인되어 main에 채택된 Harness 엔진을 checkout한다.
