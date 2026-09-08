@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -21,6 +22,20 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# Consumer copies delegate to the canonical checkout; policy/engine are never vendored.
+if not (ROOT / "policy/repos.yaml").is_file():
+    configured = os.environ.get("HYPEPROOF_HARNESS")
+    if configured:
+        canonical = Path(configured).expanduser().resolve()
+    else:
+        common = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True).strip()
+        canonical = Path(common).parent.parent / "hypeproof-harness"
+    target = canonical / "scripts/hype-pr/pr.py"
+    if not target.is_file() or not (canonical / "policy/repos.yaml").is_file():
+        raise SystemExit("hype-pr: canonical Harness checkout missing; clone hypeproof-harness as a sibling or set HYPEPROOF_HARNESS")
+    if __name__ == "__main__":
+        os.execv(sys.executable, [sys.executable, str(target), *sys.argv[1:]])
+    raise RuntimeError("import hype-pr from the canonical Harness checkout")
 sys.path.insert(0, str(ROOT / "scripts" / "repo-governance"))
 from audit import load_policy, repo_full_name, validate_policy  # noqa: E402
 
@@ -264,9 +279,49 @@ def apply_reviewer_requests(repo: str, pr_ref: str, reviewers: list[str]) -> lis
     return results
 
 
+def preparation_module():
+    sys.path.insert(0, str(ROOT / "scripts/hype-pr"))
+    import preparation
+    return preparation
+
+
+def prepared_report(args, policy):
+    return preparation_module().verify(
+        getattr(args, "preparation", None), getattr(args, "checkout", "."),
+        parse_repo(args.repo), args.base, args.head, active_members(policy))
+
+
+def command_prepare(args, policy):
+    module = preparation_module()
+    report = module.inspect(args.checkout, parse_repo(args.repo), args.base, members=active_members(policy))
+    if args.command == "inspect":
+        if args.output:
+            Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+            Path(args.output).chmod(0o600)
+        if args.assessment_template:
+            Path(args.assessment_template).write_text(json.dumps(module.assessment_template(report), ensure_ascii=False, indent=2) + "\n")
+            Path(args.assessment_template).chmod(0o600)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if report["blockers"] else 0
+    assessment = json.loads(Path(args.assessment).read_text())
+    output = args.output or git_receipt_path(args.checkout)
+    result = module.prepare(report, assessment, output)
+    print(json.dumps({"status": "prepared", "receipt": str(result), "head": report["head"],
+                      "agent_attestation": True, "human_approval": False}, ensure_ascii=False))
+    return 0
+
+
+def git_receipt_path(checkout):
+    module = preparation_module()
+    location = module.git(checkout, "rev-parse", "--path-format=absolute", "--git-path", "hype-pr/preparation.json")
+    return Path(location)
+
+
 def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
     labels = args.label or []
-    paths = args.path or []
+    preparation_required = parse_repo(args.repo) in json.loads((ROOT / "policy/change-impact.json").read_text())["repositories"]
+    report = prepared_report(args, policy) if args.apply and preparation_required else None
+    paths = report["paths"] if report else (args.path or [])
     planned = plan(
         policy=policy,
         repo_ref=args.repo,
@@ -279,6 +334,8 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
     body = args.body or ""
     if args.body_file:
         body = Path(args.body_file).read_text(encoding="utf-8")
+    if report:
+        body += preparation_module().summary(report)
     cmd = [
         "gh",
         "pr",
@@ -301,6 +358,7 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
 
     result: dict[str, Any] = {
         "plan": planned,
+        "preparation": {"required_for_apply": preparation_required, "verified": report is not None},
         "create_command": cmd,
         "reviewer_commands": reviewer_commands(args.repo, "<created-pr>", planned["reviewers"]),
         "apply": args.apply,
@@ -373,7 +431,20 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--label", action="append", default=[])
     create_parser.add_argument("--draft", action="store_true")
     create_parser.add_argument("--auto-merge", action="store_true")
+    create_parser.add_argument("--checkout", default=".", help="Target worktree; inferred from the invocation directory")
+    create_parser.add_argument("--preparation", help="Receipt from prepare, required for --apply")
     create_parser.add_argument("--apply", action="store_true", help="Mutate GitHub. Omit for dry-run.")
+
+    for name in ("inspect", "prepare"):
+        command = sub.add_parser(name, help="Inspect source links or bind the agent assessment before PR creation")
+        command.add_argument("--repo", required=True)
+        command.add_argument("--checkout", default=".")
+        command.add_argument("--base", default=DEFAULT_BASE)
+        command.add_argument("--output")
+        if name == "inspect":
+            command.add_argument("--assessment-template")
+        else:
+            command.add_argument("--assessment", required=True)
 
     return parser
 
@@ -401,9 +472,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "request-reviewers":
             return command_request_reviewers(args, policy)
+        if args.command in {"inspect", "prepare"}:
+            return command_prepare(args, policy)
         if args.command == "create":
             return command_create(args, policy)
-    except (RuntimeError, ValueError, OSError, json.JSONDecodeError) as exc:
+    except (RuntimeError, ValueError, OSError, json.JSONDecodeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         print(f"hype-pr: {exc}", file=sys.stderr)
         return 2
     parser.error(f"unknown command: {args.command}")

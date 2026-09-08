@@ -27,7 +27,7 @@
       "sources": [
         {
           "path": "docs/CHANGE-IMPACT.ko.md",
-          "section": "## 요구사항과 검증"
+          "section": "## \uc694\uad6c\uc0ac\ud56d\uacfc \uac80\uc99d"
         }
       ]
     },
@@ -41,7 +41,14 @@
       "sources": [
         {
           "path": "docs/CHANGE-IMPACT.ko.md",
-          "section": "## 설계"
+          "section": "## \uc124\uacc4"
+        },
+        {
+          "path": "docs/HYPE-PR.ko.md",
+          "section": "## Agent\uac00 PR\uc744 \ub9cc\ub4dc\ub294 \ud750\ub984"
+        },
+        {
+          "path": "skills/hype-pr/SKILL.md"
         }
       ]
     },
@@ -55,6 +62,15 @@
       "sources": [
         {
           "path": "scripts/change-impact/impact.py"
+        },
+        {
+          "path": "scripts/hype-pr/pr.py"
+        },
+        {
+          "path": "scripts/hype-pr/preparation.py"
+        },
+        {
+          "path": "scripts/hype-pr/install.py"
         }
       ]
     },
@@ -68,6 +84,9 @@
       "sources": [
         {
           "path": "tests/change_impact/test_impact.py"
+        },
+        {
+          "path": "tests/hype_pr/test_preparation.py"
         }
       ]
     }
