@@ -33,6 +33,8 @@ if not (ROOT / "policy/repos.yaml").is_file():
     target = canonical / "scripts/hype-pr/pr.py"
     if not target.is_file() or not (canonical / "policy/repos.yaml").is_file():
         raise SystemExit("hype-pr: canonical Harness checkout missing; clone hypeproof-harness as a sibling or set HYPEPROOF_HARNESS")
+    if not (canonical / "scripts/hype-pr/preparation.py").is_file():
+        raise SystemExit("hype-pr: canonical Harness checkout is outdated; update it to current main or set HYPEPROOF_HARNESS to an updated checkout")
     if __name__ == "__main__":
         os.execv(sys.executable, [sys.executable, str(target), *sys.argv[1:]])
     raise RuntimeError("import hype-pr from the canonical Harness checkout")

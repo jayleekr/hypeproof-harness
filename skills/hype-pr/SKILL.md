@@ -8,7 +8,9 @@ description: Prepare and create PRs in hypeproof-harness, hypeprooflab, or hypep
 Use the repository's `scripts/hype-pr/pr.py` entrypoint. It delegates to the canonical
 Harness checkout, found as a sibling of the main consumer checkout or through
 `HYPEPROOF_HARNESS`. If missing, clone `jayleekr/hypeproof-harness` into that sibling
-location (or use an existing checkout via the environment variable). Python 3.11+,
+location (or use an existing checkout via the environment variable). If the entrypoint
+reports an outdated Harness, update a clean main checkout with a fast-forward pull,
+or use a separate updated checkout; preserve existing work. Python 3.11+,
 PyYAML and authenticated `gh` are required. Do not copy policy or the impact engine
 into consumers. Keep operations scoped to the requested HypeProof repository.
 

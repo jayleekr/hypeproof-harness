@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -233,3 +234,30 @@ def test_partial_section_registration_does_not_hide_other_changes(world):
     commit(target)
     r = report(world)
     assert "INT-A" not in r["changed_nodes"] and "PARTIAL.md" in r["unmapped"]
+
+
+@pytest.mark.parametrize("changed", ["policy/repos.yaml", "policy/profiles/harness-core.yaml",
+                                    "scripts/repo-governance/audit.py", "skills/hype-pr/SKILL.md"])
+def test_policy_and_skill_changes_invalidate_tool_version(tmp_path, monkeypatch, changed):
+    for directory in ("policy", "scripts/hype-pr", "scripts/change-impact", "scripts/repo-governance", "skills/hype-pr"):
+        shutil.copytree(ROOT / directory, tmp_path / directory)
+    monkeypatch.setattr(prep, "ROOT", tmp_path)
+    before = prep.tool_version()
+    path = tmp_path / changed
+    path.write_text(path.read_text() + "\n# updated contract\n")
+    assert prep.tool_version() != before
+
+
+def test_consumer_refuses_delegation_to_old_harness(tmp_path):
+    consumer = tmp_path / "consumer/scripts/hype-pr/pr.py"
+    consumer.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "scripts/hype-pr/pr.py", consumer)
+    canonical = tmp_path / "old-harness"
+    (canonical / "scripts/hype-pr").mkdir(parents=True)
+    (canonical / "scripts/hype-pr/pr.py").write_text("raise SystemExit('unguarded old entrypoint ran')")
+    (canonical / "policy").mkdir()
+    (canonical / "policy/repos.yaml").write_text("{}")
+    proc = subprocess.run([sys.executable, str(consumer), "create", "--apply"],
+                          env={**os.environ, "HYPEPROOF_HARNESS": str(canonical)}, capture_output=True, text=True)
+    assert proc.returncode != 0
+    assert "outdated" in proc.stderr and "unguarded old entrypoint ran" not in proc.stderr

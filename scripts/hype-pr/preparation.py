@@ -31,9 +31,13 @@ def repo_identity(checkout):
 
 
 def tool_version():
-    paths = [ROOT / "policy/change-impact.json", ROOT / "policy/members.yaml",
-             ROOT / "scripts/change-impact/impact.py", ROOT / "scripts/hype-pr/pr.py",
-             Path(__file__)]
+    paths = sorted({p for p in (ROOT / "policy").rglob("*")
+                    if p.is_file() and p.suffix in {".json", ".yaml", ".yml"}}
+                   | set((ROOT / "scripts/hype-pr").glob("*.py"))
+                   | {ROOT / "scripts/change-impact/impact.py",
+                      ROOT / "scripts/repo-governance/audit.py",
+                      ROOT / "skills/hype-pr/SKILL.md",
+                      ROOT / "skills/hype-pr/agents/openai.yaml"})
     return impact.digest({str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths})
 
 
