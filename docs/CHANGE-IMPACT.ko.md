@@ -120,11 +120,13 @@ not-configured이며 검토를 완료 처리하지 않는다. 키·권한 설정
 
 초기 범위는 철학/Mission, Lab 핵심 페이지, Studio native trial이다. 다른 제품의 전체
 커버리지를 주장하지 않는다. watch_prefixes 내 미등록 변경은 repo당 mapping review 하나로
-묶는다. 그 밖의 경로는 정책 확대가 필요하다. 초기 매핑에서 빠진 Intent/REQ는 새로
+묶는다. 그 밖의 경로는 정책 확대가 필요하다. 필수 상위 단계가 빠진 구조는 structural_gaps로 표시하고 전체 완료 판정을 막는다.
+초기 매핑에서 빠진 Intent/REQ는 새로
 지어내지 않고 onboarding 검토에서 작성·연결한다.
 
 현재 한계: PR 미리보기는 graph 기반이며 main에서 semantic review한다. 의미 검토는
-예산 내 첫 항목부터 실행하고 나머지는 명시적 pending이다. 기준 변경 시 이미 열린
+예산 내 첫 항목부터 실행하고 나머지는 명시적 pending이다. 예산이 소진되면 checkpoint를
+유지하고 다음 실행에서 같은 revision의 제안을 재사용하여 나머지 항목을 이어서 검토한다. 기준 변경 시 이미 열린
 노드 이슈를 최신 version으로 갱신하며 GitHub 본문 이력과 사람의 댓글은 보존한다.
 독립 변경 wave의 Epic은 자동으로 닫지 않는다. URL 진위·배포 성공·실사용 효과는 기존
 검증과 책임자가 확인한다. 브랜치 보호의 필수 check 추가는 별도 정책 결정이다.

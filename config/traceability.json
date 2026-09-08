@@ -7,7 +7,9 @@
       "id": "HAR-INT-CHANGE",
       "stage": "intent",
       "owner": null,
-      "depends_on": [],
+      "depends_on": [
+        "LAB-MISSION"
+      ],
       "sources": [
         {
           "path": "docs/CHANGE-IMPACT.ko.md",
