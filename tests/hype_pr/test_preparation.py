@@ -205,9 +205,27 @@ def test_consumer_install_is_repeatable_preserves_local_rules_and_delegates(worl
     assert (target / "CLAUDE.md").read_text() == first
     assert "Keep the native product contract." in first
     assert (target / ".agents/skills/hype-pr/SKILL.md").read_bytes() == (ROOT / "skills/hype-pr/SKILL.md").read_bytes()
+    assert not (target / ".agents/skills/hype-pr").is_symlink()
+    assert (target / ".agents/skills/hype-pr/agents/openai.yaml").is_file()
     proc = subprocess.run([sys.executable, str(target / "scripts/hype-pr/pr.py"), "plan", "--repo", "hypeproof-studio", "--author", "jayleekr"], cwd=target, env={**os.environ, "HYPEPROOF_HARNESS": str(ROOT)}, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["repo"] == "jayleekr/hypeproof-studio"
+
+
+def test_installer_migrates_managed_directory_symlink_to_scannable_files(world):
+    spec = importlib.util.spec_from_file_location("install_pr_migration", ROOT / "scripts/hype-pr/install.py")
+    install = importlib.util.module_from_spec(spec); spec.loader.exec_module(install)
+    _, target, _, _ = world
+    old = target / ".agents/skills/hype-pr"
+    old.parent.mkdir(parents=True)
+    (target / ".claude/skills/hype-pr").mkdir(parents=True)
+    old.symlink_to("../../.claude/skills/hype-pr")
+    install.install(target)
+    assert not old.is_symlink()
+    assert (old / "SKILL.md").is_file()
+    assert (old / "SKILL.md").read_bytes() == (target / ".claude/skills/hype-pr/SKILL.md").read_bytes()
+    install.install(target)
+    assert (old / "HARNESS_VERSION").is_file()
 
 
 def test_existing_owner_debt_is_reported_without_blocking_the_change(world):

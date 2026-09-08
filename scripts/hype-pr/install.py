@@ -38,7 +38,7 @@ def install(target):
     alias = target / ".agents/skills/hype-pr"
     if alias.is_symlink() and alias.readlink().as_posix() != "../../.claude/skills/hype-pr":
         raise ValueError("existing skill alias points elsewhere")
-    if alias.exists() and not alias.is_symlink():
+    if alias.exists() and not alias.is_symlink() and not (alias / "HARNESS_VERSION").is_file():
         raise ValueError("existing skill alias is not managed")
     sha = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
     for source, destination in [(ROOT / "skills/hype-pr", target / ".claude/skills/hype-pr"),
@@ -49,15 +49,14 @@ def install(target):
         shutil.copytree(source, destination, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         (destination / "HARNESS_VERSION").write_text(sha + "\n")
-    alias = target / ".agents/skills/hype-pr"
-    alias.parent.mkdir(parents=True, exist_ok=True)
+    # Consumer diff scanners inspect regular files; directory symlinks are not
+    # files and are correctly rejected as unscanned. Keep both discovery trees
+    # byte-identical through this installer instead of weakening those scanners.
     if alias.is_symlink():
-        if alias.readlink().as_posix() != "../../.claude/skills/hype-pr":
-            raise ValueError("existing skill alias points elsewhere")
-    elif alias.exists():
-        raise ValueError("existing skill alias is not managed")
-    else:
-        alias.symlink_to("../../.claude/skills/hype-pr")
+        alias.unlink()
+    shutil.copytree(ROOT / "skills/hype-pr", alias, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    (alias / "HARNESS_VERSION").write_text(sha + "\n")
     for name in ("AGENT-GUIDE.ko.md", "HYPE-PR.ko.md"):
         (target / "docs").mkdir(exist_ok=True)
         shutil.copyfile(ROOT / "docs" / name, target / "docs" / name)
