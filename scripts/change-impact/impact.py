@@ -46,7 +46,7 @@ def gh(path, method="GET", payload=None):
     if payload is not None:
         args += ["--input", "-"]
     result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                            text=True, capture_output=True, check=True)
+                            text=True, capture_output=True, check=True, timeout=60)
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
@@ -66,7 +66,7 @@ class Reader:
         self.cache = {}
 
     def git(self, repo, *args):
-        return subprocess.check_output(["git", "-C", self.roots[repo], *args])
+        return subprocess.check_output(["git", "-C", self.roots[repo], *args], timeout=60)
 
     def resolve(self, repo, ref):
         sha = (self.git(repo, "rev-parse", f"{ref}^{{commit}}").decode().strip()
@@ -155,6 +155,12 @@ def snapshot(reader, policy, refs):
             node["revision"] = digest({"definition": original, "contents": contents})
             nodes[nid] = node
     validate_graph(nodes)
+    for nid, expected in policy.get("protected_nodes", {}).items():
+        actual = nodes.get(nid)
+        if not actual or any(actual.get(k) != v for k, v in expected.items() if k != "path"):
+            raise ValueError(f"protected canon identity changed: {nid}")
+        if expected["path"] not in {src["path"] for src in actual["sources"]}:
+            raise ValueError(f"protected canon source changed: {nid}")
     return {"version": 1, "commits": commits, "nodes": nodes}
 
 
@@ -455,7 +461,7 @@ def pr_reports(reader, policy, after, reasoning, publish):
                 # PRs are deterministic previews. Reasoning budget is reserved for adopted changes.
                 report["pr"] = pr["html_url"]
                 report["source_head"] = pr["head"]["sha"]
-            except (ValueError, KeyError, subprocess.CalledProcessError):
+            except (ValueError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 report = {"pr": pr["html_url"], "source_head": pr["head"]["sha"],
                           "error": "incomplete mapping/source; review cannot pass"}
             reports.append(report)
@@ -589,7 +595,7 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (ValueError, KeyError, subprocess.CalledProcessError) as exc:
+    except (ValueError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         # No subprocess stderr: GitHub/source errors can contain private material.
         print(f"change-impact failed ({type(exc).__name__}); no completion claimed", file=sys.stderr)
         sys.exit(2)

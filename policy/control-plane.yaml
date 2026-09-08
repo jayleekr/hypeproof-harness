@@ -45,6 +45,11 @@ automation_actors:
 #   data-plane server enforcement is only as strong as that scope's holders.
 
 protected_paths:
+  - path: config/traceability.json
+    neutralizes: >-
+      Harness-owned node registration and review ownership. Changes to this
+      manifest can remove oversight of the change-impact engine itself.
+
   - path: scripts/change-impact/**
     neutralizes: >-
       Cross-repository issue publication, source revision checkpoints and review

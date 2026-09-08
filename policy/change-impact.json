@@ -40,5 +40,19 @@
       ]
     }
   },
-  "max_prs_per_repo": 10
+  "max_prs_per_repo": 10,
+  "protected_nodes": {
+    "LAB-PHILOSOPHY": {
+      "repo": "jayleekr/hypeprooflab",
+      "stage": "philosophy",
+      "owner": "jayleekr",
+      "path": "PHILOSOPHY.md"
+    },
+    "LAB-MISSION": {
+      "repo": "jayleekr/hypeprooflab",
+      "stage": "mission",
+      "owner": "jayleekr",
+      "path": "MISSION.md"
+    }
+  }
 }
