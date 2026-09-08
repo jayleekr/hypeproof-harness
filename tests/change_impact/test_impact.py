@@ -426,3 +426,35 @@ def test_main_advancing_keeps_pinned_checkpoint_for_next_scan(monkeypatch, tmp_p
     monkeypatch.setattr("sys.argv", ["impact", "scan", "--apply", "--output", str(tmp_path / "report.json")])
     assert m.main() == 0
     assert json.dumps({"commits": after["commits"]}, sort_keys=True) in saved[0]
+
+
+def test_pr_preview_issue_transport_updates_same_issue_and_preserves_human_text(monkeypatch):
+    inventory, calls = [], []
+    def api(path, method, payload):
+        assert path in {"repos/x/y/issues", "repos/x/y/issues/9"}
+        calls.append((path, method, payload))
+        return {"number": 9, "html_url": "https://github.com/x/y/issues/9", **payload}
+    monkeypatch.setattr(m, "gh", api)
+    pr = {"number": 7, "html_url": "https://github.com/x/y/pull/7"}
+    first = m.publish_pr_report("x/y", pr, "Head a", "issue", inventory)
+    inventory[0]["body"] += "\nReviewer note survives."
+    assert m.publish_pr_report("x/y", pr, "Head a", "issue", inventory)["number"] == first["number"]
+    assert len(calls) == 1
+    updated = m.publish_pr_report("x/y", pr, "Head b", "issue", inventory)
+    assert updated["number"] == first["number"]
+    assert "Reviewer note survives." in updated["body"]
+    assert pr["html_url"] in updated["body"] and "Head b" in updated["body"]
+    assert "impact-task:" not in updated["body"]
+
+
+def test_pr_publication_errors_do_not_silently_switch_transports(monkeypatch):
+    calls = []
+    def fail(path, method, payload):
+        calls.append(path)
+        raise m.GitHubAccessError("denied")
+    monkeypatch.setattr(m, "gh", fail)
+    with pytest.raises(m.GitHubAccessError):
+        m.publish_pr_report("x/y", {"number": 7, "html_url": "url"}, "report", "issue", [])
+    assert calls == ["repos/x/y/issues"]
+    with pytest.raises(ValueError, match="transport"):
+        m.publish_pr_report("x/y", {}, "report", "invalid", [])
