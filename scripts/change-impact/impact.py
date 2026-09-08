@@ -510,10 +510,33 @@ def restore_recommendations(report, policy):
                 task["recommendation"], task["reasoning_status"] = match.groups()
 
 
+def publish_pr_report(repo, pr, body, transport, inventory):
+    if transport == "issue":
+        marker = f"<!-- impact-pr-preview:{pr['number']} -->"
+        block = f"{START}\n{marker}\nPR: {pr['html_url']}\n\n{body}\n{END}"
+        return upsert(repo, inventory, marker, f"change-impact: PR #{pr['number']} preview", block)
+    if transport != "comment":
+        raise ValueError("unknown PR report transport")
+    marker = "<!-- impact-pr-report:v1 -->"
+    body = marker + "\n" + body
+    comments = pages(f"repos/{repo}/issues/{pr['number']}/comments")
+    actor = gh("user")["login"]
+    existing = find_marker([c for c in comments if c["user"]["login"] == actor], marker)
+    if existing and existing["body"] != body:
+        return gh(f"repos/{repo}/issues/comments/{existing['id']}", "PATCH", {"body": body})
+    if not existing:
+        return gh(f"repos/{repo}/issues/{pr['number']}/comments", "POST", {"body": body})
+    return existing
+
+
 def pr_reports(reader, policy, after, reasoning, publish):
     """Poll PRs from trusted harness code. Never check out or execute PR-head code."""
     reports = []
+    transport = policy.get("pr_report_transport", "issue")
+    if transport not in {"issue", "comment"}:
+        raise ValueError("unknown PR report transport")
     for repo in policy["repositories"]:
+        inventory = pages(f"repos/{repo}/issues?state=all") if publish and transport == "issue" else []
         for pr in pages(f"repos/{repo}/pulls?state=open")[:policy["max_prs_per_repo"]]:
             if pr["base"]["ref"] != "main" or pr["head"]["repo"]["full_name"] != repo:
                 continue  # fork onboarding needs separate review, no privileged code execution
@@ -531,22 +554,15 @@ def pr_reports(reader, policy, after, reasoning, publish):
             reports.append(report)
             if not publish:
                 continue
-            marker = "<!-- impact-pr-report:v1 -->"
-            body = marker + f"\nChange-impact preview for `{pr['head']['sha']}`\n\n"
+            body = f"Change-impact preview for `{pr['head']['sha']}`\n\n"
             if "error" in report:
                 body += report["error"]
             else:
                 body += f"Changed nodes: {len(report['changed'])}; pending reviews: {len(report['tasks'])}.\n"
                 body += "\n".join(f"- `{t['id']}` ({t['stage']})" for t in report["tasks"])
                 body += "\n\nAdvisory preview, not semantic approval. Main adoption creates review issues."
-            comments = pages(f"repos/{repo}/issues/{pr['number']}/comments")
-            actor = gh("user")["login"]
-            owned = [c for c in comments if c["user"]["login"] == actor]
-            existing = find_marker(owned, marker)
-            if existing and existing["body"] != body:
-                gh(f"repos/{repo}/issues/comments/{existing['id']}", "PATCH", {"body": body})
-            elif not existing:
-                gh(f"repos/{repo}/issues/{pr['number']}/comments", "POST", {"body": body})
+            published = publish_pr_report(repo, pr, body, transport, inventory)
+            report["published_url"] = published["html_url"]
     return reports
 
 
