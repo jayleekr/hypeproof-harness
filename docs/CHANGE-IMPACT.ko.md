@@ -74,7 +74,7 @@ attestation이며 엔진이 URL의 사용자·학습효과를 판정하지 않�
 # main의 새 변경을 확인하고 로컬 보고서만 작성
 python scripts/change-impact/impact.py scan --reason --output impact-report.json
 
-# 채택된 main 변경의 이슈 동기화. SHA가 움직였으면 중단하고 다시 스캔한다.
+# 채택된 main 변경의 이슈 동기화. 고정 SHA가 main의 조상이면 처리하고 이후 변경은 다음 스캔에 남긴다.
 python scripts/change-impact/impact.py scan --reason --apply
 
 # 진행 중인 PR의 영향 미리보기. PR 코드는 실행하지 않는다.
@@ -108,9 +108,9 @@ git commit object에서 읽는다. manifest 도입 전 커밋과의 report 비�
 
 `.github/workflows/change-impact.yml`은 재사용 가능한 trusted main 엔진이다. 비공개
 Lab의 얇은 호출 workflow가 1시간마다 실행하며 수동 실행도 제공한다. source repo checkout의 코드는 실행하지
-않는다. `HYPEPROOF_GOVERNANCE_TOKEN`에 세 저장소 Contents read, Issues write,
-Pull requests read와 PR comment 권한이 필요하다. ANTHROPIC_API_KEY 미설정은 명시적
-not-configured이며 검토를 완료 처리하지 않는다. 키·권한 설정을 이번 코드가 바꾸지는 않는다.
+않는다. `HYPEPROOF_GOVERNANCE_TOKEN`은 세 저장소 Issues write, Pull requests read와 PR comment 권한을 사용한다.
+비공개 Lab Contents read는 아래 caller 토큰 경계를 따른다. ANTHROPIC_API_KEY 미설정은 명시적
+not-configured이며 검토를 완료 처리하지 않는다. 모델 키는 Lab caller에 설정하며 GitHub token 권한은 확대하지 않는다.
 
 1. Harness #121과 Lab #756, Studio #763을 리뷰한다.
 2. consumer manifest 두 개를 먼저 merge한다. 이는 앱 동작이나 배포 설정을 바꾸지 않는다.
@@ -126,7 +126,7 @@ not-configured이며 검토를 완료 처리하지 않는다. 키·권한 설정
 
 ## 운영 시험과 장애 처리
 
-`test.yml`의 수동 입력 `operational_smoke=true`는 실제 운영 token으로 세 저장소의
+Lab caller의 수동 입력 `operational_smoke=true`는 실제 운영 token으로 세 저장소의
 읽기·이슈 생성·갱신·재실행·관리 영역 밖 본문 보존·댓글 작성을 시험한다. PR 이벤트에서는
 실행되지 않는다. 시험 이슈는 별도 marker를 쓰고 finally에서 닫으며 실제 review/checkpoint로
 세지 않는다. 2026-09-08 실행 34250669924에서 세 저장소 모두 통과했다.
@@ -164,3 +164,7 @@ private Lab의 caller에서 실행한다. 엔진·정책·테스트의 정본은
 소스 읽기 key 선택은 repo와 GET resource를 모두 확인한다. 쓰기나 다른 저장소 요청에
 caller token을 쓰지 않는 회귀 테스트가 있다. caller workflow는 고정된 Harness workflow SHA를
 참조하고, 그 workflow는 승인되어 main에 채택된 Harness 엔진을 checkout한다.
+
+실행 중 main이 전진해도 고정 SHA가 main의 조상이면 해당 채택 버전의 검토를 발행한다.
+checkpoint는 고정 SHA를 유지하여 새 변경을 다음 스캔에서 검토한다. 미병합·분기된 SHA는
+어떤 이슈도 쓰기 전에 거부한다. 빈번한 제품 merge가 모든 검토의 진행을 막지 않는다.

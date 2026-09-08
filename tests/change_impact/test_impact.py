@@ -249,15 +249,15 @@ def test_checkpoint_is_not_written_after_partial_sync_failure(monkeypatch, tmp_p
         m.main()
 
 
-def test_moving_main_prevents_any_issue_write(monkeypatch, tmp_path):
+def test_unadopted_source_prevents_any_issue_write(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "preflight", lambda _: {})
     after = snap(node("INT-A"))
     monkeypatch.setattr(m, "snapshot", lambda *_: after)
-    monkeypatch.setattr(m.Reader, "resolve", lambda *_: "b" * 40)
+    monkeypatch.setattr(m.Reader, "adopted", lambda *_: False)
     monkeypatch.setattr(m, "pages", lambda *_: [])
     monkeypatch.setattr(m, "sync", lambda *_: pytest.fail("published stale source"))
     monkeypatch.setattr("sys.argv", ["impact", "scan", "--apply", "--output", str(tmp_path / "report.json")])
-    with pytest.raises(ValueError, match="main moved"):
+    with pytest.raises(ValueError, match="not adopted"):
         m.main()
 
 
@@ -398,8 +398,30 @@ def test_private_source_token_never_authorizes_writes_or_other_repos(monkeypatch
 
 def test_access_diagnostic_does_not_echo_source_or_credentials(monkeypatch):
     def run(args, **_):
-        raise subprocess.CalledProcessError(1, args, stdout="PRIVATE RESPONSE", stderr="private detail (HTTP 403)")
+        raise subprocess.CalledProcessError(1, args, output="PRIVATE RESPONSE", stderr="private detail (HTTP 403)")
     monkeypatch.setattr(m.subprocess, "run", run)
     with pytest.raises(m.GitHubAccessError) as error:
         m.gh("repos/jayleekr/hypeprooflab/contents/private-filename?ref=abc")
     assert str(error.value) == "GET repos/jayleekr/hypeprooflab/contents: HTTP 403"
+
+
+@pytest.mark.parametrize("status,expected", [("ahead", True), ("behind", False), ("diverged", False)])
+def test_adopted_ancestor_allows_progress_but_unmerged_ref_is_rejected(monkeypatch, status, expected):
+    reader = m.Reader()
+    monkeypatch.setattr(reader, "resolve", lambda *_: "b" * 40)
+    monkeypatch.setattr(m, "gh", lambda path: {"status": status})
+    assert reader.adopted("owner/repo", "a" * 40) is expected
+
+
+def test_main_advancing_keeps_pinned_checkpoint_for_next_scan(monkeypatch, tmp_path):
+    monkeypatch.setattr(m, "preflight", lambda _: {})
+    after = snap(node("INT-A"))
+    monkeypatch.setattr(m, "snapshot", lambda *_: after)
+    monkeypatch.setattr(m.Reader, "adopted", lambda *_: True)
+    monkeypatch.setattr(m, "pages", lambda *_: [])
+    monkeypatch.setattr(m, "sync", lambda *_: None)
+    saved = []
+    monkeypatch.setattr(m, "upsert", lambda *args: saved.append(args[-1]))
+    monkeypatch.setattr("sys.argv", ["impact", "scan", "--apply", "--output", str(tmp_path / "report.json")])
+    assert m.main() == 0
+    assert json.dumps({"commits": after["commits"]}, sort_keys=True) in saved[0]

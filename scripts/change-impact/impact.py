@@ -93,6 +93,18 @@ class Reader:
             raise ValueError("expected immutable commit SHA")
         return sha
 
+    def adopted(self, repo, sha):
+        head = self.resolve(repo, "main")
+        if head == sha:
+            return True
+        if repo in self.roots:
+            result = subprocess.run(["git", "-C", self.roots[repo], "merge-base",
+                                     "--is-ancestor", sha, head], timeout=60, capture_output=True)
+            if result.returncode not in (0, 1):
+                raise ValueError("cannot establish adopted revision")
+            return result.returncode == 0
+        return gh(f"repos/{repo}/compare/{sha}...{head}").get("status") == "ahead"
+
     def read(self, repo, sha, path):
         if path.startswith("/") or ".." in Path(path).parts:
             raise ValueError("source path must stay inside repository")
@@ -639,10 +651,11 @@ def main():
                               and checkpoint is not None)
     Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     if args.apply:
-        # Reject moving heads. Writes are restartable; checkpoint advances only after all succeed.
+        # Pinned ancestors are adopted: newer main changes remain after this checkpoint.
+        # Reject unmerged/diverged refs. Writes are restartable.
         for repo, sha in after["commits"].items():
-            if reader.resolve(repo, "main") != sha:
-                raise ValueError("main moved or non-main ref requested; run a fresh scan")
+            if not reader.adopted(repo, sha):
+                raise ValueError("source revision is not adopted on main")
         sync(report, policy)
         incomplete = {t["reasoning_status"] for t in report["tasks"]} & {"budget-exhausted", "failed", "not-configured"}
         if incomplete:

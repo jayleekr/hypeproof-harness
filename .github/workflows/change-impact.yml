@@ -6,6 +6,9 @@ on:
       apply:
         type: boolean
         default: false
+      operational_smoke:
+        type: boolean
+        default: false
     secrets:
       HYPEPROOF_GOVERNANCE_TOKEN:
         required: true
@@ -15,6 +18,11 @@ on:
     inputs:
       apply:
         description: Synchronize main review issues and advisory PR comments
+        type: boolean
+        default: false
+
+      operational_smoke:
+        description: Verify actual source reads and issue write/retry/cleanup before scanning
         type: boolean
         default: false
 
@@ -38,6 +46,13 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --quiet pyyaml
+      - name: Verify deployed credentials and API behavior
+        if: inputs.operational_smoke
+        env:
+          GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
+          CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
+          CHANGE_IMPACT_SOURCE_TOKEN: ${{ github.token }}
+        run: python scripts/change-impact/ops_smoke.py
       - name: Review adopted changes using trusted main code
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
