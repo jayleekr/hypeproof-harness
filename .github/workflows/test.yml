@@ -17,6 +17,18 @@ permissions:
   pull-requests: read
 
 jobs:
+  change-impact:
+    name: change-impact (graph, authority and retry contracts)
+    if: github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet pytest pyyaml
+      - run: python -m pytest tests/change_impact -q
+
   lint:
     name: lint (bash -n + path hygiene)
     # 본문 편집(`edited`)으로는 코드가 바뀌지 않는다. 본문을 읽는 pr-policy 만
@@ -146,7 +158,7 @@ jobs:
       - name: Validate policy offline
         run: python scripts/repo-governance/audit.py --offline
       - name: Run Python tests
-        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop tests/change_impact
+        run: python -m pytest tests/repo_governance tests/skill_creator tests/hype_review tests/hype_pr tests/hype_merge tests/security tests/weekly_loop
 
       # The weekly-loop gate cannot be enforced against live issues at PR time —
       # a PR contains no issues. What IS enforced here is the gate itself: every
