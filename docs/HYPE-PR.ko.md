@@ -1,5 +1,7 @@
 # hype-pr
 
+> 작성일 2026-09-08 · 상태: 활성
+
 > 이 문서는 `hypeproof-harness:docs/HYPE-PR.ko.md`가 원천이다.
 > 제품 repo에 vendoring된 사본은 직접 고치지 말고 harness에서 PR로 바꾼다.
 
@@ -18,6 +20,32 @@
 순서대로 merge하게 예약"하는 기능이다.
 
 ---
+
+## Agent가 PR을 만드는 흐름
+
+Harness, Lab, Studio의 PR 생성은 `skills/hype-pr/SKILL.md` 정본을 따른다. consumer에서는
+`.claude/skills/hype-pr/SKILL.md`로 배포되고 `.agents/skills/hype-pr/`도 같은 내용을 가리킨다.
+개발 시작에 기준 연결을 잡고, commit 후 `inspect`로 대상·상위·하위와 미등록 변경을 읽는다.
+Agent가 실제 문서를 읽고 assessment를 작성하며, 별도 모델 API key는 필요 없다.
+`prepare`는 repo/base/head/다른 정본 repo SHA/정책·도구 version에 묶인 receipt를 git metadata에
+저장한다. `create --apply`는 이 receipt를 재검사하고 remote head까지 일치해야 생성한다.
+새 owner/상위 단계 누락은 막고 기존 debt는 별도로 표시한다. 미등록 구현은 REQ와 test에 연결하며,
+새 기준 문서를 supporting/edit-only로 위장하지 않는다. semantic 판단과 test evidence는 Agent의
+attestation이다. 이 과정을 독립 human approval 또는 URL/테스트 결과 자체의 자동 검증이라고 부르지 않는다.
+
+```bash
+python3 scripts/hype-pr/pr.py inspect --repo jayleekr/hypeprooflab \
+  --output /tmp/impact.json --assessment-template /tmp/assessment.json
+# Skill 지침에 따라 assessment를 작성한다. 원문/상세 reasoning은 public PR에 복사하지 않는다.
+python3 scripts/hype-pr/pr.py prepare --repo jayleekr/hypeprooflab --assessment /tmp/assessment.json
+# 출력된 receipt path를 아래 create --preparation 에 전달한다.
+```
+
+consumer 명령은 sibling Harness checkout 또는 `HYPEPROOF_HARNESS`로 정본 명령에 위임한다.
+Harness가 없으면 명시적으로 실패한다. 정책·엔진 복제나 fallback owner 명단은 없다.
+원격 기준 commit이 로컬에 없으면 `git fetch origin main` 후 다시 실행한다. source를 읽을 권한이
+없으면 권한을 복구한다. 코드 변경/새 commit/base·다른 repo의 전진은 다시 검토할 이유다.
+`create`의 `--path`는 dry-run 참고용이며 실제 생성의 위험 판정은 git diff로 계산한다.
 
 ## 기본 사용법
 
@@ -58,7 +86,7 @@ python3 scripts/hype-pr/pr.py create \
   --path docs/HYPE-PR.ko.md
 ```
 
-`--apply`를 붙이면 `gh pr create`를 실행한다. `--auto-merge`를 같이 붙였고
+`--preparation <prepare 출력 경로> --apply`를 붙이면 검토를 재확인한 뒤 `gh pr create`를 실행한다. `--auto-merge`를 같이 붙였고
 eligibility가 통과하면 생성 직후 `gh pr merge --auto --squash --delete-branch`도
 실행한다.
 
@@ -149,7 +177,7 @@ docs/UI 변경은 high-risk가 아니지만, reviewer가 `human-needed`를 붙�
 
 PR 작성자는 다음을 기억한다.
 
-1. PR 생성 전 `hype-pr plan`으로 reviewer와 auto-merge 판정을 확인한다.
+1. PR 생성 Skill의 inspect/assessment/prepare를 거친다. plan만으로 생성 검토를 대체하지 않는다.
 2. high-risk 변경이면 `--auto-merge`를 붙이지 않는다.
 3. low-risk 반복 작업이면 `--auto-merge`를 붙일 수 있다.
 4. reviewer는 모두 요청하되, 모든 사람의 승인을 기다리는 정책은 아니다.

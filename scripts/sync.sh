@@ -56,7 +56,7 @@ esac
 # Second-arg form: sync.sh --commit --force-delete (allowed)
 [ "${2:-}" = "--force-delete" ] && FORCE_DELETE=1
 
-SKILLS=(skill-creator hype-review weekly-loop) # vendored to consumer/.claude/skills/<name>/
+SKILLS=(skill-creator hype-review weekly-loop hype-pr) # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md HYPE-REVIEW.ko.md HYPE-PR.ko.md WEEKLY-LOOP.ko.md) # vendored to consumer/docs/<file>
 SCRIPTS=(notify docs-harness hype-review hype-pr security weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root

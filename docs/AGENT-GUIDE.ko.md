@@ -1,5 +1,7 @@
 # HypeProof 공통 에이전트 가이드
 
+> 작성일 2026-09-08 · 상태: 활성
+
 > **출처(provenance)**: `jayleekr/hypeproof-harness:docs/AGENT-GUIDE.ko.md`
 > 의 vendored 사본. 직접 수정하지 말 것 — 변경은 harness에서 PR로.
 
@@ -32,8 +34,11 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 - 이슈가 없으면 먼저 만든다.
 - 브랜치는 `fix/`, `feat/`, `docs/`, `chore/` 중 하나로 시작한다.
 - PR 본문에는 `Closes #<issue-number>` 또는 동등한 자동 close 문구를 넣는다.
-- PR 생성 전 `scripts/hype-pr/pr.py plan`으로 작성자를 제외한 active 멤버 reviewer와
-  auto-merge eligibility를 확인한다.
+- Harness, Lab, Studio의 개발→PR 생성 요청은 `.claude/skills/hype-pr/SKILL.md`를 읽고 따른다.
+  개발 시작에 기준 연결을 확인하고, 생성 전 `inspect` → Agent assessment → `prepare` →
+  `create --preparation ... --apply`를 사용한다. 직접 `gh pr create`로 누락 검토를 우회하지 않는다.
+- PR 생성 명령이 실제 diff로 reviewer·risk를 계산한다. `plan`은 초기 참고용이다.
+  Skill은 `.agents/skills/hype-pr/`에서도 발견할 수 있다. 별도 GitHub required check는 추가하지 않는다.
 - `main` 직접 push는 메인테이너가 명시한 경우에만 한다.
 - harness 변경은 세 consumer repo에 영향을 줄 수 있으므로 더 좁고 검증 가능한
   변경으로 유지한다.
@@ -42,9 +47,8 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 
 리뷰 요청과 배포 권한은 repo마다 다르게 해석하지 않는다.
 
-- PR은 작성자를 제외한 활성 멤버 전원을 reviewer로 요청한다. 현재 활성 멤버는
-  `@jayleekr`, `@JeHyeong2`, `@ico1036`, `@xoqhdgh1002`, `@JinyongShin`,
-  `@TJ-kr`이다.
+- PR은 작성자를 제외한 활성 멤버 전원을 reviewer로 요청한다. 명단은 Harness의
+  `policy/members.yaml`에서 읽는다. 이 문서에 별도 명단을 복제하지 않는다.
 - GitHub가 작성자 본인이나 권한 없는 계정을 reviewer로 받을 수 없으면 PR 본문이나
   코멘트에 예외 사유를 남긴다.
 - production 배포 권한은 repo 정책에 명시된 trusted workflow가 가진다. 기본값은
@@ -62,6 +66,7 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 다음 파일/디렉토리는 harness에서 consumer repo로 복사되는 공유 자산이다.
 
 - `.claude/skills/skill-creator/`
+- `.claude/skills/hype-pr/` (`.agents/skills/hype-pr/`에서도 발견 가능)
 - `scripts/notify/`
 - `scripts/hype-pr/`
 - `docs/MEMBER-GUIDE.ko.md`

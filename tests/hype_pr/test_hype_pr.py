@@ -209,6 +209,7 @@ def test_create_apply_enables_auto_merge_when_eligible(monkeypatch) -> None:
     policy = module.load_policy()
     fake = _FakeGh(module)
     monkeypatch.setattr(module, "run", fake)
+    monkeypatch.setattr(module, "prepared_report", lambda args, policy: {"paths": args.path, "head": "a" * 40, "base_tip": "b" * 40, "tasks": [], "existing_debt": []})
 
     rc = module.command_create(_create_args(module), policy)
 
@@ -229,6 +230,7 @@ def test_create_apply_does_not_merge_high_risk_pr(monkeypatch) -> None:
     policy = module.load_policy()
     fake = _FakeGh(module)
     monkeypatch.setattr(module, "run", fake)
+    monkeypatch.setattr(module, "prepared_report", lambda args, policy: {"paths": args.path, "head": "a" * 40, "base_tip": "b" * 40, "tasks": [], "existing_debt": []})
 
     # A governance path must keep auto-merge ineligible even with --apply.
     args = _create_args(module, path=["policy/repos.yaml"])
@@ -237,3 +239,19 @@ def test_create_apply_does_not_merge_high_risk_pr(monkeypatch) -> None:
     assert rc == 0
     assert any(c[:3] == ["gh", "pr", "create"] for c in fake.calls)
     assert fake.merge_calls() == []
+
+
+def test_create_missing_receipt_never_calls_github(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module, "run", lambda *_: (_ for _ in ()).throw(AssertionError("GitHub mutation before preparation")))
+    import pytest
+    with pytest.raises(ValueError, match="required"):
+        module.command_create(_create_args(module), module.load_policy())
+
+
+def test_actual_prepared_diff_overrides_claimed_low_risk_paths(monkeypatch):
+    module = load_module(); fake = _FakeGh(module)
+    monkeypatch.setattr(module, "run", fake)
+    monkeypatch.setattr(module, "prepared_report", lambda *_: {"paths": ["policy/repos.yaml"], "head": "a" * 40, "base_tip": "b" * 40, "tasks": [], "existing_debt": []})
+    assert module.command_create(_create_args(module, path=["docs/harmless.md"]), module.load_policy()) == 0
+    assert not fake.merge_calls()
