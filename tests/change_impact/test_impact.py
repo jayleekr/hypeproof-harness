@@ -339,12 +339,16 @@ def test_preflight_checks_all_repos_before_writes(monkeypatch):
         calls.append((path, method))
         if path == "user":
             return {"login": "operator"}
+        if path.endswith("/commits/main"):
+            return {"sha": "a" * 40}
+        if "/contents/" in path:
+            return {"encoding": "base64", "content": "e30="}
         if path.endswith("private-repo"):
             raise ValueError("no read permission")
         return {} if "?" not in path else []
     monkeypatch.setattr(m, "gh", api)
     with pytest.raises(ValueError):
-        m.preflight({"repositories": {"owner/first": {}, "owner/private-repo": {}}})
+        m.preflight({"repositories": {"owner/first": {"manifest": "config/traceability.json"}, "owner/private-repo": {"manifest": "config/traceability.json"}}})
     assert all(method == "GET" for _, method in calls)
 
 

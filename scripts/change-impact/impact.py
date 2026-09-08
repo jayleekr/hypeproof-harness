@@ -37,6 +37,10 @@ QUESTIONS = {
 }
 
 
+class GitHubAccessError(ValueError):
+    """Sanitized diagnostics: resource category/status only, never source or credentials."""
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -45,8 +49,14 @@ def gh(path, method="GET", payload=None):
     args = ["gh", "api", path, "--method", method]
     if payload is not None:
         args += ["--input", "-"]
-    result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                            text=True, capture_output=True, check=True, timeout=60)
+    try:
+        result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
+                                text=True, capture_output=True, check=True, timeout=60)
+    except subprocess.CalledProcessError as exc:
+        status = re.search(r"HTTP (\d{3})", exc.stderr or "")
+        parts = path.split("?")[0].split("/")
+        category = "/".join(parts[:4]) if parts[0] == "repos" else parts[0]
+        raise GitHubAccessError(f"{method} {category}: HTTP {status[1] if status else 'unknown'}") from None
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
@@ -449,13 +459,17 @@ def preflight(policy):
     """Read access first across ALL repos; actual Issues write is tested by ops_smoke.py."""
     result = []
     actor = gh("user")["login"]
+    reader = Reader()
     for repo, config in policy["repositories"].items():
         info = gh(f"repos/{repo}")
         if info.get("archived") or info.get("disabled"):
             raise ValueError(f"inactive repository: {repo}")
         gh(f"repos/{repo}/pulls?state=open&per_page=1")
         gh(f"repos/{repo}/issues?state=open&per_page=1")
+        sha = reader.resolve(repo, "main")
+        reader.read(repo, sha, config["manifest"])
         result.append({"repo": repo, "readable": True,
+                       "manifest_readable": True,
                        "push_permission": bool(info.get("permissions", {}).get("push"))})
     return {"actor": actor, "repositories": result, "issue_write": "requires operational probe"}
 
@@ -639,6 +653,9 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
+    except GitHubAccessError as exc:
+        print(f"change-impact access failure: {exc}; no completion claimed", file=sys.stderr)
+        sys.exit(2)
     except (ValueError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         # No subprocess stderr: GitHub/source errors can contain private material.
         print(f"change-impact failed ({type(exc).__name__}); no completion claimed", file=sys.stderr)
