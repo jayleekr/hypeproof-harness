@@ -27,7 +27,7 @@
       "sources": [
         {
           "path": "docs/CHANGE-IMPACT.ko.md",
-          "section": "## \uc694\uad6c\uc0ac\ud56d\uacfc \uac80\uc99d"
+          "section": "## 요구사항과 검증"
         }
       ]
     },
@@ -41,14 +41,18 @@
       "sources": [
         {
           "path": "docs/CHANGE-IMPACT.ko.md",
-          "section": "## \uc124\uacc4"
+          "section": "## 설계"
         },
         {
           "path": "docs/HYPE-PR.ko.md",
-          "section": "## Agent\uac00 PR\uc744 \ub9cc\ub4dc\ub294 \ud750\ub984"
+          "section": "## Agent가 PR을 만드는 흐름"
         },
         {
           "path": "skills/hype-pr/SKILL.md"
+        },
+        {
+          "path": "docs/HYPE-PR.ko.md",
+          "section": "## Work GitHub transport"
         }
       ]
     },
@@ -71,6 +75,12 @@
         },
         {
           "path": "scripts/hype-pr/install.py"
+        },
+        {
+          "path": "scripts/hype-pr/work_transport.py"
+        },
+        {
+          "path": "scripts/hype-pr/work_host.js"
         }
       ]
     },
@@ -87,6 +97,12 @@
         },
         {
           "path": "tests/hype_pr/test_preparation.py"
+        },
+        {
+          "path": "tests/hype_pr/test_work_transport.py"
+        },
+        {
+          "path": "tests/hype_pr/work_host.test.js"
         }
       ]
     }

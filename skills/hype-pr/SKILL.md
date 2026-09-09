@@ -11,7 +11,10 @@ Harness checkout, found as a sibling of the main consumer checkout or through
 location (or use an existing checkout via the environment variable). If the entrypoint
 reports an outdated Harness, update a clean main checkout with a fast-forward pull,
 or use a separate updated checkout; preserve existing work. Python 3.11+,
-PyYAML and authenticated `gh` are required. Do not copy policy or the impact engine
+PyYAML are required. Local execution uses authenticated `gh`; Work can use the
+connected GitHub tools through the explicit host transport in
+`docs/HYPE-PR.ko.md` → `Work GitHub transport`. Both paths execute the same
+inspect/assessment/prepare/create guards. Do not copy policy or the impact engine
 into consumers. Keep operations scoped to the requested HypeProof repository.
 
 ## At development start
@@ -86,6 +89,15 @@ uncommitted text. Read working changes directly when developing.
    preparation summary to the PR body. Assessment prose is not published. Active
    non-author reviewers are requested under canonical policy. On stale preparation,
    repeat inspection/assessment; do not use direct `gh pr create` as a workaround.
+
+In Work, run these same commands through `runWorkCommand` in the canonical
+`scripts/hype-pr/work_host.js`. Use read-only host options for inspect/prepare;
+enable create only for the authorized repository and exact branch. The host
+rechecks live refs and connected author before creating the PR. A lost response
+can leave a created PR: inspect GitHub before retrying; never replay automatically.
+Keep source replies and assessments in private scratch directories, not commits.
+Transport changes under development may be exercised on their own branch when
+the user has authorized implementing this transport; this is not human approval.
 
 PR creation is not merge authorization. Follow the user's existing authorization
 and repository merge requirements. This is the standard agent workflow, not a new
