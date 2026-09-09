@@ -13,6 +13,9 @@ function fixture() {
       return wrap({content: JSON.stringify({sha: url.endsWith('/fix/example') ? head : sha})});
     },
     mcp__codex_apps__github_get_user_login: async () => wrap({login: 'owner'}),
+    mcp__codex_apps__github_fetch_file: async args => {
+      calls.push(args.path); return wrap({encoding: 'base64', content: 'c291cmNl'});
+    },
     mcp__codex_apps__github_create_pull_request: async args => {
       calls.push(args); return wrap({number: 9, url: 'https://github.com/x/one/pull/9'});
     },

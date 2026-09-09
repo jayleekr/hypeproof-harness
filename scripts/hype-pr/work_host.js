@@ -19,10 +19,23 @@ async function serveWorkRequest(tools, request, options) {
     // Cache only immutable content. Mutable refs are fetched on every verification.
     const immutable = match[2] === "contents" && /[?&]ref=[a-f0-9]{40}$/.test(path);
     if (immutable && options.cache?.has(path)) return options.cache.get(path);
-    const value = unwrap(await tools.mcp__codex_apps__github_fetch({
-      url: "https://api.github.com/" + path,
-    }));
-    const data = JSON.parse(value.content);
+    let data;
+    if (match[2] === "contents") {
+      const source = /^(.+)\?ref=([a-f0-9]{40})$/.exec(match[3]);
+      if (!source) throw new Error("Work source content requires an immutable ref");
+      // The generic fetch tool returns raw file text for contents URLs rather
+      // than GitHub's base64 envelope. Use the typed file tool explicitly.
+      const value = unwrap(await tools.mcp__codex_apps__github_fetch_file({
+        repository_full_name: match[1], path: source[1], ref: source[2], encoding: "base64",
+      }));
+      if (value.encoding !== "base64" || typeof value.content !== "string") {
+        throw new Error("Connector file response incomplete");
+      }
+      data = {encoding: value.encoding, content: value.content};
+    } else {
+      const value = unwrap(await tools.mcp__codex_apps__github_fetch({url: "https://api.github.com/" + path}));
+      data = JSON.parse(value.content);
+    }
     if (immutable) options.cache?.set(path, data);
     return data;
   };
