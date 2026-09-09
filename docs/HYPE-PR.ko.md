@@ -47,6 +47,42 @@ Harness가 없으면 명시적으로 실패한다. 정책·엔진 복제나 fall
 없으면 권한을 복구한다. 코드 변경/새 commit/base·다른 repo의 전진은 다시 검토할 이유다.
 `create`의 `--path`는 dry-run 참고용이며 실제 생성의 위험 판정은 git diff로 계산한다.
 
+## Work GitHub transport
+
+Work에서 `gh` 인증을 사용할 수 없으면 연결된 GitHub 도구가 로컬 CLI의 요청을
+수행한다. 토큰을 셸·파일에 복사하지 않는다. `scripts/hype-pr/work_host.js`의
+`runWorkCommand(tools, options)`를 Work code mode에서 실행한다. 반환값은 종료 코드,
+비공개 stdout/stderr 디렉터리, 생성한 PR 식별자와 부가 작업 오류다.
+
+options는 다음을 지정한다.
+
+- `harness`: 정본 Harness checkout 절대 경로. CLI와 host 모두 이 버전을 사용한다.
+- `checkout`: 작업 repo의 깨끗하고 커밋된 worktree 절대 경로.
+- `args`: 기존 CLI 인수 배열. `inspect` → Agent assessment 작성 → `prepare` →
+  `create --preparation ... --apply`를 동일하게 실행한다. consumer PR에도 같은 경로를 쓴다.
+- `repositories`: `policy/change-impact.json`의 저장소 목록. 임의로 확대하지 않는다.
+- `repo`, `branch`, `author`: 사용자 작업 대상과 연결된 GitHub 계정.
+- `reviewers`: `policy/members.yaml`의 active 멤버에서 작성자를 제외한 목록.
+- `allowCreate`: inspect/prepare는 false, 사용자가 요청한 PR 생성은 true.
+- `onProgress`: 선택적인 진행 알림 함수. 원문이나 평가 내용을 출력하지 않는다.
+
+host 소스를 읽어 `runWorkCommand` 함수를 로드하고 현재 연결의 `tools` 객체를 전달한다.
+Python CLI는 임시 0700 디렉터리의 요청/응답으로 통신한다. 응답은 원자적으로 전달되고,
+60초 무응답·응답 ID 불일치·도구 오류는 실패한다. immutable contents만 같은 host 세션에서
+재사용하며 main/head는 매번 다시 읽는다. 생성 직전 source SHA와 연결 계정도 재확인한다.
+원격에 커밋이 없으면 GitHub 연결로 같은 파일 tree를 feature branch에 저장한 뒤 해당
+원격 commit을 로컬로 fetch/checkout하고 검토한다. 다른 SHA를 같은 준비 기록으로 취급하지 않는다.
+
+Work transport는 PR 생성과 해당 PR의 reviewer/label 요청만 쓰기 지원한다. auto-merge,
+기존 PR 변경, impact scan/checkpoint 쓰기는 이 경로의 범위 밖이다. 응답 유실은 생성 실패를
+뜻하지 않으므로 원격 PR부터 확인한다. 테스트나 host 종료 후 임시 원문은 보존 정책에 맞게 정리한다.
+이 모드는 검증 로직을 우회하거나 독립 사람 승인을 부여하지 않는다.
+
+검증: `python -m pytest tests/hype_pr tests/change_impact -q`와
+`node --test tests/hype_pr/work_host.test.js`. 실제 사용은 연결된 세 저장소 읽기와
+guarded PR 생성으로 별도 확인한다. 사용자에게 Work transport 구현을 승인받은 경우
+개발 브랜치의 host/CLI로 해당 변경 자체의 PR 준비를 시험할 수 있다.
+
 ## 기본 사용법
 
 먼저 dry-run으로 reviewer와 auto-merge eligibility를 확인한다.

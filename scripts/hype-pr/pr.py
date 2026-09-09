@@ -267,6 +267,17 @@ def reviewer_commands(repo: str, pr_ref: str, reviewers: list[str]) -> list[list
 
 
 def apply_reviewer_requests(repo: str, pr_ref: str, reviewers: list[str]) -> list[dict[str, Any]]:
+    if os.environ.get("HYPE_PR_WORK_DIR"):
+        from work_transport import exchange
+        results = []
+        for reviewer in reviewers:
+            try:
+                exchange("reviewer", {"repo": parse_repo(repo), "pr": pr_ref, "reviewer": reviewer})
+                results.append({"reviewer": reviewer, "returncode": 0})
+            except ValueError:
+                results.append({"reviewer": reviewer, "returncode": 1,
+                                "stderr": "Work reviewer request failed; no approval implied"})
+        return results
     results: list[dict[str, Any]] = []
     for reviewer, cmd in zip(reviewers, reviewer_commands(repo, pr_ref, reviewers)):
         gh_result = run(cmd)
@@ -320,6 +331,9 @@ def git_receipt_path(checkout):
 
 
 def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
+    work = bool(os.environ.get("HYPE_PR_WORK_DIR"))
+    if work and args.auto_merge:
+        raise ValueError("Work transport does not schedule auto-merge; follow existing review policy")
     labels = args.label or []
     preparation_required = parse_repo(args.repo) in json.loads((ROOT / "policy/change-impact.json").read_text())["repositories"]
     report = prepared_report(args, policy) if args.apply and preparation_required else None
@@ -369,12 +383,27 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
-    created = run(cmd)
+    if work:
+        if report is None:
+            raise ValueError("Work PR creation requires verified preparation")
+        from work_transport import exchange
+        outcome = exchange("create", {
+            "repo": parse_repo(args.repo), "base": args.base, "head": args.head,
+            "title": args.title, "body": body, "draft": args.draft,
+            "labels": labels, "author": args.author,
+            "expected": {"head": report["head"], "base": report["base_tip"],
+                         "sources": report["source_commits"]},
+        })
+        created = CommandResult(0, outcome["url"], "")
+    else:
+        created = run(cmd)
     result["create"] = {
         "returncode": created.returncode,
         "stdout": created.stdout.strip(),
         "stderr": created.stderr.strip(),
     }
+    if work:
+        result["label_errors"] = outcome.get("label_errors", [])
     if created.returncode != 0:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return created.returncode

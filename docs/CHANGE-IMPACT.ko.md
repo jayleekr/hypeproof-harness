@@ -42,6 +42,7 @@ UNASSIGNED로 표시하고 이슈를 강제 배정하지 않는다. owner 지정
 | CI-07 | 오래된 승인·권한 없는 댓글·bot·증거 없는 완료를 수용하지 않는다 | resolution tests |
 | CI-08 | 미등록 변경은 mapping review로 드러낸다 | unregistered path test |
 | CI-09 | 기준 채택과 전체 반영 완료를 구분한다 | status reports + version-bound resolution |
+| CI-10 | Work에서도 동일한 PR 준비 검증과 live SHA 확인을 거치고 연결 오류·무응답에 실패한다 | Work transport / stale source / host contract tests |
 
 `python -m pytest tests/change_impact -q`로 실행한다. 완료 증거 URL은 책임자의
 attestation이며 엔진이 URL의 사용자·학습효과를 판정하지 않는다. 이슈 close 이벤트는
