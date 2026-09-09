@@ -131,14 +131,43 @@ class Reader:
             return []
         if repo in self.roots:
             return self.git(repo, "diff", "--name-only", "--no-renames", base, head).decode().splitlines()
-        data = gh(f"repos/{repo}/compare/{base}...{head}")
-        if len(data.get("files", [])) >= 300 or data.get("status") not in {"ahead", "identical"}:
-            raise ValueError("incomplete or diverged GitHub comparison; use local git")
+        return self.changed_segments(repo, base, head)
+
+    def changed_segments(self, repo, base, head):
+        """Recover capped comparisons without treating a partial file list as complete.
+
+        Segment unions deliberately include intermediate/reverted paths. This is
+        conservative for coverage review; node revisions still use endpoint text.
+        Every segment must be an ancestor comparison. Complex merge histories or
+        a single oversized commit can still require the existing local-git path.
+        """
+        pending = [(base, head)]
+        seen = set()
         paths = set()
-        for item in data.get("files", []):
-            paths.add(item["filename"])
-            if item.get("previous_filename"):
-                paths.add(item["previous_filename"])
+        while pending:
+            start, end = pending.pop()
+            if (start, end) in seen or len(seen) >= 63:
+                raise ValueError("comparison split limit reached; use local git")
+            seen.add((start, end))
+            data = gh(f"repos/{repo}/compare/{start}...{end}")
+            if data.get("status") not in {"ahead", "identical"}:
+                raise ValueError("incomplete or diverged GitHub comparison; use local git")
+            files = data.get("files")
+            if not isinstance(files, list):
+                raise ValueError("missing comparison files; use local git")
+            if len(files) >= 300:
+                candidates = [c.get("sha") for c in data.get("commits", [])
+                              if isinstance(c.get("sha"), str)
+                              and SHA.fullmatch(c["sha"]) and c["sha"] not in {start, end}]
+                if not candidates:
+                    raise ValueError("unsplittable capped comparison; use local git")
+                middle = candidates[len(candidates) // 2]
+                pending.extend([(middle, end), (start, middle)])
+                continue
+            for item in files:
+                paths.add(item["filename"])
+                if item.get("previous_filename"):
+                    paths.add(item["previous_filename"])
         return sorted(paths)
 
 
