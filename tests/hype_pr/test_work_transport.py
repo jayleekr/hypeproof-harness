@@ -65,3 +65,15 @@ def test_mismatched_or_failed_response_is_rejected(tmp_path, monkeypatch, wrong_
 def test_host_adapter_contracts():
     import subprocess
     subprocess.run(["node", "--test", str(ROOT / "tests/hype_pr/work_host.test.js")], check=True)
+
+
+def test_local_host_cache_never_reuses_mutable_refs(tmp_path, monkeypatch):
+    tmp_path.chmod(0o700)
+    monkeypatch.setenv("HYPE_PR_WORK_DIR", str(tmp_path))
+    source = "repos/x/y/contents/doc?ref=" + "a" * 40
+    live = "repos/x/y/commits/main"
+    value = {"encoding": "base64", "content": "eA=="}
+    (tmp_path / "immutable-cache.json").write_text(json.dumps({source: value, live: {"sha": "old"}}))
+    assert work.exchange("read", {"path": source}) == value
+    with pytest.raises(ValueError, match="timed out"):
+        work.exchange("read", {"path": live}, timeout=.01)

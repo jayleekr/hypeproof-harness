@@ -12,10 +12,17 @@ import re
 import sys
 import time
 import uuid
+from functools import lru_cache
 
 
 def enabled():
     return bool(os.environ.get("HYPE_PR_WORK_DIR"))
+
+
+@lru_cache(maxsize=1)
+def immutable_cache(root):
+    path = root / "immutable-cache.json"
+    return json.loads(path.read_text()) if path.exists() else {}
 
 
 def exchange(operation, payload, timeout=60):
@@ -24,6 +31,11 @@ def exchange(operation, payload, timeout=60):
         raise ValueError("Work transport needs an existing absolute private directory")
     if root.stat().st_mode & 0o077:
         raise ValueError("Work transport directory must have mode 0700")
+    path = payload.get("path", "")
+    if operation == "read" and re.fullmatch(r"repos/[^/]+/[^/]+/contents/.+\?ref=[a-f0-9]{40}", path):
+        cached = immutable_cache(root).get(path)
+        if cached is not None:
+            return cached
     request_id = uuid.uuid4().hex
     request = {"version": 1, "id": request_id, "operation": operation, "payload": payload}
     temporary = root / f"{request_id}.tmp"

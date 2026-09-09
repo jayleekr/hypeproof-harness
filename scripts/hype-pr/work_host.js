@@ -101,6 +101,10 @@ async function runWorkCommand(tools, options) {
   const directory = scratch.output.trim();
   if (!/^\/tmp\/hype-pr-work-[A-Za-z0-9]+$/.test(directory)) throw new Error("Invalid scratch path");
   options.cache ??= new Map();
+  const cachedSources = Object.fromEntries([...options.cache].filter(([path]) =>
+    /^repos\/[^/]+\/[^/]+\/contents\/.+\?ref=[a-f0-9]{40}$/.test(path)
+    && options.repositories.includes(path.split('/').slice(1, 3).join('/'))));
+  await tools.apply_patch(`*** Begin Patch\n*** Add File: ${directory}/immutable-cache.json\n+${JSON.stringify(cachedSources)}\n*** End Patch`);
   const python = options.python ?? "python3";
   const cli = options.harness + "/scripts/hype-pr/pr.py";
   const poll = options.harness + "/scripts/hype-pr/work_transport.py";
@@ -121,6 +125,7 @@ async function runWorkCommand(tools, options) {
       return {exit_code: Number(queue.done), directory, createdPR: options.createdPR, diagnostics};
     }
     for (const request of queue.requests) {
+      if (!/^[a-f0-9]{32}$/.test(request.id)) throw new Error("Invalid queued request ID");
       if (handled.has(request.id)) continue;
       handled.add(request.id);
       let response;
