@@ -46,6 +46,13 @@ def digest(value):
 
 
 def gh(path, method="GET", payload=None):
+    if os.environ.get("HYPE_PR_WORK_DIR"):
+        sys.path.insert(0, str(ROOT / "scripts/hype-pr"))
+        from work_transport import exchange
+        # Work mode currently serves preparation reads, not scan/checkpoint writes.
+        if method != "GET":
+            raise ValueError("Work impact transport is read-only")
+        return exchange("read", {"path": path})
     args = ["gh", "api", path, "--method", method]
     if payload is not None:
         args += ["--input", "-"]

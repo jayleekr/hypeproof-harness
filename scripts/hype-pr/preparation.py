@@ -34,6 +34,7 @@ def tool_version():
     paths = sorted({p for p in (ROOT / "policy").rglob("*")
                     if p.is_file() and p.suffix in {".json", ".yaml", ".yml"}}
                    | set((ROOT / "scripts/hype-pr").glob("*.py"))
+                   | set((ROOT / "scripts/hype-pr").glob("*.js"))
                    | {ROOT / "scripts/change-impact/impact.py",
                       ROOT / "scripts/repo-governance/audit.py",
                       ROOT / "skills/hype-pr/SKILL.md",
