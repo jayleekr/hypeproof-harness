@@ -458,3 +458,57 @@ def test_pr_publication_errors_do_not_silently_switch_transports(monkeypatch):
     assert calls == ["repos/x/y/issues"]
     with pytest.raises(ValueError, match="transport"):
         m.publish_pr_report("x/y", {}, "report", "invalid", [])
+
+
+def test_capped_comparison_splits_and_preserves_rename_and_reverted_paths(monkeypatch):
+    a, b, c = "a" * 40, "b" * 40, "c" * 40
+    responses = {
+        f"{a}...{c}": {"status": "ahead", "files": [{"filename": "partial"}] * 300,
+                        "commits": [{"sha": b}, {"sha": c}]},
+        f"{a}...{b}": {"status": "ahead", "files": [
+            {"filename": "new", "previous_filename": "old"}, {"filename": "reverted"}]},
+        f"{b}...{c}": {"status": "ahead", "files": [
+            {"filename": "late"}, {"filename": "reverted"}]},
+    }
+    calls = []
+    def api(path):
+        calls.append(path)
+        return responses[path.split("/compare/")[1]]
+    monkeypatch.setattr(m, "gh", api)
+    assert m.Reader().changed("x/y", a, c) == ["late", "new", "old", "reverted"]
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("response", [
+    {"status": "ahead", "files": [{"filename": "partial"}] * 300,
+     "commits": [{"sha": "b" * 40}]},
+    {"status": "diverged", "files": []},
+    {"status": "ahead"},
+])
+def test_incomplete_or_unsplittable_comparison_still_fails(monkeypatch, response):
+    monkeypatch.setattr(m, "gh", lambda _: response)
+    with pytest.raises(ValueError):
+        m.Reader().changed("x/y", "a" * 40, "b" * 40)
+
+
+def test_divergent_split_never_returns_partial_paths(monkeypatch):
+    a, b, c = "a" * 40, "b" * 40, "c" * 40
+    def api(path):
+        if path.endswith(f"{a}...{c}"):
+            return {"status": "ahead", "files": [{}] * 300, "commits": [{"sha": b}]}
+        return {"status": "diverged", "files": [{"filename": "not-complete"}]}
+    monkeypatch.setattr(m, "gh", api)
+    with pytest.raises(ValueError, match="diverged"):
+        m.Reader().changed("x/y", a, c)
+
+
+def test_comparison_split_budget_is_bounded(monkeypatch):
+    calls = []
+    def api(path):
+        calls.append(path)
+        return {"status": "ahead", "files": [{}] * 300,
+                "commits": [{"sha": f"{len(calls):040x}"}]}
+    monkeypatch.setattr(m, "gh", api)
+    with pytest.raises(ValueError, match="limit"):
+        m.Reader().changed("x/y", "a" * 40, "b" * 40)
+    assert len(calls) == 63
