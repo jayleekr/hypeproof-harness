@@ -6,7 +6,7 @@
     {
       "id": "HAR-INT-CHANGE",
       "stage": "intent",
-      "owner": null,
+      "owner": "jayleekr",
       "depends_on": [
         "LAB-MISSION"
       ],
@@ -20,7 +20,7 @@
     {
       "id": "HAR-REQ-CHANGE",
       "stage": "requirement",
-      "owner": null,
+      "owner": "jayleekr",
       "depends_on": [
         "HAR-INT-CHANGE"
       ],
@@ -34,7 +34,7 @@
     {
       "id": "HAR-DES-CHANGE",
       "stage": "design",
-      "owner": null,
+      "owner": "jayleekr",
       "depends_on": [
         "HAR-REQ-CHANGE"
       ],
@@ -59,7 +59,7 @@
     {
       "id": "HAR-IMP-CHANGE",
       "stage": "implementation",
-      "owner": null,
+      "owner": "jayleekr",
       "depends_on": [
         "HAR-DES-CHANGE"
       ],
@@ -87,7 +87,7 @@
     {
       "id": "HAR-TEST-CHANGE",
       "stage": "test",
-      "owner": null,
+      "owner": "jayleekr",
       "depends_on": [
         "HAR-REQ-CHANGE"
       ],
