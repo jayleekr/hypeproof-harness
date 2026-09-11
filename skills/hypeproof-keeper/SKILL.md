@@ -1,6 +1,6 @@
 ---
 name: hypeproof-keeper
-description: HypeProof Keeper Context Steward. 컨텍스트 점검 갱신과 인계이 필요한 작업에서 사용한다.
+description: HypeProof Keeper Context Steward. 컨텍스트 점검 갱신과 인계가 필요한 작업에서 사용한다.
 ---
 
 # Keeper — Context Steward
