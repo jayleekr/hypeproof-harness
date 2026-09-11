@@ -105,6 +105,89 @@
           "path": "tests/hype_pr/work_host.test.js"
         }
       ]
+    },
+    {
+      "id": "HAR-INT-CREW",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/AI-CREW.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-CREW",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-CREW"
+      ],
+      "sources": [
+        {
+          "path": "docs/AI-CREW.ko.md",
+          "section": "## 요구사항"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-CREW",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-CREW"
+      ],
+      "sources": [
+        {
+          "path": "docs/AI-CREW.ko.md",
+          "section": "## 설계"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-CREW",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-CREW"
+      ],
+      "sources": [
+        {
+          "path": "skills/hypeproof-scout/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-compass/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-forge/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-lens/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-keeper/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-keeper/scripts/check_context.py"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-CREW",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-CREW"
+      ],
+      "sources": [
+        {
+          "path": "tests/test_ai_crew.py"
+        }
+      ]
     }
   ]
 }

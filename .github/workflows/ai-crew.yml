@@ -1,0 +1,19 @@
+name: AI Crew skills
+on:
+  pull_request:
+    paths: ['skills/hypeproof-*/**', 'tests/test_ai_crew.py', '.agents/skills/**', '.claude/skills/**', '.github/workflows/ai-crew.yml']
+  push:
+    branches: [main]
+    paths: ['skills/hypeproof-*/**', 'tests/test_ai_crew.py', '.agents/skills/**', '.claude/skills/**', '.github/workflows/ai-crew.yml']
+permissions:
+  contents: read
+jobs:
+  context-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m unittest discover -s tests -p test_ai_crew.py
+      - run: bash scripts/register-skills.sh --check
