@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import builtins
 import json
 import subprocess
 import sys
@@ -137,6 +138,24 @@ def test_policy_profile_requires_non_author_approval_without_label() -> None:
 
     assert items[0].status == "waiting"
     assert "policy_required_non_author_approvals:0/1" in items[0].blockers
+
+
+def test_policy_loading_fails_closed_without_pyyaml(monkeypatch) -> None:
+    module = load_module()
+    original_import = builtins.__import__
+
+    def without_yaml(name, *args, **kwargs):
+        if name == "yaml":
+            raise ImportError("synthetic missing dependency")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_yaml)
+    try:
+        module.load_policy_scope()
+    except RuntimeError as exc:
+        assert "refusing to drop canonical merge policy" in str(exc)
+    else:
+        raise AssertionError("missing PyYAML must not weaken approval policy")
 
 
 def test_policy_profile_required_approval_count_can_exceed_one() -> None:
@@ -325,6 +344,29 @@ def test_automerge_apply_enables_and_reports_failure(monkeypatch) -> None:
     failed = automerge.plan_actions(automerge.build_queue([waiting]), apply=True)
     assert failed[0].status == "failed"
     assert "merge blocked" in failed[0].reason
+
+
+def test_merge_ready_apply_uses_exact_head_without_auto(monkeypatch) -> None:
+    automerge = load_automerge()
+    ready = pr(
+        author="JinyongShin",
+        reviews=[review("jayleekr", "APPROVED")],
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        automerge,
+        "run_gh_text",
+        lambda args: (calls.append(args) or 0, "merged"),
+    )
+
+    actions = automerge.plan_actions(
+        automerge.build_queue([ready]), apply=True, merge_ready=True
+    )
+
+    assert actions[0].status == "merged"
+    assert "--auto" not in calls[0]
+    assert "--match-head-commit" in calls[0]
+    assert "abc123" in calls[0]
 
 
 def test_monitor_markdown_shows_auto_merge_status(tmp_path: Path) -> None:

@@ -212,13 +212,17 @@ def classify_pr(pr: dict[str, Any], *, required_non_author_approvals: int = 0) -
 def load_policy_scope() -> tuple[list[str], dict[str, int], list[str]]:
     try:
         import yaml  # type: ignore
-    except ImportError:
-        return DEFAULT_REPOS, {}, DEFAULT_REPOS
+    except ImportError as exc:
+        raise RuntimeError(
+            "PyYAML is required; refusing to drop canonical merge policy"
+        ) from exc
 
     path = ROOT / "policy" / "repos.yaml"
     if not path.exists():
-        return DEFAULT_REPOS, {}, DEFAULT_REPOS
+        raise RuntimeError(f"canonical merge policy is missing: {path}")
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(doc.get("repositories"), list) or not doc["repositories"]:
+        raise RuntimeError(f"canonical merge policy has no repositories: {path}")
     profiles: dict[str, dict[str, Any]] = {}
     for profile_path in sorted((ROOT / "policy" / "profiles").glob("*.yaml")):
         profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
@@ -234,7 +238,10 @@ def load_policy_scope() -> tuple[list[str], dict[str, int], list[str]]:
         if owner and name and item.get("lifecycle") not in ("release", "retired"):
             full = f"{owner}/{name}"
             repos.append(full)
-            profile = profiles.get(str(item.get("profile") or ""), {})
+            profile_name = str(item.get("profile") or "")
+            if profile_name not in profiles:
+                raise RuntimeError(f"missing merge policy profile for {full}: {profile_name or '<empty>'}")
+            profile = profiles[profile_name]
             if profile.get("repository", {}).get("allow_auto_merge") is True:
                 auto_merge_repos.append(full)
             reviews = (
@@ -244,7 +251,9 @@ def load_policy_scope() -> tuple[list[str], dict[str, int], list[str]]:
             count = int(reviews.get("required_approving_review_count") or 0)
             if count > 0:
                 required_approvals[full] = count
-    return repos or DEFAULT_REPOS, required_approvals, auto_merge_repos
+    if not repos:
+        raise RuntimeError("canonical merge policy contains no active repositories")
+    return repos, required_approvals, auto_merge_repos
 
 
 def load_policy_repos() -> list[str]:

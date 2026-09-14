@@ -77,10 +77,30 @@ def skip_reason(item: MergeAssessment) -> str:
     return "not_eligible"
 
 
-def plan_actions(items: list[MergeAssessment], *, apply: bool = False) -> list[AutoMergeAction]:
+def plan_actions(
+    items: list[MergeAssessment], *, apply: bool = False, merge_ready: bool = False
+) -> list[AutoMergeAction]:
     actions: list[AutoMergeAction] = []
     for item in items:
-        if eligible_for_auto_merge(item):
+        if item.status == "ready" and merge_ready:
+            status = "would_merge"
+            reason = "policy_and_checks_ready"
+            if apply:
+                code, detail = run_gh_text([
+                    "pr",
+                    "merge",
+                    str(item.number),
+                    "--repo",
+                    item.repo,
+                    "--squash",
+                    "--delete-branch",
+                    "--match-head-commit",
+                    item.head_oid,
+                ])
+                status = "merged" if code == 0 else "failed"
+                if code != 0:
+                    reason = detail.splitlines()[-1] if detail else "direct_merge_failed"
+        elif eligible_for_auto_merge(item):
             status = "would_enable"
             reason = "waiting_for_required_review"
             if apply:
@@ -120,13 +140,17 @@ def plan_actions(items: list[MergeAssessment], *, apply: bool = False) -> list[A
 def render_markdown(actions: list[AutoMergeAction]) -> str:
     counts = {
         status: sum(1 for action in actions if action.status == status)
-        for status in ("would_enable", "enabled", "failed", "already_enabled", "skipped")
+        for status in (
+            "would_enable", "enabled", "would_merge", "merged", "failed",
+            "already_enabled", "skipped",
+        )
     }
     lines = [
         "# hype-merge auto-merge audit",
         "",
         (
             f"would_enable={counts['would_enable']} enabled={counts['enabled']} "
+            f"would_merge={counts['would_merge']} merged={counts['merged']} "
             f"failed={counts['failed']} already_enabled={counts['already_enabled']} "
             f"skipped={counts['skipped']}"
         ),
@@ -147,9 +171,15 @@ def render_markdown(actions: list[AutoMergeAction]) -> str:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Enable auto-merge for PRs only waiting on required review.")
     parser.add_argument("--repo", action="append", default=[], help="Repository in owner/name form. Defaults to policy auto-merge repos.")
+    parser.add_argument("--pr", type=int, help="Limit a live run to one PR; requires exactly one --repo.")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--offline-file", help="JSON file containing a PR object or PR object list.")
     parser.add_argument("--apply", action="store_true", help="Mutate GitHub by enabling auto-merge.")
+    parser.add_argument(
+        "--merge-ready",
+        action="store_true",
+        help="Directly merge the selected policy-ready PR instead of skipping it.",
+    )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return parser.parse_args(argv)
 
@@ -157,6 +187,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     try:
+        if args.merge_ready and not args.offline_file and (len(args.repo) != 1 or not args.pr):
+            raise RuntimeError("--merge-ready requires exactly one --repo and --pr")
         if args.offline_file:
             data = json.loads(Path(args.offline_file).read_text(encoding="utf-8"))
             prs = data if isinstance(data, list) else [data]
@@ -164,7 +196,11 @@ def main(argv: list[str] | None = None) -> int:
             prs = []
             for repo in args.repo or load_auto_merge_policy_repos():
                 prs.extend(fetch_open_prs(repo, args.limit))
-        actions = plan_actions(build_queue(prs), apply=args.apply)
+            if args.pr:
+                prs = [pr for pr in prs if int(pr.get("number") or 0) == args.pr]
+                if not prs:
+                    raise RuntimeError(f"open PR not found: {args.repo[0]}#{args.pr}")
+        actions = plan_actions(build_queue(prs), apply=args.apply, merge_ready=args.merge_ready)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
         print(f"hype-merge automerge: {exc}", file=sys.stderr)
         return 2
