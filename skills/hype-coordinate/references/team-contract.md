@@ -137,13 +137,16 @@ work. Do not invent speculative features or unrelated refactors to stay busy.
 ## Cost-aware monitoring and dispatch
 
 Continuous delivery does not mean five models continuously reread the same state.
-Use one watcher owned by A. Prefer a supported GitHub event trigger. Otherwise A
-uses one recurring task, the cheapest supported model, low reasoning, and the
-deterministic `hype-coordinate/scripts/delivery_delta.py` gate with PyYAML about
-every five minutes. The gate covers both GitHub Issues/Epics and PR delivery
-state. Missing policy dependencies fail the tick; they never reduce
-technical or evidence gates. Explicitly select the watcher model; do not inherit an expensive role
-model by accident.
+Use one local deterministic watcher. Prefer a supported GitHub event trigger;
+otherwise run `hype-coordinate/scripts/watch_delivery.py --loop` as one background
+child of the A cmux session (not a LaunchAgent or detached daemon; cmux rejects
+those, #180). An unchanged tick runs Python and GitHub queries only and
+uses no model token. When pending work exists it submits one packet to the already
+open A surface, and A performs coordination before returning to idle. Do not add a
+second `/loop`, `CronCreate`, or role poller while the local watcher runs.
+If the watcher is unavailable, a temporary A task may run the same gate with
+the cheapest supported model and low reasoning. Missing policy dependencies fail
+the tick; they never reduce technical or evidence gates.
 
 An unchanged gate result ends that watcher tick with no more reads, comments, or
 role calls. A changed result submits work only to the role needed for the affected packet.

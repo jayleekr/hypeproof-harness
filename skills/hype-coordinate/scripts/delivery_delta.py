@@ -74,7 +74,7 @@ def current_queue(root: Path) -> list[dict[str, Any]]:
     keep = (
         "repo", "number", "status", "blockers", "non_author_approvals",
         "checks_ok", "reviewDecision", "mergeStateStatus", "headRefOid",
-        "autoMergeEnabled",
+        "autoMergeEnabled", "url",
     )
     return sorted(
         ({key: item.get(key) for key in keep} for item in raw),

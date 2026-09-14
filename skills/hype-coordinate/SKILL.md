@@ -11,9 +11,15 @@ You own operational delivery, not a competing product strategy or coding queue.
 
 ## Event loop and cost boundary
 
-A is the only periodic watcher. Do not make all five role models poll GitHub.
-Prefer a GitHub event trigger. If polling is necessary, use one recurring task
-with the cheapest supported model and low reasoning, normally every 5 minutes.
+A is the only coordination model awakened by delivery monitoring. Do not make all
+five role models poll GitHub. Prefer the local `watch_delivery.py --loop` watcher,
+started once as a background shell task of this A session so it stays a live cmux
+child (a LaunchAgent or detached daemon is rejected by the cmuxOnly socket, #180).
+It runs the deterministic delta with no model token, then wakes A only
+when a pending record exists. Do not also register `/loop` or `CronCreate` in A
+while that watcher runs. If the local watcher is unavailable, one temporary
+recurring task with the cheapest supported model and low reasoning may run the same
+gate, normally every 5 minutes.
 Run `uv run --with pyyaml python scripts/delivery_delta.py` first (or use another
 interpreter that already has PyYAML). This gate covers open issues, including a
 new GPT-authored Epic, and open PR delivery state. When it reports `unchanged`, do no
@@ -32,8 +38,9 @@ Load the shared contract and relevant handoffs only after a changed item identif
 the needed path. If a tick hits a context limit, the watcher is unhealthy: reset
 the coordinator context, replace the bloated task, and verify a fresh unchanged tick.
 
-After meaningful work, return to the event loop. Reuse one existing watcher and
-remove duplicate role polling jobs. Reload the shared contract after compaction.
+After meaningful work, return to idle. The local watcher will wake A for the next
+pending record. Reuse one running watcher and remove duplicate role polling jobs.
+Reload the shared contract after compaction.
 Record a durable handoff when the watcher stops for a real runtime, usage,
 permission, or tool limit.
 
