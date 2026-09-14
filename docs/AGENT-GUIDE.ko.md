@@ -44,7 +44,9 @@ ready, 다른 세션 작업, 리뷰 대기, 의존성, 사람/환경 대기, 재
 - Harness, Lab, Studio의 개발→PR 생성 요청은 `.claude/skills/hype-pr/SKILL.md`를 읽고 따른다.
   개발 시작에 기준 연결을 확인하고, 생성 전 `inspect` → Agent assessment → `prepare` →
   `create --preparation ... --apply`를 사용한다. 직접 `gh pr create`로 누락 검토를 우회하지 않는다.
-- PR 생성 명령이 실제 diff로 reviewer·risk를 계산한다. `plan`은 초기 참고용이다.
+- PR 생성 명령이 실제 diff로 risk를 계산한다. reviewer 요청은 기본 비활성이고,
+  사용자가 해당 PR의 리뷰를 명시한 경우에만 `--request-reviewers`로 계산·요청한다.
+  `plan`은 초기 참고용이다.
   Skill은 `.agents/skills/hype-pr/`에서도 발견할 수 있다. 별도 GitHub required check는 추가하지 않는다.
 - `main` 직접 push는 메인테이너가 명시한 경우에만 한다.
 - harness 변경은 세 consumer repo에 영향을 줄 수 있으므로 더 좁고 검증 가능한
@@ -54,10 +56,13 @@ ready, 다른 세션 작업, 리뷰 대기, 의존성, 사람/환경 대기, 재
 
 리뷰 요청과 배포 권한은 repo마다 다르게 해석하지 않는다.
 
-- PR은 작성자를 제외한 활성 멤버 전원을 reviewer로 요청한다. 명단은 Harness의
-  `policy/members.yaml`에서 읽는다. 이 문서에 별도 명단을 복제하지 않는다.
-- GitHub가 작성자 본인이나 권한 없는 계정을 reviewer로 받을 수 없으면 PR 본문이나
-  코멘트에 예외 사유를 남긴다.
+- Jay가 주최하는 일반 HypeProof 제품 작업은 reviewer를 요청하지 않는다. 필수 CI와
+  해당 작업의 증거 게이트가 통과하면 조정 세션이 exact head를 머지한다. PR 생성 때
+  CODEOWNERS catch-all이 자동으로 만든 요청도 `hype-pr`가 제거한다.
+- 사용자가 특정 PR의 리뷰를 명시한 경우에만 `--request-reviewers`를 붙인다. 이때
+  명단은 Harness의 `policy/members.yaml`에서 읽고 작성자는 제외한다.
+- GitHub가 기술적으로 비작성자 승인을 강제하면 그 상태를 실제 게이트로 기록한다.
+  보호 규칙을 낮추거나 승인을 꾸미지 않는다.
 - production 배포 권한은 repo 정책에 명시된 trusted workflow가 가진다. 기본값은
   `main` merge 후 GitHub Actions가 배포하는 방식이다.
 - Vercel, Fly, Cloudflare 같은 provider의 Git 자동 배포는 repo 정책과 repo-local
@@ -74,11 +79,18 @@ ready, 다른 세션 작업, 리뷰 대기, 의존성, 사람/환경 대기, 재
 
 - `.claude/skills/skill-creator/`
 - `.claude/skills/hype-pr/` (`.agents/skills/hype-pr/`에서도 발견 가능)
+- `.claude/skills/hype-coordinate/`
+- `.claude/skills/hype-intent/`
+- `.claude/skills/hype-studio/`
+- `.claude/skills/hype-chalk/`
+- `.claude/skills/hype-verify/`
+- `.claude/skills/hypeproof-operator/`
 - `scripts/notify/`
 - `scripts/hype-pr/`
 - `docs/MEMBER-GUIDE.ko.md`
 - `docs/AGENT-GUIDE.ko.md`
 - `docs/HYPE-PR.ko.md`
+- `docs/FIVE-SESSION-DELIVERY.ko.md`
 - `CLAUDE.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
 - `AGENTS.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
 - `OPENCLAW.md` (없으면 seed, 있으면 보존 + 이 문서 참조)
@@ -93,7 +105,7 @@ PR을 만들고, 메인테이너가 `scripts/sync.sh`로 consumer에 반영한�
 ### Claude Code
 
 - Claude Code 스킬은 `.claude/skills/`에서 발견된다.
-- 공통 스킬인 `skill-creator`는 harness에서 vendoring된다.
+- 공통 스킬과 HypeProof 5세션 역할 스킬은 harness에서 vendoring된다.
 - repo별 Claude 전용 규칙이 필요하면 `CLAUDE.md`에 짧게 두고, 공통 규칙은 이
   문서로 링크한다.
 
@@ -101,6 +113,8 @@ PR을 만들고, 메인테이너가 `scripts/sync.sh`로 consumer에 반영한�
 
 - Codex는 repo 루트의 `AGENTS.md`를 우선 진입점으로 사용한다.
 - `AGENTS.md`는 공통 규칙을 복사하지 말고 이 문서를 참조한다.
+- 5세션 역할 스킬의 정본은 Harness `skills/hype-*`에 있다. 개인 설치본은 이
+  정본을 복사하거나 링크하며, 개인 홈 디렉터리의 사본을 정본으로 취급하지 않는다.
 - 구현 전에는 파일 구조와 기존 테스트를 먼저 읽고, 수정은 최소 범위로 둔다.
 
 ### OpenClaw

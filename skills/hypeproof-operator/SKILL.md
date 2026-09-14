@@ -52,8 +52,8 @@ Never patch vendored copies inside consumer repos when the canonical file lives 
 5. Branch: use `fix/`, `feat/`, `docs/`, or `chore/`; avoid direct `main` pushes.
 6. Change: keep edits narrow and aligned with the target repo.
 7. Validate: run the smallest meaningful local tests plus repo-specific checks.
-8. PR: include `Closes #...` or a clear issue link, request all HypeProof reviewers, and explain risk.
-9. Monitor: watch CI, reviews, branch protection, deploys, and merge status until the work is merged or blocked by an external condition.
+8. PR: include `Closes #...` or a clear issue link, explain risk, and do not request reviewers for Jay-hosted HypeProof work.
+9. Integrate: after the exact head passes required checks and applicable evidence gates, squash-merge it without waiting for a review, then watch main CI, deployment, and the live surface until the result is verified or a concrete external condition blocks it.
 
 ## Governance Tasks
 
@@ -96,33 +96,35 @@ worksheet on each PR actually assigned to me, then act.
 
 ## Review Requests
 
-When requesting reviews for HypeProof PRs, request every active member unless the user explicitly narrows the audience.
+Jay's standing instruction for HypeProof work is: do not request reviewers. This
+applies to ordinary product, content, documentation, test, and deployment PRs in
+the allowed scope, including PRs created by an agent. Do not call
+`hype-pr request-reviewers`, add reviewers during PR creation, or wait for a
+social approval that GitHub does not enforce. Remove stale pending requests when
+they would leave the wrong operational signal.
 
-Use `policy/members.yaml` as the source of members. Treat authors as still useful for awareness, but remember branch protection needs a non-author approval.
-
-If a `hype-review` harness exists, prefer it. Otherwise use GitHub directly:
-
-```bash
-gh pr edit <number> --repo owner/name --add-reviewer user1 --add-reviewer user2
-```
-
-Review guidance should teach role-based thinking:
-
-- Maintainer lens: policy, security, release safety, rollback.
-- Product lens: docs, UX, deployment behavior, user-facing regressions.
-- Contributor lens: implementation clarity, tests, maintainability.
-
-When summarizing reviewer state, separate "requested", "approved", "changes requested", "pending invitation", and "author cannot satisfy required non-author approval".
+An explicit per-PR instruction from Jay may re-enable review for that PR. If
+GitHub technically enforces a non-author approval or a control-plane rule blocks
+the merge, record the exact enforced gate and keep doing independent work. Do not
+manufacture an approval, weaken protection, or send a review request without that
+separate instruction.
 
 ## Merge And Auto-Merge
 
-Do not direct-merge just because checks are green. Merge only when branch protection, review policy, and user intent are satisfied.
+Jay's standing instruction grants merge authority for ordinary HypeProof delivery.
+Do not ask Jay to press the merge button or wait for a review request. Squash-merge
+the exact current head as soon as required CI passes, applicable X2 evidence is
+current, dependency order is resolved, and no explicit hold, failed check,
+changes-requested state, conflict, or unresolved material product/security/business
+decision remains. Then verify the merge SHA, main CI, deployment, and live behavior
+that the change claims.
 
 Safe auto-merge policy:
 
 - Enable auto-merge only for HypeProof repos whose harness policy explicitly allows it.
 - Never enable auto-merge for excluded repos such as personal blogs.
-- Prefer auto-merge reservation over immediate merge when the only blockers are required reviews.
+- Prefer an exact-head immediate merge once gates pass. Use auto-merge only when a
+  repository-enforced check is still running and the policy allows reservation.
 - Do not auto-merge release repos unless a release-specific policy explicitly permits it.
 
 If `scripts/hype-merge/monitor.py` or `scripts/hype-merge/automerge.py` exists, use it. Otherwise inspect with:
@@ -137,11 +139,13 @@ Before enabling auto-merge, verify the head SHA and use `--match-head-commit` wh
 ### Merge trains: expect repeated BEHIND
 
 Product repos require the branch to be current, so **merging one PR pushes every
-other open PR in that repo to BEHIND**. Approving is not enough — for each PR:
+other open PR in that repo to BEHIND**. Refresh and re-read the exact head for
+each PR:
 
 ```bash
 gh pr update-branch <n> --repo owner/name
-gh pr merge <n> --repo owner/name --squash --auto
+gh pr view <n> --repo owner/name --json headRefOid,mergeStateStatus,statusCheckRollup
+gh pr merge <n> --repo owner/name --squash --delete-branch --match-head-commit <head-sha>
 ```
 
 After a merge lands, re-check the rest and re-run `update-branch` on the ones that

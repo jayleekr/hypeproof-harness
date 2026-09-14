@@ -27,6 +27,12 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | 3 consumers `.claude/skills/` |
 | `skills/hype-review/` | PR 리뷰 요청 확인 + 역할별 리뷰 워크시트 스킬 | 3 consumers `.claude/skills/` |
 | `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-coordinate/` | 단일 저비용 watcher, 역할 분배, ACK와 통합을 맡는 Claude A 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-intent/` | GPT Epic과 제품 Intent를 실행 가능한 요구사항으로 잇는 Codex X1 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-studio/` | Studio 구현 패킷을 수행하는 Claude B 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-chalk/` | Chalk 구현 패킷을 수행하는 Claude C 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-verify/` | 실제 동작과 PR head를 독립 검증하는 Codex X2 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hypeproof-operator/` | HypeProof 범위의 PR·머지·배포 운영 스킬 | 3 consumers `.claude/skills/` |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `skills/demo-video-harness/` | 웹 앱/페이지를 timeline YAML + Playwright + ffmpeg로 내레이션 있는 데모 mp4로 렌더링하는, 특정 회사/제품에 종속되지 않는 generic 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
@@ -35,6 +41,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `docs/HYPE-REVIEW.ko.md` | `hype-review` 역할별 PR 리뷰 질문·답변 가이드 | 3 consumers `docs/` |
 | `docs/HYPE-PR.ko.md` | `hype-pr` PR 생성·reviewer 요청·auto-merge 판정 가이드 | 3 consumers `docs/` |
 | `docs/WEEKLY-LOOP.ko.md` | 주간 운영 루프 canonical 정의 — 회의 → 이슈 → 번다운 | 3 consumers `docs/` |
+| `docs/FIVE-SESSION-DELIVERY.ko.md` | Claude A/B/C와 Codex X1/X2 전달·ACK·비용 계약 | 3 consumers `docs/` |
 | `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |

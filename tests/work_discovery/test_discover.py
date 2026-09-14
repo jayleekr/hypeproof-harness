@@ -85,14 +85,70 @@ class DiscoveryTests(unittest.TestCase):
         self.item['depends_on']=['other']
         self.assertEqual(self.state(), 'dependency')
 
-    def test_completion_requires_current_implementation_inputs(self):
+    def complete_packet(self):
         (self.root/'code.py').write_text('original')
-        (self.root/'report.md').write_text('Observed save and negative control')
-        self.item['completion']=dict(verdict='PASS',reviewed_by='reviewer',report='report.md',
+        (self.root/'report.md').write_text('REQ-01 PASS; REQ-02 NOT RUN')
+        self.item['completion']=dict(verdict='PASS',reviewed_by='reviewer',report='report.md',scope_sha256=d.scope_digest(self.item),
                                      inputs={p:d.digest(self.root/p) for p in ['code.py','docs/req.md','report.md']})
+
+    def test_completion_requires_current_implementation_inputs(self):
+        self.complete_packet()
         self.assertEqual(self.state(), 'complete')
         (self.root/'code.py').write_text('changed')
         self.assertEqual(self.state(), 'ready')
+
+    def test_completion_is_invalidated_when_packet_scope_expands(self):
+        # X2 P1 on #162: same files, same report, but REQ-02 is added to the completed packet.
+        (self.root/'docs/req.md').write_text('| REQ-01 | Keep files |\n| REQ-02 | New |\n')
+        self.complete_packet()
+        self.assertEqual(self.state(), 'complete')
+        self.item['requirements']=[dict(path='docs/req.md', ids=['REQ-01','REQ-02'])]
+        self.assertEqual(self.state(), 'ready')
+
+    def test_completion_is_invalidated_when_acceptance_contract_changes(self):
+        self.complete_packet()
+        self.item['negative_control']='Failed write preserves original AND reports the error'
+        self.assertEqual(self.state(), 'ready')
+        self.item['negative_control']='Failed write preserves original'
+        self.assertEqual(self.state(), 'complete')
+        self.item['next_action']='Unrelated wording change'
+        self.assertEqual(self.state(), 'complete')
+
+    def test_completion_without_scope_digest_fails_closed(self):
+        self.complete_packet()
+        del self.item['completion']['scope_sha256']
+        self.assertEqual(self.state(), 'ready')
+
+    def test_explicit_pr_references_count_as_active_work(self):
+        # X2 P2 on #162: a PR body saying "Refs #1020, #852" overlaps the #852 packet.
+        repo='jayleekr/hypeproof-studio'
+        self.assertEqual(d.referenced_issues(repo, 'Refs #1020, #852', [1021]), [852, 1020, 1021])
+        self.assertEqual(d.referenced_issues(repo, 'See jayleekr/hypeproof-studio#852 and other/repo#9'), [852])
+        self.assertEqual(d.referenced_issues(repo, 'https://github.com/jayleekr/hypeproof-studio/issues/852 https://github.com/other/repo/issues/7'), [852])
+        self.assertEqual(d.referenced_issues(repo, 'heading ## 3 and a#5 token'), [])
+        self.snapshot['pull_requests']=[dict(number=1025, issues=d.referenced_issues(repo, 'Refs #1020, #1', [1021]))]
+        self.assertEqual(self.state(), 'in_review')
+
+    def test_live_snapshot_keeps_non_closing_references(self):
+        calls=[]
+        def fake_gh(*args):
+            calls.append(args)
+            if args[0]=='api':
+                return [[dict(number=1, state='open', labels=[])]]
+            return [dict(number=1025, title='docs(measurement)', body='Refs #1020, #1', closingIssuesReferences=[dict(number=1021)])]
+        original=d.gh; d.gh=fake_gh
+        try:
+            snap=d.live_snapshot('jayleekr/hypeproof-studio')
+        finally:
+            d.gh=original
+        self.assertIn('body', calls[-1][calls[-1].index('--json')+1])
+        self.assertEqual(snap['pull_requests'], [dict(number=1025, issues=[1, 1020, 1021])])
+
+    def test_scope_digest_cli(self):
+        manifest=self.root/'manifest.json'; manifest.write_text(json.dumps(self.manifest))
+        result=subprocess.run(['python3',str(SCRIPT),'--checkout',str(self.root),'--manifest','manifest.json','--scope-digest','files'],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stdout.strip(), d.scope_digest(self.item))
 
     def test_requirement_only_completion_is_not_enough(self):
         (self.root/'report.md').write_text('claims PASS')

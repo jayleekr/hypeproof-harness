@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hype Studio \u00b7 Claude B"
+  short_description: "Implement and deliver bounded Studio work packets"
+  default_prompt: "Use $hype-studio to start this HypeProof role, discover current work, and report in Korean."

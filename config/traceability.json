@@ -190,6 +190,102 @@
       ]
     },
     {
+      "id": "HAR-INT-DELIVERY",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-DELIVERY",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## 요구사항"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-DELIVERY",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## 역할과 호출"
+        },
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## 전달 상태"
+        },
+        {
+          "path": "skills/hype-coordinate/references/team-contract.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-DELIVERY",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "skills/hype-coordinate/SKILL.md"
+        },
+        {
+          "path": "skills/hype-coordinate/scripts/delivery_delta.py"
+        },
+        {
+          "path": "skills/hype-coordinate/scripts/wake_role.py"
+        },
+        {
+          "path": "skills/hype-intent/SKILL.md"
+        },
+        {
+          "path": "skills/hype-studio/SKILL.md"
+        },
+        {
+          "path": "skills/hype-chalk/SKILL.md"
+        },
+        {
+          "path": "skills/hype-verify/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-operator/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-DELIVERY",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "tests/hype_coordinate/test_wake_role.py"
+        }
+      ]
+    },
+    {
       "id": "HAR-INT-WORK",
       "stage": "intent",
       "owner": "jayleekr",

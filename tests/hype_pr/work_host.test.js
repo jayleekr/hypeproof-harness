@@ -20,6 +20,7 @@ function fixture() {
       calls.push(args); return wrap({number: 9, url: 'https://github.com/x/one/pull/9'});
     },
     mcp__codex_apps__github_request_pull_request_reviewers: async args => {calls.push(args); return wrap({});},
+    mcp__codex_apps__github_remove_pull_request_reviewers: async args => {calls.push(args); return wrap({});},
   };
   const request = {version: 1, id: 'a'.repeat(32), operation: 'create', payload: {
     repo: 'x/one', head: 'fix/example', base: 'main', author: 'owner', title: 'Fix',
@@ -35,6 +36,10 @@ test('live refs precede create; repeated mutations and out-of-scope reviewers fa
   await assert.rejects(serveWorkRequest(f.tools, f.request, f.options), /repeated/);
   const req = {...f.request, operation: 'reviewer', payload: {repo: 'x/one', pr: result.url, reviewer: 'reviewer'}};
   await serveWorkRequest(f.tools, req, f.options);
+  const remove = {...f.request, operation: 'unreviewer', payload: {repo: 'x/one', pr: result.url, reviewer: 'reviewer'}};
+  await serveWorkRequest(f.tools, remove, f.options);
+  remove.payload.reviewer = 'intruder';
+  await assert.rejects(serveWorkRequest(f.tools, remove, f.options), /scope/);
   req.payload.reviewer = 'intruder';
   await assert.rejects(serveWorkRequest(f.tools, req, f.options), /scope/);
 });

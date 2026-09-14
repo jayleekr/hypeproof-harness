@@ -18,8 +18,12 @@
   분리한다. 사람 인수 대기가 독립적인 계측·fixture·로컬 구현까지 막지 않도록 packet을 나눈다.
 - WD-04: 닫힌 이슈와 병합된 PR만으로 충족 처리하지 않는다. 범위별 검토자·보고서·
   요구사항/구현/검사 입력 hash가 있는 완료 기록을 확인한다. 입력 변경은 재검증으로 돌아간다.
+  완료는 검토한 packet 범위(요구사항 ID·검증 입력·양성/음성 대조군·증거 기준)에 묶인다.
+  같은 파일이라도 packet에 요구사항이 추가되거나 인수 기준이 바뀌면 재검증으로 돌아간다.
 - WD-05: 전체 GitHub 이슈·PR을 현재 조회하며 fresh wip를 보존한다. 조회 실패·오래된
   snapshot·claim 시각 불명은 가용성 미확인이다. 목록은 추천이며 claim과 merge를 수행하지 않는다.
+  열린 PR의 자동 닫기 링크뿐 아니라 제목·본문의 명시 참조(`Refs #N`, 같은 저장소 `owner/repo#N`·URL)도
+  진행 중인 작업으로 보고 해당 packet을 in_review로 둔다. 다른 저장소 참조는 포함하지 않는다.
 - WD-06: "할 일 없음"은 등록 범위, 조회 시각, 미등록/미충족/검증 대기/사람 대기 수와
   함께 보고한다. ready 0개는 종료의 증거가 아니다. 미등록 영역까지 제품 완료를 확장하지 않는다.
 
@@ -43,6 +47,8 @@ python3 /path/to/hypeproof-harness/scripts/work-discovery/discover.py --checkout
 
 완료 attestation은 에이전트 판단이다. `completion`의 `reviewed_by`, `report`, `inputs`,
 `verdict: PASS`를 검토하며 `verification_inputs`에 구현·테스트·fixture를 지정한다.
+`completion.scope_sha256`에는 검토 시점의 packet 범위 digest를 기록한다
+(`discover.py --checkout . --scope-digest <packet id>`). 값이 없거나 현재 범위와 다르면 완료가 아니다.
 파일 존재/hash 일치는 그 증거의 독립 실행·인간 승인·실제 학습 효과를 증명하지 않는다.
 설계 문서나 테스트 파일의 존재도 의미적 충족의 보증이 아니다.
 
@@ -64,5 +70,6 @@ human gate 뒤에 임의로 넣지 않으며, 새 원장이 배포 승인이나 
 
 `python3 -m unittest discover -s tests/work_discovery -v`.
 정상 원장, 누락/추가/수정 REQ, 미등록 문서, 순환 의존성, 닫힌 이슈, fresh/stale claim,
-입력 변경 후 완료 무효화, 사람 gate, 열린 PR, 원문 접근 실패를 대조한다.
+입력 변경 후 완료 무효화, packet 범위 확장·인수 기준 변경·범위 digest 누락 시 완료 무효화,
+사람 gate, 열린 PR의 자동 닫기·명시 참조(다른 저장소 제외), 원문 접근 실패를 대조한다.
 이 테스트는 작업 탐색 계약의 검사이며 Studio의 제품 인수가 아니다.

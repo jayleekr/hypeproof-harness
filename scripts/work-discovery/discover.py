@@ -97,9 +97,30 @@ def audit(root, manifest):
     return errors
 
 
+SCOPE_FIELDS = ('kind', 'design_delta', 'positive_control', 'negative_control', 'evidence_required')
+
+
+def scope_digest(item):
+    """Digest of the reviewed acceptance scope: requirement IDs, verification inputs and contract.
+
+    Excludes the completion attestation itself and non-acceptance fields (title, next_action,
+    issue, depends_on), so a verdict stays tied to exactly the scope that was reviewed.
+    """
+    contract = {
+        'requirements': sorted([r['path'], sorted(r['ids'])] for r in item.get('requirements', [])),
+        'verification_inputs': sorted(item.get('verification_inputs', [])),
+        **{field: item.get(field) for field in SCOPE_FIELDS},
+    }
+    return hashlib.sha256(json.dumps(contract, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
 def fulfilled(root, item):
     evidence = item.get('completion')
     if not evidence or evidence.get('verdict') != 'PASS' or not evidence.get('reviewed_by'):
+        return False
+    # A verdict covers only the scope it reviewed. Adding requirement IDs or changing the
+    # acceptance contract invalidates it even when every pinned file is byte-identical.
+    if evidence.get('scope_sha256') != scope_digest(item):
         return False
     # Pin all implementation/test/requirement inputs used by the verdict.
     inputs = evidence.get('inputs', {})
@@ -145,6 +166,22 @@ def gh(*args):
     return json.loads(subprocess.check_output(['gh', *args], text=True))
 
 
+def referenced_issues(repo, text, closing=()):
+    """Issue numbers an open PR is working on: auto-closing links plus explicit references.
+
+    `Refs #852`, `jayleekr/hypeproof-studio#852` and same-repo issue/PR URLs count; references
+    qualified with another repository do not. Non-closing references are active work too.
+    """
+    refs = {int(n) for n in closing}
+    owner_repo = re.escape(repo)
+    for match in re.finditer(r'(?<![\w/.#-])(?:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#(\d+)\b', text or ''):
+        if match.group(1) is None or match.group(1).lower() == repo.lower():
+            refs.add(int(match.group(2)))
+    for match in re.finditer(r'https://github\.com/' + owner_repo + r'/(?:issues|pull)/(\d+)\b', text or '', re.I):
+        refs.add(int(match.group(1)))
+    return sorted(refs)
+
+
 def live_snapshot(repo):
     pages = gh('api', '--paginate', '--slurp', f'repos/{repo}/issues?state=all&per_page=100')
     issues = [i for page in pages for i in page if 'pull_request' not in i]
@@ -155,11 +192,15 @@ def live_snapshot(repo):
                       if re.search(r'\bclaim(?:s|ed)?\b|작업.*(?:시작|착수)|선점', c['body'], re.I)]
             issue['claim_at'] = max(claims) if claims else None
     prs = gh('pr', 'list', '--repo', repo, '--state', 'open', '--limit', '1000',
-             '--json', 'number,closingIssuesReferences')
+             '--json', 'number,title,body,closingIssuesReferences')
     if len(prs) == 1000:
         raise ValueError('PR listing may be truncated')
     return {'repository': repo, 'complete': True, 'fetched_at': datetime.now(timezone.utc).isoformat(),
-            'issues': issues, 'pull_requests': [{'number': p['number'], 'issues': [i['number'] for i in p['closingIssuesReferences']]} for p in prs]}
+            'issues': issues, 'pull_requests': [
+                {'number': p['number'], 'issues': referenced_issues(
+                    repo, (p.get('title') or '') + '\n' + (p.get('body') or ''),
+                    [i['number'] for i in p['closingIssuesReferences']])}
+                for p in prs]}
 
 
 def main():
@@ -170,9 +211,16 @@ def main():
     parser.add_argument('--snapshot', type=Path, help='Complete recorded GitHub snapshot (max age 1h)')
     parser.add_argument('--save-snapshot', type=Path)
     parser.add_argument('--json', action='store_true')
+    parser.add_argument('--scope-digest', metavar='WORK_ITEM', help='Print the scope_sha256 to record in that item\'s completion')
     args = parser.parse_args()
     root = args.checkout.resolve()
     manifest = json.loads((root / args.manifest).read_text())
+    if args.scope_digest:
+        item = next((w for w in manifest['work_items'] if w['id'] == args.scope_digest), None)
+        if item is None:
+            raise ValueError(f'unknown work item: {args.scope_digest}')
+        print(scope_digest(item))
+        return 0
     errors = audit(root, manifest)
     now = datetime.now(timezone.utc)
     result = {'repository': manifest['repository'], 'errors': errors, 'integrity_only': args.check}
