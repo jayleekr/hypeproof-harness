@@ -3,7 +3,7 @@
 
 This tool is intentionally conservative:
 
-- every active member is requested as a reviewer, excluding the PR author
+- reviewer requests are explicit opt-in and exclude the PR author
 - auto-merge is opt-in and only enabled when repo policy allows it and the
   detected risk is low enough
 - dry-run is the default for commands that would mutate GitHub
@@ -138,12 +138,14 @@ def plan(
     labels: list[str],
     draft: bool,
     auto_merge: bool,
+    request_reviewers: bool = False,
 ) -> dict[str, Any]:
     repo, profile = find_repo(policy, repo_ref)
     full = repo_full_name(repo)
     profile_repo = profile.get("repository", {})
     risks = detect_risks(paths)
-    reviewer_logins = reviewers_for_author(policy, author)
+    eligible_reviewers = reviewers_for_author(policy, author)
+    reviewer_logins = eligible_reviewers if request_reviewers else []
     profile_allows_auto_merge = bool(profile_repo.get("allow_auto_merge"))
     checks = required_checks(repo)
 
@@ -170,8 +172,10 @@ def plan(
         "author": author,
         "reviewers": reviewer_logins,
         "review_request": {
+            "enabled": request_reviewers,
             "active_members": active_members(policy),
             "exclude_author": True,
+            "eligible_reviewers": eligible_reviewers,
             "requested_reviewers": reviewer_logins,
         },
         "risk": {
@@ -235,6 +239,7 @@ def command_request_reviewers(args: argparse.Namespace, policy: dict[str, Any]) 
         labels=labels,
         draft=bool(pr.get("isDraft")),
         auto_merge=False,
+        request_reviewers=True,
     )
     reviewers = planned["reviewers"]
     result = {
@@ -346,6 +351,7 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
         labels=labels,
         draft=args.draft,
         auto_merge=args.auto_merge,
+        request_reviewers=args.request_reviewers,
     )
     body = args.body or ""
     if args.body_file:
@@ -434,23 +440,24 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="HypeProof PR creation and review-request harness.")
+    parser = argparse.ArgumentParser(description="HypeProof guarded PR creation harness.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    plan_parser = sub.add_parser("plan", help="Plan reviewers and auto-merge eligibility without GitHub calls.")
+    plan_parser = sub.add_parser("plan", help="Plan explicit reviewers and auto-merge eligibility without GitHub calls.")
     plan_parser.add_argument("--repo", required=True, help="owner/name or policy repo name")
     plan_parser.add_argument("--author", required=True, help="GitHub login of PR author")
     plan_parser.add_argument("--path", action="append", default=[], help="Changed path. Can repeat.")
     plan_parser.add_argument("--label", action="append", default=[], help="PR label. Can repeat.")
     plan_parser.add_argument("--draft", action="store_true")
     plan_parser.add_argument("--auto-merge", action="store_true")
+    plan_parser.add_argument("--request-reviewers", action="store_true", help="Opt in to all active non-author reviewers.")
 
     req_parser = sub.add_parser("request-reviewers", help="Request all active members on an existing PR.")
     req_parser.add_argument("--repo", required=True)
     req_parser.add_argument("--pr", required=True)
     req_parser.add_argument("--apply", action="store_true", help="Mutate GitHub. Omit for dry-run.")
 
-    create_parser = sub.add_parser("create", help="Create a PR with all-member reviewers.")
+    create_parser = sub.add_parser("create", help="Create a guarded PR without reviewers by default.")
     create_parser.add_argument("--repo", required=True)
     create_parser.add_argument("--head", required=True)
     create_parser.add_argument("--base", default=DEFAULT_BASE)
@@ -462,6 +469,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--label", action="append", default=[])
     create_parser.add_argument("--draft", action="store_true")
     create_parser.add_argument("--auto-merge", action="store_true")
+    create_parser.add_argument("--request-reviewers", action="store_true", help="Opt in to all active non-author reviewers.")
     create_parser.add_argument("--checkout", default=".", help="Target worktree; inferred from the invocation directory")
     create_parser.add_argument("--preparation", help="Receipt from prepare, required for --apply")
     create_parser.add_argument("--apply", action="store_true", help="Mutate GitHub. Omit for dry-run.")
@@ -498,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
                 labels=args.label,
                 draft=args.draft,
                 auto_merge=args.auto_merge,
+                request_reviewers=args.request_reviewers,
             )
             print(json.dumps(data, ensure_ascii=False, indent=2))
             return 0
