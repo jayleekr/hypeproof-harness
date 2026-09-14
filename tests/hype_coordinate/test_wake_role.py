@@ -257,6 +257,73 @@ def test_denied_socket_blocks_dispatch_before_any_surface_access(monkeypatch, ca
     send.assert_not_called()
 
 
+SUGGESTED = "✻ done 5:04 PM\n────\n❯ retry dispatch C to #180\n────\n  ⏵⏵ bypass permissions on"
+TARGET = ("--workspace", "workspace-uuid", "--surface", "surface-uuid")
+
+
+def test_suggestion_is_replaced_by_probe_then_restored_and_dispatch_may_proceed():
+    # #180: A observed a dim Claude suggestion that is not a history entry.
+    assert WAKE_ROLE.prompt_state(SUGGESTED) == "retry dispatch C to #180"
+    with (
+        patch.object(WAKE_ROLE, "cmux") as cmux,
+        patch.object(WAKE_ROLE, "read_screen", return_value="────\n❯ ¶\n────"),
+        patch.object(WAKE_ROLE.time, "sleep"),
+    ):
+        WAKE_ROLE.classify_prompt(surface())
+    assert cmux.call_args_list == [
+        call("send", *TARGET, "--", "¶"),
+        call("send-key", *TARGET, "backspace"),
+    ]
+
+
+def test_real_input_keeps_text_blocks_and_never_submits_or_clears():
+    with (
+        patch.object(WAKE_ROLE, "cmux") as cmux,
+        patch.object(WAKE_ROLE, "read_screen", return_value="────\n❯ my own note¶\n────"),
+        patch.object(WAKE_ROLE.time, "sleep"),
+    ):
+        with pytest.raises(RuntimeError, match="unsent text; typed input kept"):
+            WAKE_ROLE.classify_prompt(surface())
+    assert cmux.call_args_list == [
+        call("send", *TARGET, "--", "¶"),
+        call("send-key", *TARGET, "backspace"),
+    ]
+
+
+def test_unrendered_probe_sends_no_further_keys():
+    with (
+        patch.object(WAKE_ROLE, "cmux") as cmux,
+        patch.object(WAKE_ROLE, "read_screen", return_value="────\n❯ my own note\n────"),
+        patch.object(WAKE_ROLE.time, "sleep"),
+        patch.object(WAKE_ROLE.time, "monotonic", side_effect=[0.0, 0.0, 3.0]),
+    ):
+        with pytest.raises(RuntimeError, match="probe was not rendered"):
+            WAKE_ROLE.classify_prompt(surface())
+    assert cmux.call_args_list == [call("send", *TARGET, "--", "¶")]
+
+
+def test_dispatch_over_a_suggestion_reaches_send(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "wake_role.py", "--role", "c", "--packet", "packet-180",
+            "--work-url", "https://github.com/jayleekr/hypeproof-harness/issues/180", "--apply",
+        ],
+    )
+    with (
+        patch.object(WAKE_ROLE, "preflight_socket"),
+        patch.object(WAKE_ROLE, "find_surface", return_value=surface()),
+        patch.object(WAKE_ROLE, "read_screen", return_value=SUGGESTED),
+        patch.object(WAKE_ROLE, "classify_prompt") as classify,
+        patch.object(WAKE_ROLE, "send") as send,
+        patch.object(WAKE_ROLE, "wait_for_start"),
+    ):
+        assert WAKE_ROLE.main() == 0
+    classify.assert_called_once_with(surface())
+    send.assert_called_once()
+
+
 def test_nonempty_codex_prompt_is_not_idle():
     screen = """
 old output

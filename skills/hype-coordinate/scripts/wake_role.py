@@ -112,7 +112,8 @@ def read_screen(surface: Surface, lines: int = 30) -> str:
     )
 
 
-def assert_idle(screen: str) -> None:
+def prompt_state(screen: str) -> str:
+    """Return composer text that may be unsent, after known-inert cases."""
     tail = screen.splitlines()[-12:]
     if any("esc to interrupt" in line.lower() for line in tail):
         raise RuntimeError("target role is running")
@@ -133,8 +134,38 @@ def assert_idle(screen: str) -> None:
         # plain-text screen does not preserve the dim styling, so recognize the
         # suggestion by its exact prefix of a completed earlier prompt.
         prompt = ""
-    if prompt:
+    return prompt
+
+
+def assert_idle(screen: str) -> None:
+    if prompt_state(screen):
         raise RuntimeError("target prompt contains unsent text")
+
+
+# Claude Code shows dim prompt suggestions that are not history entries, and
+# cmux's text read drops the dim styling (#180). Typing one probe character
+# replaces a suggestion but is appended to real input, so the rendered result
+# tells them apart; one backspace then restores the composer either way.
+PROBE = "¶"
+
+
+def classify_prompt(surface: Surface, timeout: float = 2.0) -> None:
+    """Return only when the visible composer text is an inert suggestion."""
+    type_message(surface, PROBE)
+    deadline = time.monotonic() + max(0.1, timeout)
+    observed = None
+    while time.monotonic() < deadline:
+        observed = prompt_state(read_screen(surface, lines=40))
+        if observed.endswith(PROBE):
+            break
+        time.sleep(0.2)
+    else:
+        raise RuntimeError(
+            f"suggestion probe was not rendered; composer not restored, check it for {PROBE}"
+        )
+    cmux("send-key", *target_args(surface), "backspace")
+    if observed != PROBE:
+        raise RuntimeError("target prompt contains unsent text; typed input kept")
 
 
 def target_args(surface: Surface) -> tuple[str, ...]:
@@ -264,7 +295,8 @@ def main() -> int:
             raise ValueError("--state-file is only valid for the coordinator role")
         preflight_socket()
         surface = find_surface(title)
-        assert_idle(read_screen(surface))
+        if prompt_state(read_screen(surface)):
+            classify_prompt(surface)
 
         ack = None
         attempt = f"WAKE_ATTEMPT_{args.role.upper()}_{time.time_ns()}"
