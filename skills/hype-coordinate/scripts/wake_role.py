@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -13,6 +15,7 @@ from dataclasses import dataclass
 
 WORKSPACE_TITLE = "studio-testing"
 ROLE_CONFIG = {
+    "a": ("claude-1", "/hype-coordinate"),
     "b": ("claude-2-impl", "/hype-studio"),
     "c": ("claude-3-impl", "/hype-chalk"),
     "x1": ("codex-testing", "$hype-intent"),
@@ -244,6 +247,10 @@ def main() -> int:
     parser.add_argument("--role", choices=sorted(ROLE_CONFIG), required=True)
     parser.add_argument("--packet")
     parser.add_argument("--work-url")
+    parser.add_argument(
+        "--state-file",
+        help="Shared delivery-delta state path included in coordinator packets",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--ack-timeout", type=int, default=30)
@@ -253,6 +260,8 @@ def main() -> int:
 
     try:
         title, invocation = ROLE_CONFIG[args.role]
+        if args.state_file and args.role != "a":
+            raise ValueError("--state-file is only valid for the coordinator role")
         preflight_socket()
         surface = find_surface(title)
         assert_idle(read_screen(surface))
@@ -271,13 +280,26 @@ def main() -> int:
                 raise RuntimeError("--packet must use letters, numbers, dot, dash, or underscore")
             if not args.work_url or not WORK_URL.fullmatch(args.work_url):
                 raise RuntimeError("--work-url must be an allowed HypeProof GitHub issue or PR")
-            message = (
-                f"{invocation} Coordinator dispatch packet {args.packet}. "
-                f"Dispatch attempt {attempt}. "
-                f"Read and execute {args.work_url}. Acknowledge the real session "
-                "and branch in the GitHub record, work through tests and handoff, "
-                "use English for engineering work, and report to the user in Korean."
-            )
+            if args.role == "a" and args.state_file:
+                state_file = Path(args.state_file).expanduser().resolve()
+                message = (
+                    f"{invocation} Deterministic watcher packet {args.packet}. "
+                    f"Dispatch attempt {attempt}. Run delivery_delta.py with "
+                    f"--state-file {shlex.quote(str(state_file))}, reconcile pending "
+                    f"token {args.packet} from {args.work_url}, route and verify actual "
+                    "worker acknowledgment, then acknowledge that token only after the "
+                    "durable GitHub outcome. Do not register a recurring task in this "
+                    "session. Use English for engineering work and report to the user "
+                    "in Korean."
+                )
+            else:
+                message = (
+                    f"{invocation} Coordinator dispatch packet {args.packet}. "
+                    f"Dispatch attempt {attempt}. "
+                    f"Read and execute {args.work_url}. Acknowledge the real session "
+                    "and branch in the GitHub record, work through tests and handoff, "
+                    "use English for engineering work, and report to the user in Korean."
+                )
 
         result = {
             "status": "ready" if not args.apply else "submitted",

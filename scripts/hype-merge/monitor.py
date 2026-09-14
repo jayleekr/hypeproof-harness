@@ -263,6 +263,14 @@ def load_policy_review_requirements() -> dict[str, int]:
 
 
 def fetch_open_prs(repo: str, limit: int) -> list[dict[str, Any]]:
+    fields = (
+        "author,headRefOid,isDraft,labels,latestReviews,mergeStateStatus,"
+        "mergeable,number,reviewDecision,reviewRequests,autoMergeRequest,"
+        "statusCheckRollup,title,updatedAt,url"
+    )
+    # gh can return the full merge-readiness projection in one GraphQL query.
+    # Fetching numbers and then one `pr view` per item made a five-minute
+    # watcher perform an unbounded N+1 scan.
     listed = run_gh([
         "pr",
         "list",
@@ -273,16 +281,10 @@ def fetch_open_prs(repo: str, limit: int) -> list[dict[str, Any]]:
         "--limit",
         str(limit),
         "--json",
-        "number",
+        fields,
     ]) or []
     prs = []
-    fields = (
-        "author,headRefOid,isDraft,labels,latestReviews,mergeStateStatus,"
-        "mergeable,number,reviewDecision,reviewRequests,autoMergeRequest,"
-        "statusCheckRollup,title,updatedAt,url"
-    )
-    for item in listed:
-        pr = run_gh(["pr", "view", str(item["number"]), "--repo", repo, "--json", fields])
+    for pr in listed:
         pr["repository"] = {"nameWithOwner": repo}
         prs.append(pr)
     return prs

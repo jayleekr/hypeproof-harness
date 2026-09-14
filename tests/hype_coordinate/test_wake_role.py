@@ -147,6 +147,48 @@ def test_ordinary_dispatch_reports_pending_until_github_ack(monkeypatch, capsys)
     wait_for_start.assert_called_once()
 
 
+def test_coordinator_dispatch_carries_shared_state_without_registering_polling(monkeypatch, capsys, tmp_path):
+    state = tmp_path / "delivery delta.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "wake_role.py",
+            "--role",
+            "a",
+            "--packet",
+            "token-172",
+            "--work-url",
+            "https://github.com/jayleekr/hypeproof-harness/issues/172",
+            "--state-file",
+            str(state),
+            "--apply",
+        ],
+    )
+    a_surface = WAKE_ROLE.Surface(
+        workspace_ref="workspace:1",
+        workspace_id="workspace-uuid",
+        surface_ref="surface:1",
+        surface_id="surface-a",
+        title="claude-1",
+    )
+    with (
+        patch.object(WAKE_ROLE, "preflight_socket"),
+        patch.object(WAKE_ROLE, "find_surface", return_value=a_surface),
+        patch.object(WAKE_ROLE, "read_screen", return_value="❯"),
+        patch.object(WAKE_ROLE, "send") as send,
+        patch.object(WAKE_ROLE, "wait_for_start"),
+    ):
+        assert WAKE_ROLE.main() == 0
+
+    message = send.call_args.args[1]
+    assert "/hype-coordinate Deterministic watcher packet token-172" in message
+    assert "delivery_delta.py" in message
+    assert "delivery delta.json" in message
+    assert "Do not register a recurring task" in message
+    assert json.loads(capsys.readouterr().out)["accepted"] is False
+
+
 BROKEN_PIPE = "Error: Failed to write to socket (Broken pipe, errno 32)"
 
 
