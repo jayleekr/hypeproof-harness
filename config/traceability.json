@@ -256,9 +256,6 @@
           "path": "skills/hype-coordinate/scripts/wake_role.py"
         },
         {
-          "path": "skills/hype-coordinate/scripts/watch_delivery.py"
-        },
-        {
           "path": "skills/hype-intent/SKILL.md"
         },
         {
@@ -285,9 +282,6 @@
       "sources": [
         {
           "path": "tests/hype_coordinate/test_wake_role.py"
-        },
-        {
-          "path": "tests/hype_coordinate/test_watch_delivery.py"
         }
       ]
     }
