@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hype Coordinate \u00b7 Claude A"
+  short_description: "Discover, assign, and track HypeProof delivery work"
+  default_prompt: "Use $hype-coordinate to start this HypeProof role, discover current work, and report in Korean."

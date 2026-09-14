@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hype Verify \u00b7 Codex X2"
+  short_description: "Verify actual behavior with independent evidence"
+  default_prompt: "Use $hype-verify to start this HypeProof role, discover current work, and report in Korean."
