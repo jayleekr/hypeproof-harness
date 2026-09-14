@@ -1,4 +1,4 @@
 interface:
-  display_name: "Hype Coordinate \u00b7 Claude A"
-  short_description: "Discover, assign, and track HypeProof delivery work"
-  default_prompt: "Use $hype-coordinate to start this HypeProof role, discover current work, and report in Korean."
+  display_name: "HypeProof Legacy Recovery"
+  short_description: "Recover the retired five-session watcher and queue"
+  default_prompt: "Use $hype-coordinate only to inspect or retire an existing legacy HypeProof watcher or queue."
