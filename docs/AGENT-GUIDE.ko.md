@@ -37,7 +37,9 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 - Harness, Lab, Studio의 개발→PR 생성 요청은 `.claude/skills/hype-pr/SKILL.md`를 읽고 따른다.
   개발 시작에 기준 연결을 확인하고, 생성 전 `inspect` → Agent assessment → `prepare` →
   `create --preparation ... --apply`를 사용한다. 직접 `gh pr create`로 누락 검토를 우회하지 않는다.
-- PR 생성 명령이 실제 diff로 reviewer·risk를 계산한다. `plan`은 초기 참고용이다.
+- PR 생성 명령이 실제 diff로 risk를 계산한다. reviewer 요청은 기본 비활성이고,
+  사용자가 해당 PR의 리뷰를 명시한 경우에만 `--request-reviewers`로 계산·요청한다.
+  `plan`은 초기 참고용이다.
   Skill은 `.agents/skills/hype-pr/`에서도 발견할 수 있다. 별도 GitHub required check는 추가하지 않는다.
 - `main` 직접 push는 메인테이너가 명시한 경우에만 한다.
 - harness 변경은 세 consumer repo에 영향을 줄 수 있으므로 더 좁고 검증 가능한
@@ -47,10 +49,13 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 
 리뷰 요청과 배포 권한은 repo마다 다르게 해석하지 않는다.
 
-- PR은 작성자를 제외한 활성 멤버 전원을 reviewer로 요청한다. 명단은 Harness의
-  `policy/members.yaml`에서 읽는다. 이 문서에 별도 명단을 복제하지 않는다.
-- GitHub가 작성자 본인이나 권한 없는 계정을 reviewer로 받을 수 없으면 PR 본문이나
-  코멘트에 예외 사유를 남긴다.
+- Jay가 주최하는 일반 HypeProof 제품 작업은 reviewer를 요청하지 않는다. 필수 CI와
+  해당 작업의 증거 게이트가 통과하면 조정 세션이 exact head를 머지한다. PR 생성 때
+  CODEOWNERS catch-all이 자동으로 만든 요청도 `hype-pr`가 제거한다.
+- 사용자가 특정 PR의 리뷰를 명시한 경우에만 `--request-reviewers`를 붙인다. 이때
+  명단은 Harness의 `policy/members.yaml`에서 읽고 작성자는 제외한다.
+- GitHub가 기술적으로 비작성자 승인을 강제하면 그 상태를 실제 게이트로 기록한다.
+  보호 규칙을 낮추거나 승인을 꾸미지 않는다.
 - production 배포 권한은 repo 정책에 명시된 trusted workflow가 가진다. 기본값은
   `main` merge 후 GitHub Actions가 배포하는 방식이다.
 - Vercel, Fly, Cloudflare 같은 provider의 Git 자동 배포는 repo 정책과 repo-local
