@@ -94,11 +94,14 @@ current IDs with `cmux tree --all --id-format both`; map the
 current role tab titles and inspect the target with `cmux read-screen`. Prefer
 `hype-coordinate/scripts/wake_role.py`, first as a dry run and then with `--apply`.
 It rejects busy/nonempty targets and validates packet IDs and allowed HypeProof
-URLs before sending the complete prompt, targeting the same surface with an
-explicit Enter key, and observing that work started. An Enter escape embedded in
-`cmux send` can stay inside the Codex composer as multiline text. Never paste issue
-body text into a shell command. A helper `started` result proves submission and an
-observed running marker, not the worker's GitHub ACK. Record `accepted` only after
+URLs before sending the complete prompt. It waits for a unique dispatch-attempt
+marker to render, targets the same surface with an explicit Enter key, and accepts
+only a running marker rendered after that attempt. Historical running text never
+counts. If the attempt remains in the composer, the helper clears it and fails
+closed. An Enter escape embedded in `cmux send` can stay inside the Codex composer
+as multiline text. Never paste issue body text into a shell command. A helper
+`submitted_pending_ack` result proves only marker-specific submission and an
+observed new run, not the worker's GitHub ACK. Record `accepted` only after
 the real session and branch identity appear in the shared record. If text remains
 in the composer, cancel that exact dispatcher text and keep the token pending; do
 not press Enter later or pretend delivery. If cmux or the target session is

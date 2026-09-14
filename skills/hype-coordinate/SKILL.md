@@ -99,12 +99,14 @@ First run it without
 `--apply`; then use `--apply` only after the target is reported idle. It discovers
 the current surface, refuses busy or nonempty prompts, validates the HypeProof
 GitHub URL and packet ID, passes arguments without shell interpolation, sends
-the complete prompt, then targets the same surface with an explicit Enter key after
-the text call returns. An Enter escape embedded in `cmux send` can remain as
-multiline Codex prompt text, so the helper must observe the target's running marker
-before it reports `started`. Use direct `cmux` commands only if the helper itself is
-broken, preserving this text-then-key sequence and start observation. A `started`
-result is not the worker's GitHub ACK; record `accepted` only after the real session
+the complete prompt, waits until a unique dispatch-attempt marker is visible, then
+targets the same surface with an explicit Enter key. It accepts only a running marker
+rendered after that attempt; historical `esc to interrupt` text never proves a new
+start. If the attempt remains unsubmitted, the helper clears that composer and fails
+closed. An Enter escape embedded in `cmux send` can remain as multiline Codex prompt
+text. Use direct `cmux` commands only if the helper itself is broken, preserving this
+observed text-then-key sequence. A `submitted_pending_ack` result is not the worker's
+GitHub ACK; record `accepted` only after the real session
 and branch identity appear in the shared record. If text remains in the prompt,
 cancel that exact dispatcher text and keep the packet pending instead of pressing
 Enter later or reporting delivery. If the surface is busy, absent, or cannot be

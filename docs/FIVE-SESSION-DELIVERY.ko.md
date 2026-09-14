@@ -58,7 +58,8 @@ discovered -> proposed -> submitted -> accepted -> active
 ```
 
 - **proposed**: GitHub에 역할이 기록됐지만 세션에는 아직 입력되지 않았다.
-- **submitted**: 입력이 Enter로 제출됐지만 역할의 ACK는 아직 없다.
+- **submitted**: helper 상태 `submitted_pending_ack`. 고유 시도 marker 뒤의 새 실행을
+  관찰했지만 역할의 GitHub ACK는 아직 없다. 터미널 관찰만으로 accepted/active가 되지 않는다.
 - **accepted**: 실제 세션과 branch identity가 GitHub 기록에 ACK됐다.
 - **active**: 해당 branch 또는 worktree에서 작업이 시작됐다.
 - **waiting**: capacity, busy prompt, dependency, permission 같은 정확한 gate가 기록됐다.
