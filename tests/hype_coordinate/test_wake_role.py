@@ -128,6 +128,7 @@ def test_ordinary_dispatch_reports_pending_until_github_ack(monkeypatch, capsys)
         ],
     )
     with (
+        patch.object(WAKE_ROLE, "preflight_socket") as preflight,
         patch.object(WAKE_ROLE, "find_surface", return_value=surface()),
         patch.object(
             WAKE_ROLE, "read_screen", return_value="› Ask Codex to do anything"
@@ -141,8 +142,77 @@ def test_ordinary_dispatch_reports_pending_until_github_ack(monkeypatch, capsys)
     assert result["status"] == "submitted_pending_ack"
     assert result["accepted"] is False
     assert result["dispatch_attempt"].startswith("WAKE_ATTEMPT_X2_")
+    preflight.assert_called_once_with()
     send.assert_called_once()
     wait_for_start.assert_called_once()
+
+
+BROKEN_PIPE = "Error: Failed to write to socket (Broken pipe, errno 32)"
+
+
+def test_socket_access_denial_is_reported_without_retry():
+    # #180: a launchd process against a cmuxOnly socket gets this exact error.
+    with (
+        patch.object(WAKE_ROLE, "cmux", side_effect=RuntimeError(BROKEN_PIPE)) as cmux,
+        patch.object(WAKE_ROLE.time, "sleep") as sleep,
+    ):
+        with pytest.raises(RuntimeError, match="socket_access_denied.*cmuxOnly"):
+            WAKE_ROLE.preflight_socket()
+    assert cmux.call_args_list == [call("ping")]
+    sleep.assert_not_called()
+
+
+def test_transient_socket_failure_recovers_within_bounded_retry():
+    with (
+        patch.object(
+            WAKE_ROLE, "cmux", side_effect=[RuntimeError("Connection refused"), "PONG\n"]
+        ) as cmux,
+        patch.object(WAKE_ROLE.time, "sleep") as sleep,
+    ):
+        WAKE_ROLE.preflight_socket()
+    assert cmux.call_count == 2
+    sleep.assert_called_once()
+
+
+def test_persistently_missing_socket_stops_after_bounded_attempts():
+    with (
+        patch.object(
+            WAKE_ROLE, "cmux", side_effect=RuntimeError("No such file or directory")
+        ) as cmux,
+        patch.object(WAKE_ROLE.time, "sleep"),
+    ):
+        with pytest.raises(RuntimeError, match="socket_unavailable.*3 attempts"):
+            WAKE_ROLE.preflight_socket()
+    assert cmux.call_count == 3
+
+
+def test_denied_socket_blocks_dispatch_before_any_surface_access(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "wake_role.py",
+            "--role",
+            "c",
+            "--packet",
+            "packet-180",
+            "--work-url",
+            "https://github.com/jayleekr/hypeproof-harness/issues/180",
+            "--apply",
+        ],
+    )
+    with (
+        patch.object(WAKE_ROLE, "cmux", side_effect=RuntimeError(BROKEN_PIPE)),
+        patch.object(WAKE_ROLE, "find_surface") as find_surface,
+        patch.object(WAKE_ROLE, "send") as send,
+    ):
+        assert WAKE_ROLE.main() == 2
+
+    result = json.loads(capsys.readouterr().err)
+    assert result["status"] == "blocked"
+    assert result["error"].startswith("socket_access_denied")
+    find_surface.assert_not_called()
+    send.assert_not_called()
 
 
 def test_nonempty_codex_prompt_is_not_idle():

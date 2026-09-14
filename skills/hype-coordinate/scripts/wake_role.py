@@ -51,6 +51,39 @@ def cmux(*args: str) -> str:
     return proc.stdout
 
 
+# A socket in cmuxOnly mode closes connections from processes that cmux did not
+# start (for example a launchd agent); the CLI then reports a broken pipe even
+# though the socket exists and CMUX_SOCKET_PATH is correct (#180).
+SOCKET_DENIED = re.compile(r"broken pipe|errno 32|access denied|not allowed|unauthori[sz]ed", re.I)
+
+
+def preflight_socket(retries: int = 2, delay: float = 0.5) -> None:
+    """Fail before touching any surface unless cmux answers a ping."""
+    error = ""
+    for attempt in range(retries + 1):
+        try:
+            reply = cmux("ping").strip()
+        except RuntimeError as exc:
+            error = str(exc)
+        else:
+            if reply == "PONG":
+                return
+            error = f"unexpected ping reply {reply!r}"
+        if SOCKET_DENIED.search(error):
+            raise RuntimeError(
+                f"socket_access_denied: cmux rejected this process ({error}). "
+                "In cmuxOnly mode only processes started under cmux may connect; a "
+                "launchd watcher needs socketControlMode=password with "
+                "CMUX_SOCKET_PASSWORD, or must run inside a cmux surface. "
+                "Retrying cannot recover."
+            )
+        if attempt < retries:
+            time.sleep(delay)
+    raise RuntimeError(
+        f"socket_unavailable: cmux ping failed after {retries + 1} attempts ({error})"
+    )
+
+
 def find_surface(title: str) -> Surface:
     current: tuple[str, str, str] | None = None
     for line in cmux("tree", "--all", "--id-format", "both").splitlines():
@@ -220,6 +253,7 @@ def main() -> int:
 
     try:
         title, invocation = ROLE_CONFIG[args.role]
+        preflight_socket()
         surface = find_surface(title)
         assert_idle(read_screen(surface))
 
