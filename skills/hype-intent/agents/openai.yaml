@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hype Intent \u00b7 Codex X1"
+  short_description: "Connect approved intent to actionable requirements"
+  default_prompt: "Use $hype-intent to start this HypeProof role, discover current work, and report in Korean."

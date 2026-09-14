@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hype Chalk \u00b7 Claude C"
+  short_description: "Implement and deliver bounded Chalk work packets"
+  default_prompt: "Use $hype-chalk to start this HypeProof role, discover current work, and report in Korean."
