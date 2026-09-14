@@ -1,96 +1,117 @@
-# HypeProof 5세션 전달 운영
+# HypeProof Delivery Captain 운영
 
 > 상태: 활성
-> 관련 작업: [Control plane Epic #166](https://github.com/jayleekr/hypeproof-harness/issues/166), [공용 스킬 배포 #169](https://github.com/jayleekr/hypeproof-harness/issues/169)
+> 파일명은 consumer 호환성을 위해 유지한다. 5세션 운영은 2026-09-14 실험 실패로 폐기했다.
+> 관련 작업: [Delivery Captain v2 #183](https://github.com/jayleekr/hypeproof-harness/issues/183)
+> 폐기된 작업: [Control plane Epic #166](https://github.com/jayleekr/hypeproof-harness/issues/166)
 
 ## Exec Summary
 
 ```mermaid
 flowchart LR
   GPT[GPT 앱 브레인스토밍] --> EPIC[GitHub Epic]
-  GH[Issue, PR, CI 변화] --> W[로컬 결정론 watcher<br/>모델 토큰 0]
-  W -->|변화가 있을 때만| A[Claude A<br/>조정 세션]
-  EPIC --> A
-  A --> X1[Codex X1<br/>Intent와 요구사항]
-  A --> B[Claude B<br/>Studio 구현]
-  A --> C[Claude C<br/>Chalk 구현]
-  B --> X2[Codex X2<br/>독립 검증]
-  C --> X2
-  X1 --> A
-  X2 --> A
-  A --> MERGE[exact-head merge]
-  MERGE --> LIVE[main CI, 배포, live 확인]
+  EPIC --> CAPTAIN[Codex Astra Delivery Captain]
+  CAPTAIN --> VERIFY[새 SHA 독립 검증]
+  VERIFY -->|FAIL| CAPTAIN
+  VERIFY -->|PASS| MERGE[exact-head merge]
+  MERGE --> LIVE[main CI, 배포, 실제 제품 확인]
+  WATCH[무모델 watcher] -. 변경 알림만 .-> CAPTAIN
+  WATCH -. 새 SHA 알림만 .-> VERIFY
 ```
 
-5개 세션이 모두 GitHub를 반복 조회하지 않는다. Claude A cmux 세션의 자식 프로세스로 도는 Python watcher가 delta 도구만 실행하고, 실제 변화가 있을 때만 Claude A를 깨운다. unchanged 확인은 모델 토큰을 쓰지 않는다. A는 필요한 역할 하나를 깨우고 현재 조정을 끝낸 뒤 idle로 돌아간다.
+기본 세션은 Delivery Captain과 Verifier 두 개다. Captain은 한 사용자 결과의
+요구사항 확인, 구현, 테스트, PR 수정, 머지, 배포와 실제 제품 확인을 끝까지
+소유한다. Verifier는 새 구현 SHA 또는 인수 revision에만 반응한다. watcher는
+모델을 호출하지 않는 알림 도구이며 전달 상태 머신이 아니다.
+
+## 실험 결과
+
+PR #1047에서 한 구현 커밋보다 ACK, 동일 SHA 재검증, watcher token, 재배정 기록이
+더 많이 생겼다. Claude A는 구현과 검증 사이의 필수 경유지가 됐고 컨텍스트가
+가득 찼다. 반면 ACK와 라우팅 대기를 제거하고 기존 writer에게 네 결함 수정을
+직접 지시하자 2분 39초 안에 새 SHA, 집중 테스트 21/21, worker 테스트와
+typecheck 결과가 나왔다.
+
+Unit 2는 코어 792줄과 테스트 416줄을 만들었지만 UI, adapter, 파일 저장과 실제
+사용을 남겼다. 이 경험을 근거로 작업 단위도 수평 계층에서 사용자에게 보이는
+수직 결과로 바꾼다.
 
 ## Intent
 
-사람이 이미 열어 둔 5개 세션을 이용해 HypeProof의 승인된 요구사항을 계속 전달한다. 탐지, 분배, 구현, 검증, 머지가 대화창 상태에 의존하지 않고 GitHub 기록과 정확한 revision을 기준으로 이어져야 한다.
+승인된 HypeProof 작업을 역할 전달 자체가 아니라 실제 제품 출시로 이어간다.
+한 Captain이 사용자 결과를 끝까지 소유하고, 독립 검증은 새 revision에서만
+실행하며, 감시 실패나 대화창 상태가 진행 중 구현을 멈추지 않게 한다.
 
 ## 요구사항
 
-- **HAR-DEL-01 공용 계약**: Claude A/B/C와 Codex X1/X2는 Harness에 버전 관리된 하나의 공통 계약을 읽는다. 개인 홈 디렉터리의 파일은 정본이 아니다.
-- **HAR-DEL-02 단일 watcher**: 로컬 결정론 watcher 하나만 Issue, Epic, PR, CI 변화를 감시한다. unchanged tick은 모델 세션을 호출하지 않는다. 변화가 있을 때만 A가 조정한다.
-- **HAR-DEL-03 결정적 분배**: Intent와 요구사항은 X1, Studio 구현은 B, Chalk 구현은 C, 독립 검증은 X2, 통합은 A에 배정한다.
-- **HAR-DEL-04 전달 상태**: 입력창에 문자가 보이는 상태, Enter로 제출된 상태, 역할이 ACK한 상태, 실제 작업 중인 상태를 구분한다. 입력창에 남은 패킷은 delivered 또는 accepted가 아니다.
-- **HAR-DEL-05 검증된 제출**: cmux adapter는 전체 프롬프트 전송이 끝난 뒤 같은 surface에 Enter 키를 보내고 실제 `Working` 상태를 확인한다. 입력창에 남아 있으면 실패이며, 바쁜 세션이나 비어 있지 않은 입력창에는 두 번째 패킷을 넣지 않는다. 입력창에 글자가 보이면 탐침 한 글자(`¶`)를 입력해 구분한다. 제안 문구는 탐침으로 대체되고 실제 입력은 뒤에 탐침이 붙는다. 어느 쪽이든 backspace 한 번으로 되돌리며, 실제 입력이면 발송하지 않고 제안 문구를 제출하거나 실제 입력을 지우지 않는다.
-- **HAR-DEL-06 비용 경계**: 구현과 검증 모델은 변화가 있을 때만 사용한다. 일상 X2 검증은 GPT-5.6 Sol high를 사용하고, 논쟁적이거나 위험도가 높은 판정만 GPT-6 Astra high로 올릴 수 있다.
-- **HAR-DEL-07 통합 완료**: 필수 check, 해당 evidence, dependency order가 충족된 exact head는 리뷰 요청을 기다리지 않고 A가 squash-merge한다. 이후 merge SHA, main CI, 배포와 주장한 live surface를 확인한다.
-- **HAR-DEL-08 실패 보존**: capacity, permission, usage, context, missing runner와 기술적 승인 gate를 서로 다른 상태로 남긴다. 전달되지 않은 패킷 token은 ACK하지 않는다.
-- **HAR-DEL-09 지속 실행**: watcher는 이미 열린 `claude-1` 세션의 살아 있는 자식 프로세스로 실행하고 겹치는 tick과 두 번째 loop를 잠근다. cmux `cmuxOnly` 소켓은 LaunchAgent와 launchd에 입양된 분리 daemon을 거부하므로(#180) 둘 다 쓰지 않는다. 거부되면 재시도하지 않고 멈춰 A가 알게 한다. 세션을 생성하거나 로그인하지 않는다. A가 busy이거나 입력창이 비어 있지 않으면 pending token을 보존하고 다음 tick에서 다시 시도한다.
+- **HAR-DEL-01 수직 출시:** Epic은 문서, 코어, adapter, UI가 아니라 사용자가 관찰할 수 있는 결과로 자른다.
+- **HAR-DEL-02 단일 소유자:** Captain 한 명이 한 PR의 첫 수정부터 검증 결함 수정, 머지, 배포 확인까지 소유한다.
+- **HAR-DEL-03 빠른 시작:** 시작 10분 안에 diff, 실패 테스트, 실제 재현 중 하나를 만든다. 외부 차단 없이 20분 동안 없으면 컨텍스트나 구현자를 교체한다.
+- **HAR-DEL-04 직접 검증:** Verifier는 새 구현 SHA 또는 인수 revision만 검사하고 결과를 Captain에게 직접 보낸다.
+- **HAR-DEL-05 최소 조정:** packet ID, session ACK, watcher token, 역할 상태 댓글은 구현이나 통합의 선행 조건이 아니다.
+- **HAR-DEL-06 비용 경계:** 구현은 복잡한 수직 작업에 Astra를 우선 사용하고, 검증은 Sol을 기본으로 한다. polling에는 모델을 쓰지 않는다.
+- **HAR-DEL-07 자동 통합:** 강제된 검사와 필요한 증거가 통과한 exact head는 reviewer를 요청하지 않고 Captain이 머지한다.
+- **HAR-DEL-08 실제 완료:** merge, CI, preview, deployment와 실제 제품 관찰을 구분하고 기능 지도에는 관찰된 출시 상태만 적는다.
+- **HAR-DEL-09 알림 watcher:** watcher는 revision별 알림을 한 번만 보내며 댓글, ACK, claim, token, 역할 판단을 만들지 않는다. watcher 실패는 진행 중 구현을 멈추지 않는다.
 
 ## 역할과 호출
 
-| 역할 | 스킬 | 책임 |
-|---|---|---|
-| Claude A | `hype-coordinate` | 변화 탐지, 분배, ACK 추적, 통합 |
-| Codex X1 | `hype-intent` | GPT Epic과 Intent를 요구사항 및 테스트 조건으로 연결 |
-| Claude B | `hype-studio` | Studio 구현과 자체 테스트 |
-| Claude C | `hype-chalk` | Chalk 및 authoring 구현과 자체 테스트 |
-| Codex X2 | `hype-verify` | exact head와 실제 UI 또는 host 동작의 독립 검증 |
+| 역할 | 스킬 | 기본 모델 | 책임 |
+|---|---|---|---|
+| Delivery Captain | `hype-deliver` | GPT-6 Astra high | 사용자 결과를 구현부터 실제 출시까지 소유 |
+| Verifier | `hype-verify` | GPT-5.6 Sol high | 새 revision의 독립 검증 |
+| Intent specialist | `hype-intent` | Sol 또는 Astra | 실제 제품 모호성만 해결 |
+| Studio specialist | `hype-studio` | Claude 또는 Codex | 비중첩 Studio 하위 작업 |
+| Chalk specialist | `hype-chalk` | Claude 또는 Codex | 비중첩 Chalk 하위 작업 |
+| Legacy recovery | `hype-coordinate` | 저비용 모델 | 기존 watcher/queue 정리만 수행 |
 
-작업과 GitHub 인계는 영어로 쓰고, 사용자 보고는 한국어로 한다.
-
-### 지속 watcher 실행
-
-Claude A 세션에서 background shell task 하나로 시작한다. 세션이 살아 있는 동안 cmux의 자식으로 남는다.
-
-```bash
-python3 skills/hype-coordinate/scripts/watch_delivery.py \
-  --state-file "$HOME/Library/Application Support/HypeProof/delivery-delta.json" --apply --loop
-```
-
-loop는 즉시 한 번, 이후 5분마다 tick을 실행하고 tick마다 JSON 한 줄을 출력한다. watcher는 `watch_delivery.py`와 `delivery_delta.py`만 실행하므로 unchanged 상태에서는 AI 모델 호출이 없다. pending work가 있을 때 `wake_role.py --role a`가 이미 열린 `claude-1`에 한 패킷만 제출한다. A 세션 안에는 `/loop`나 `CronCreate`를 등록하지 않는다.
-
-- 두 번째 loop는 `already_running`으로 즉시 끝난다. 실행 중인 loop의 pid는 `delivery-delta.json.loop.lock`에 있다.
-- `nohup`, `setsid`, `&`로 분리하지 않는다. 부모가 끝나 launchd에 입양되면 cmux가 연결을 끊는다(`Broken pipe, errno 32`). loop는 입양 상태에서 시작을 거부한다.
-- 소켓이 거부되면(`socket_access_denied`) exit 3으로 멈춘다. A는 background task 종료로 이를 안다.
-- 중지는 background task를 멈추거나 lock 파일의 pid에 SIGTERM을 보낸다.
-
-PR 상태 수집은 저장소마다 `gh pr list` 한 번으로 필요한 필드를 함께 읽는다. open PR 수만큼 `gh pr view`를 반복하지 않는다.
+조정 전용 모델 세션은 기본 구성에 없다. 전문 구현자는 Captain이 파일이 겹치지
+않는 범위를 줄 때만 잠깐 사용하고 commit SHA를 직접 반환한다.
 
 ## 전달 상태
 
 ```text
-discovered -> proposed -> submitted -> accepted -> active
-           -> waiting                         -> in_review -> verified -> integrated
+selected -> active -> reviewable_sha -> verified -> merged -> observed
+                  \-> waiting_external
 ```
 
-- **proposed**: GitHub에 역할이 기록됐지만 세션에는 아직 입력되지 않았다.
-- **submitted**: helper 상태 `submitted_pending_ack`. 고유 시도 marker 뒤의 새 실행을
-  관찰했지만 역할의 GitHub ACK는 아직 없다. 터미널 관찰만으로 accepted/active가 되지 않는다.
-- **accepted**: 실제 세션과 branch identity가 GitHub 기록에 ACK됐다.
-- **active**: 해당 branch 또는 worktree에서 작업이 시작됐다.
-- **waiting**: capacity, busy prompt, dependency, permission 같은 정확한 gate가 기록됐다.
-- **integrated**: exact head가 머지되고 main 및 필요한 배포 증거가 확인됐다.
+코드 diff, 실패 테스트, 재현 결과가 생기면 active다. 새 exact SHA가 검증 가능하면
+reviewable_sha이고, PASS면 verified다. main merge 뒤 실제 제품까지 확인해야
+observed다. session ACK, packet 전송, watcher token은 상태가 아니다.
 
-## 배포와 설치
+## 출시 흐름
 
-정본은 Harness의 `skills/`이다. `scripts/register-skills.sh`가 Harness 내부 Claude 검색 링크를 만들고, `scripts/sync.sh`가 3개 consumer 저장소의 `.claude/skills/`로 역할 스킬과 운영 스킬을 복사한다. Codex 개인 설치도 Harness 정본을 복사하거나 링크해야 한다.
+1. GPT 앱의 실행 결정은 결과, 가설, 미결정, 첫 실제 인수 방법을 담은 Epic으로 만든다.
+2. Captain이 가장 작은 사용자 가시 수직 결과를 고르고 최신 main에서 시작한다.
+3. 10분 안에 코드, 실패 테스트, 재현 중 하나를 만든다.
+4. 코어, adapter, 저장, UI와 통합을 필요한 범위에서 함께 구현한다.
+5. 새 SHA를 Verifier가 한 번 검사한다. FAIL은 Captain이 같은 브랜치에서 고친다.
+6. 새 SHA에서 필요한 검사와 증거가 통과하면 Captain이 exact-head 머지한다.
+7. main CI, 배포, 실제 URL 또는 설치 App을 확인하고 기능 지도와 Epic을 갱신한다.
 
-공통 계약은 `skills/hype-coordinate/references/team-contract.md` 한 파일이다. 다른 네 역할은 상대 경로로 이 파일을 읽어 중복 계약이 갈라지지 않게 한다.
+인프라만 있는 PR은 부분 구현이다. 다음 수직 결과가 그 인프라를 실제로 사용하기
+전까지 Epic이나 기능 지도를 완료로 바꾸지 않는다.
+
+## Watcher 경계
+
+기존 `delivery_delta.py`, `watch_delivery.py`, `wake_role.py`는 legacy 복구를
+위해 당분간 보존한다. 이 도구의 ACK와 token은 제품 작업을 막지 않는다.
+
+새 watcher는 다음만 수행한다.
+
+- GitHub issue/PR revision, CI, merge, deploy 변화 감지
+- 같은 revision의 중복 알림 제거
+- 활성 PR은 Captain, 새 구현 SHA는 Verifier에 한 번 알림
+- 상태가 같으면 모델 호출과 GitHub 쓰기 없음
+
+열린 Claude/Codex 대화창 자체는 지속 감시자가 아니다. 실제 백그라운드 프로세스가
+실행 중일 때만 감시가 지속된다.
 
 ## 검증 경계
 
-정적 검사와 dispatcher 단위 테스트는 스킬 등록, 계약 연결, cmux 명령 형식을 입증한다. 실제 ACK와 제품 구현 완료는 대상 세션, GitHub revision, CI, 실제 UI 또는 host 증거로 별도 확인한다.
+exact-head CI와 의미 검증은 유지한다. 문서, local test, synthetic fixture, preview,
+deployment, production URL, 설치 App과 사람 결과는 서로 다른 증거다. 검증자는
+관찰하지 않은 항목을 NOT RUN으로 남긴다.
+
+동일 구현 SHA와 동일 인수 revision 조합은 한 번만 검증한다. 리뷰 댓글이나 상태
+표시만 바뀌었으면 테스트하지 않는다.

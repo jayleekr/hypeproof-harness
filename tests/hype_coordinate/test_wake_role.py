@@ -339,7 +339,7 @@ old output
 def test_role_contracts_share_one_canonical_file():
     contract = ROOT / "skills/hype-coordinate/references/team-contract.md"
     assert contract.is_file()
-    for role in ("hype-coordinate", "hype-intent", "hype-studio", "hype-chalk", "hype-verify", "hypeproof-operator"):
+    for role in ("hype-deliver", "hype-verify", "hype-intent", "hype-studio", "hype-chalk", "hype-coordinate", "hypeproof-operator"):
         canonical = ROOT / "skills" / role / "SKILL.md"
         assert canonical.is_file()
         assert (ROOT / ".agents" / "skills" / role / "SKILL.md").resolve() == canonical

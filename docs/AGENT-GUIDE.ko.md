@@ -72,11 +72,12 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 
 - `.claude/skills/skill-creator/`
 - `.claude/skills/hype-pr/` (`.agents/skills/hype-pr/`에서도 발견 가능)
+- `.claude/skills/hype-deliver/`
+- `.claude/skills/hype-verify/`
 - `.claude/skills/hype-coordinate/`
 - `.claude/skills/hype-intent/`
 - `.claude/skills/hype-studio/`
 - `.claude/skills/hype-chalk/`
-- `.claude/skills/hype-verify/`
 - `.claude/skills/hypeproof-operator/`
 - `scripts/notify/`
 - `scripts/hype-pr/`
@@ -98,7 +99,7 @@ PR을 만들고, 메인테이너가 `scripts/sync.sh`로 consumer에 반영한�
 ### Claude Code
 
 - Claude Code 스킬은 `.claude/skills/`에서 발견된다.
-- 공통 스킬과 HypeProof 5세션 역할 스킬은 harness에서 vendoring된다.
+- 공통 스킬과 HypeProof Delivery Captain·검증·선택적 specialist 스킬은 harness에서 vendoring된다.
 - repo별 Claude 전용 규칙이 필요하면 `CLAUDE.md`에 짧게 두고, 공통 규칙은 이
   문서로 링크한다.
 
@@ -106,8 +107,11 @@ PR을 만들고, 메인테이너가 `scripts/sync.sh`로 consumer에 반영한�
 
 - Codex는 repo 루트의 `AGENTS.md`를 우선 진입점으로 사용한다.
 - `AGENTS.md`는 공통 규칙을 복사하지 말고 이 문서를 참조한다.
-- 5세션 역할 스킬의 정본은 Harness `skills/hype-*`에 있다. 개인 설치본은 이
+- HypeProof delivery 스킬의 정본은 Harness `skills/hype-*`에 있다. 개인 설치본은 이
   정본을 복사하거나 링크하며, 개인 홈 디렉터리의 사본을 정본으로 취급하지 않는다.
+- 기본 제품 구현은 `hype-deliver` 한 세션이 수직 결과를 머지·배포·실제품 확인까지
+  소유한다. `hype-verify`는 새 revision만 독립 검증한다. 나머지 역할은 선택적
+  specialist 또는 legacy recovery다.
 - 구현 전에는 파일 구조와 기존 테스트를 먼저 읽고, 수정은 최소 범위로 둔다.
 
 ### OpenClaw
