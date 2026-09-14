@@ -36,6 +36,12 @@ Unit 2는 코어 792줄과 테스트 416줄을 만들었지만 UI, adapter, 파�
 사용을 남겼다. 이 경험을 근거로 작업 단위도 수평 계층에서 사용자에게 보이는
 수직 결과로 바꾼다.
 
+## Intent
+
+승인된 HypeProof 작업을 역할 전달 자체가 아니라 실제 제품 출시로 이어간다.
+한 Captain이 사용자 결과를 끝까지 소유하고, 독립 검증은 새 revision에서만
+실행하며, 감시 실패나 대화창 상태가 진행 중 구현을 멈추지 않게 한다.
+
 ## 요구사항
 
 - **HAR-DEL-01 수직 출시:** Epic은 문서, 코어, adapter, UI가 아니라 사용자가 관찰할 수 있는 결과로 자른다.
@@ -48,7 +54,7 @@ Unit 2는 코어 792줄과 테스트 416줄을 만들었지만 UI, adapter, 파�
 - **HAR-DEL-08 실제 완료:** merge, CI, preview, deployment와 실제 제품 관찰을 구분하고 기능 지도에는 관찰된 출시 상태만 적는다.
 - **HAR-DEL-09 알림 watcher:** watcher는 revision별 알림을 한 번만 보내며 댓글, ACK, claim, token, 역할 판단을 만들지 않는다. watcher 실패는 진행 중 구현을 멈추지 않는다.
 
-## 역할
+## 역할과 호출
 
 | 역할 | 스킬 | 기본 모델 | 책임 |
 |---|---|---|---|
@@ -61,6 +67,17 @@ Unit 2는 코어 792줄과 테스트 416줄을 만들었지만 UI, adapter, 파�
 
 조정 전용 모델 세션은 기본 구성에 없다. 전문 구현자는 Captain이 파일이 겹치지
 않는 범위를 줄 때만 잠깐 사용하고 commit SHA를 직접 반환한다.
+
+## 전달 상태
+
+```text
+selected -> active -> reviewable_sha -> verified -> merged -> observed
+                  \-> waiting_external
+```
+
+코드 diff, 실패 테스트, 재현 결과가 생기면 active다. 새 exact SHA가 검증 가능하면
+reviewable_sha이고, PASS면 verified다. main merge 뒤 실제 제품까지 확인해야
+observed다. session ACK, packet 전송, watcher token은 상태가 아니다.
 
 ## 출시 흐름
 
