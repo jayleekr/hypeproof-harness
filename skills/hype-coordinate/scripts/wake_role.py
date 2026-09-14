@@ -101,13 +101,81 @@ def assert_idle(screen: str) -> None:
         raise RuntimeError("target prompt contains unsent text")
 
 
-def send(surface: Surface, message: str) -> None:
+def target_args(surface: Surface) -> tuple[str, ...]:
+    return ("--workspace", surface.workspace_id, "--surface", surface.surface_id)
+
+
+def type_message(surface: Surface, message: str) -> None:
+    # `cmux send` returning only means that cmux accepted the text. The TUI can
+    # render it later, so Enter must be a separate, observed step.
+    cmux("send", *target_args(surface), "--", message)
+
+
+def submit_message(surface: Surface) -> None:
+    cmux("send-key", *target_args(surface), "enter")
+
+
+def cancel_message(surface: Surface) -> None:
+    # Ctrl-U clears active terminal input without submitting the packet.
+    cmux("send-key", *target_args(surface), "ctrl+u")
+
+
+def marker_count(screen: str, marker: str) -> int:
+    return screen.count(marker)
+
+
+def running_observed_after(screen: str, marker: str) -> bool:
+    """Return true only for a running marker rendered after this dispatch."""
+    lines = screen.splitlines()
+    indexes = [index for index, line in enumerate(lines) if marker in line]
+    if not indexes:
+        return False
+    return any(
+        "esc to interrupt" in line.lower() for line in lines[indexes[-1] + 1 :]
+    )
+
+
+def wait_for_render(
+    surface: Surface, marker: str, baseline_count: int, timeout: float
+) -> None:
+    deadline = time.monotonic() + max(0.1, timeout)
+    while time.monotonic() < deadline:
+        if marker_count(read_screen(surface, lines=40), marker) > baseline_count:
+            return
+        time.sleep(0.2)
+    raise RuntimeError("dispatch text was not rendered; Enter was not sent")
+
+
+def clear_unsubmitted(surface: Surface, marker: str, timeout: float = 2.0) -> bool:
+    screen = read_screen(surface, lines=40)
+    if marker not in screen or running_observed_after(screen, marker):
+        return marker not in screen
+    cancel_message(surface)
+    deadline = time.monotonic() + max(0.1, timeout)
+    while time.monotonic() < deadline:
+        screen = read_screen(surface, lines=40)
+        if marker not in screen:
+            return True
+        if running_observed_after(screen, marker):
+            return False
+        time.sleep(0.2)
+    return False
+
+
+def send(surface: Surface, message: str, marker: str, render_timeout: float) -> None:
     # Codex treats a newline embedded in `cmux send` as multiline prompt text.
-    # Send the complete text first, then a targeted Enter key event. Both calls
-    # are synchronous and target the same freshly discovered surface.
-    target = ("--workspace", surface.workspace_id, "--surface", surface.surface_id)
-    cmux("send", *target, "--", message)
-    cmux("send-key", *target, "enter")
+    # Type the complete text, observe this unique attempt in the composer, then
+    # target the same surface with Enter. This closes the render/Enter race.
+    baseline = read_screen(surface, lines=40)
+    type_message(surface, message)
+    try:
+        wait_for_render(
+            surface, marker, marker_count(baseline, marker), render_timeout
+        )
+    except RuntimeError:
+        clear_unsubmitted(surface, marker)
+        raise
+    submit_message(surface)
 
 
 def running_observed(screen: str) -> bool:
@@ -117,13 +185,17 @@ def running_observed(screen: str) -> bool:
     )
 
 
-def wait_for_start(surface: Surface, timeout: float) -> None:
+def wait_for_start(surface: Surface, marker: str, timeout: float) -> None:
     deadline = time.monotonic() + max(0.1, timeout)
     while time.monotonic() < deadline:
-        if running_observed(read_screen(surface, lines=20)):
+        if running_observed_after(read_screen(surface, lines=40), marker):
             return
         time.sleep(0.2)
-    raise RuntimeError("dispatch was typed but target work did not start")
+    cleared = clear_unsubmitted(surface, marker)
+    cleanup = "composer cleared" if cleared else "composer cleanup not confirmed"
+    raise RuntimeError(
+        f"dispatch remained unsubmitted or no marker-specific start was observed; {cleanup}"
+    )
 
 
 def ack_observed(screen: str, ack: str) -> bool:
@@ -142,6 +214,7 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--ack-timeout", type=int, default=30)
+    parser.add_argument("--render-timeout", type=float, default=5.0)
     parser.add_argument("--start-timeout", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -151,12 +224,13 @@ def main() -> int:
         assert_idle(read_screen(surface))
 
         ack = None
+        attempt = f"WAKE_ATTEMPT_{args.role.upper()}_{time.time_ns()}"
         if args.test:
             ack = f"WAKE_ACK_{args.role.upper()}_{int(time.time())}"
             message = (
                 "WAKE TEST from the deterministic coordinator dispatcher. "
                 "Do not read repositories or modify files. "
-                f"Reply exactly {ack} and return to idle."
+                f"Dispatch attempt {attempt}. Reply exactly {ack} and return to idle."
             )
         else:
             if not args.packet or not PACKET.fullmatch(args.packet):
@@ -165,6 +239,7 @@ def main() -> int:
                 raise RuntimeError("--work-url must be an allowed HypeProof GitHub issue or PR")
             message = (
                 f"{invocation} Coordinator dispatch packet {args.packet}. "
+                f"Dispatch attempt {attempt}. "
                 f"Read and execute {args.work_url}. Acknowledge the real session "
                 "and branch in the GitHub record, work through tests and handoff, "
                 "use English for engineering work, and report to the user in Korean."
@@ -176,12 +251,13 @@ def main() -> int:
             "workspace": surface.workspace_id,
             "surface": surface.surface_id,
             "title": surface.title,
+            "dispatch_attempt": attempt,
         }
         if not args.apply:
             print(json.dumps(result, separators=(",", ":")))
             return 0
 
-        send(surface, message)
+        send(surface, message, attempt, args.render_timeout)
         if ack:
             deadline = time.monotonic() + max(1, args.ack_timeout)
             while time.monotonic() < deadline:
@@ -199,8 +275,8 @@ def main() -> int:
                 time.sleep(1)
             raise RuntimeError(f"dispatch sent but {ack} was not observed")
 
-        wait_for_start(surface, args.start_timeout)
-        result["status"] = "started"
+        wait_for_start(surface, attempt, args.start_timeout)
+        result["status"] = "submitted_pending_ack"
         result["accepted"] = False
         print(json.dumps(result, separators=(",", ":")))
         return 0
