@@ -271,6 +271,22 @@ def reviewer_commands(repo: str, pr_ref: str, reviewers: list[str]) -> list[list
     ]
 
 
+def reviewer_cleanup_commands(repo: str, pr_ref: str, reviewers: list[str]) -> list[list[str]]:
+    return [
+        [
+            "gh",
+            "pr",
+            "edit",
+            str(pr_ref),
+            "--repo",
+            parse_repo(repo),
+            "--remove-reviewer",
+            reviewer,
+        ]
+        for reviewer in reviewers
+    ]
+
+
 def apply_reviewer_requests(repo: str, pr_ref: str, reviewers: list[str]) -> list[dict[str, Any]]:
     if os.environ.get("HYPE_PR_WORK_DIR"):
         from work_transport import exchange
@@ -285,6 +301,33 @@ def apply_reviewer_requests(repo: str, pr_ref: str, reviewers: list[str]) -> lis
         return results
     results: list[dict[str, Any]] = []
     for reviewer, cmd in zip(reviewers, reviewer_commands(repo, pr_ref, reviewers)):
+        gh_result = run(cmd)
+        results.append(
+            {
+                "reviewer": reviewer,
+                "returncode": gh_result.returncode,
+                "stdout": gh_result.stdout.strip(),
+                "stderr": gh_result.stderr.strip(),
+            }
+        )
+    return results
+
+
+def apply_reviewer_cleanup(repo: str, pr_ref: str, reviewers: list[str]) -> list[dict[str, Any]]:
+    if os.environ.get("HYPE_PR_WORK_DIR"):
+        from work_transport import exchange
+        results = []
+        for reviewer in reviewers:
+            try:
+                exchange("unreviewer", {"repo": parse_repo(repo), "pr": pr_ref, "reviewer": reviewer})
+                results.append({"reviewer": reviewer, "returncode": 0})
+            except ValueError:
+                results.append({"reviewer": reviewer, "returncode": 1,
+                                "stderr": "Work reviewer cleanup failed; reconcile the created PR"})
+        return results
+    results: list[dict[str, Any]] = []
+    commands = reviewer_cleanup_commands(repo, pr_ref, reviewers)
+    for reviewer, cmd in zip(reviewers, commands):
         gh_result = run(cmd)
         results.append(
             {
@@ -383,6 +426,11 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
         "preparation": {"required_for_apply": preparation_required, "verified": report is not None},
         "create_command": cmd,
         "reviewer_commands": reviewer_commands(args.repo, "<created-pr>", planned["reviewers"]),
+        "reviewer_cleanup_commands": reviewer_cleanup_commands(
+            args.repo,
+            "<created-pr>",
+            [] if args.request_reviewers else planned["review_request"]["eligible_reviewers"],
+        ),
         "apply": args.apply,
     }
     if not args.apply:
@@ -416,6 +464,8 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
 
     pr_ref = created.stdout.strip().splitlines()[-1]
     result["reviewer_results"] = apply_reviewer_requests(args.repo, pr_ref, planned["reviewers"])
+    cleanup_reviewers = [] if args.request_reviewers else planned["review_request"]["eligible_reviewers"]
+    result["reviewer_cleanup_results"] = apply_reviewer_cleanup(args.repo, pr_ref, cleanup_reviewers)
     if planned["auto_merge"]["eligible"]:
         merge_cmd = [
             "gh",
@@ -436,7 +486,8 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
             "stderr": merged.stderr.strip(),
         }
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    cleanup_failed = any(item["returncode"] != 0 for item in result["reviewer_cleanup_results"])
+    return 1 if cleanup_failed else 0
 
 
 def build_parser() -> argparse.ArgumentParser:

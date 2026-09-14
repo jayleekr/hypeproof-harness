@@ -56,6 +56,15 @@ async function serveWorkRequest(tools, request, options) {
       repository_full_name: p.repo, pr_number: options.createdPR.number, reviewers: [p.reviewer],
     }));
   }
+  if (request.operation === "unreviewer") {
+    if (!options.createdPR || p.pr !== options.createdPR.url
+        || !options.reviewers.includes(p.reviewer) || p.reviewer === options.author) {
+      throw new Error("Reviewer cleanup outside created PR scope");
+    }
+    return unwrap(await tools.mcp__codex_apps__github_remove_pull_request_reviewers({
+      repository_full_name: p.repo, pr_number: options.createdPR.number, reviewers: [p.reviewer],
+    }));
+  }
   if (request.operation !== "create" || p.head !== options.branch || p.base !== "main"
       || p.author !== options.author || options.creationAttempted) {
     throw new Error("Unsupported or repeated Work mutation");

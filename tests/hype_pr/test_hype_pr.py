@@ -179,6 +179,9 @@ def test_create_is_dry_run_by_default_without_reviewers() -> None:
 
     assert data["plan"]["review_request"]["enabled"] is False
     assert data["reviewer_commands"] == []
+    cleanup_args = [cmd[cmd.index("--remove-reviewer") + 1] for cmd in data["reviewer_cleanup_commands"]]
+    assert "jayleekr" not in cleanup_args
+    assert "JeHyeong2" in cleanup_args
 
 
 def _create_args(module, **overrides):
@@ -229,9 +232,10 @@ def test_create_apply_enables_auto_merge_when_eligible(monkeypatch) -> None:
     rc = module.command_create(_create_args(module), policy)
 
     assert rc == 0
-    # PR created with no reviewer side effect, and auto-merge enabled.
+    # PR created without adding reviewers; CODEOWNERS requests are cleared.
     assert any(c[:3] == ["gh", "pr", "create"] for c in fake.calls)
     assert not any("--add-reviewer" in c for c in fake.calls)
+    assert any("--remove-reviewer" in c for c in fake.calls)
     merge = fake.merge_calls()
     assert len(merge) == 1
     assert merge[0][:4] == ["gh", "pr", "merge", "https://github.com/x/y/pull/99"]
@@ -253,6 +257,7 @@ def test_create_apply_requests_reviewers_only_when_opted_in(monkeypatch) -> None
     reviewer_calls = [c for c in fake.calls if "--add-reviewer" in c]
     assert reviewer_calls
     assert all("TJ-kr" not in c for c in reviewer_calls)
+    assert not any("--remove-reviewer" in c for c in fake.calls)
 
 
 def test_create_apply_does_not_merge_high_risk_pr(monkeypatch) -> None:

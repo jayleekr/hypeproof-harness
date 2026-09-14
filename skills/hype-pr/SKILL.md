@@ -87,8 +87,9 @@ uncommitted text. Read working changes directly when developing.
    Omit `--apply` for a command preview. The apply path recomputes source checks,
    verifies the remote head, derives risk from the actual diff and adds a fixed
    preparation summary to the PR body. Assessment prose is not published. Reviewer
-   requests are disabled by default. Add `--request-reviewers` only when the user
-   explicitly asks for peer review on that PR. On stale preparation,
+   requests are disabled by default, and any catch-all CODEOWNERS requests created
+   with the PR are removed before the command succeeds. Add `--request-reviewers`
+   only when the user explicitly asks for peer review on that PR. On stale preparation,
    repeat inspection/assessment; do not use direct `gh pr create` as a workaround.
 
 In Work, run these same commands through `runWorkCommand` in the canonical

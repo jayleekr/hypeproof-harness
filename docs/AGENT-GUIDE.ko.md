@@ -50,7 +50,8 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 리뷰 요청과 배포 권한은 repo마다 다르게 해석하지 않는다.
 
 - Jay가 주최하는 일반 HypeProof 제품 작업은 reviewer를 요청하지 않는다. 필수 CI와
-  해당 작업의 증거 게이트가 통과하면 조정 세션이 exact head를 머지한다.
+  해당 작업의 증거 게이트가 통과하면 조정 세션이 exact head를 머지한다. PR 생성 때
+  CODEOWNERS catch-all이 자동으로 만든 요청도 `hype-pr`가 제거한다.
 - 사용자가 특정 PR의 리뷰를 명시한 경우에만 `--request-reviewers`를 붙인다. 이때
   명단은 Harness의 `policy/members.yaml`에서 읽고 작성자는 제외한다.
 - GitHub가 기술적으로 비작성자 승인을 강제하면 그 상태를 실제 게이트로 기록한다.

@@ -12,7 +12,8 @@
 `hype-pr`는 PR 생성 시 팀 운영 규칙을 사람 기억에 맡기지 않기 위한 하네스다.
 
 - reviewer 요청은 기본으로 하지 않는다. 사용자가 특정 PR의 peer review를 명시한
-  경우에만 작성자를 제외한 active 멤버 전원을 요청한다.
+  경우에만 작성자를 제외한 active 멤버 전원을 요청한다. CODEOWNERS의 catch-all이
+  PR 생성과 함께 자동 요청한 reviewer도 기본 경로에서는 즉시 제거한다.
 - auto-merge는 켜도 되는 PR인지 먼저 판정한다.
 - 보안, 배포, 데이터, dependency, governance 변경은 auto-merge 대상에서 제외한다.
 - 실제 merge는 여전히 branch protection, CODEOWNERS, required checks가 통과해야 한다.
@@ -74,7 +75,7 @@ Python CLI는 임시 0700 디렉터리의 요청/응답으로 통신한다. 응�
 원격에 커밋이 없으면 GitHub 연결로 같은 파일 tree를 feature branch에 저장한 뒤 해당
 원격 commit을 로컬로 fetch/checkout하고 검토한다. 다른 SHA를 같은 준비 기록으로 취급하지 않는다.
 
-Work transport는 PR 생성과 명시적으로 선택한 reviewer/label 요청만 쓰기 지원한다. auto-merge,
+Work transport는 PR 생성, 기본 reviewer 정리, 명시적으로 선택한 reviewer/label 요청만 쓰기 지원한다. auto-merge,
 기존 PR 변경, impact scan/checkpoint 쓰기는 이 경로의 범위 밖이다. 응답 유실은 생성 실패를
 뜻하지 않으므로 원격 PR부터 확인한다. 테스트나 host 종료 후 임시 원문은 보존 정책에 맞게 정리한다.
 이 모드는 검증 로직을 우회하거나 독립 사람 승인을 부여하지 않는다.
@@ -110,7 +111,8 @@ python3 scripts/hype-pr/pr.py request-reviewers \
   --apply
 ```
 
-새 PR을 만들 때도 기본은 dry-run이며 reviewer 요청은 없다.
+새 PR을 만들 때도 기본은 dry-run이며 reviewer 요청은 없다. dry-run의
+`reviewer_cleanup_commands`는 CODEOWNERS가 자동으로 붙일 수 있는 요청의 제거 계획이다.
 
 ```bash
 python3 scripts/hype-pr/pr.py create \
