@@ -59,6 +59,7 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --quiet pytest pyyaml
       - run: python -m pytest tests/change_impact -q
+      - run: python -m pytest tests/work_discovery -q
 
   lint:
     name: lint (bash -n + path hygiene)

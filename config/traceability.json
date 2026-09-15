@@ -359,6 +359,80 @@
           "path": "tests/hype_merge/test_hype_merge.py"
         }
       ]
+    },
+    {
+      "id": "HAR-INT-WORK",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/WORK-DISCOVERY.ko.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-WORK",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-WORK"
+      ],
+      "sources": [
+        {
+          "path": "docs/WORK-DISCOVERY.ko.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-WORK",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-WORK"
+      ],
+      "sources": [
+        {
+          "path": "docs/WORK-DISCOVERY.ko.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-WORK",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-WORK"
+      ],
+      "sources": [
+        {
+          "path": "scripts/work-discovery/discover.py"
+        },
+        {
+          "path": "docs/AGENT-GUIDE.ko.md"
+        },
+        {
+          "path": "scripts/sync.sh"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-WORK",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-WORK"
+      ],
+      "sources": [
+        {
+          "path": "tests/work_discovery/test_discover.py"
+        },
+        {
+          "path": ".github/workflows/test.yml"
+        }
+      ]
     }
   ]
 }

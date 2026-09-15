@@ -25,6 +25,13 @@ destructive 명령, 사용자 변경 되돌리기는 하지 않는다.
 
 ## 2. 작업 흐름
 
+새 작업 선택과 "할 일 없음" 보고 전에는 [요구사항 작업 탐색](WORK-DISCOVERY.ko.md)을
+따른다. 제품의 `config/requirement-work.json`을 정본 Harness의
+`scripts/work-discovery/discover.py --checkout <제품 경로>`로 검사한다.
+원장이 없거나 원문이 변경됐으면 요구사항 분해가 남은 작업이다.
+특정 DAG 완료·열린 PR 부재·change-impact 완료를 제품 전체 완료로 해석하지 않는다.
+ready, 다른 세션 작업, 리뷰 대기, 의존성, 사람/환경 대기, 재검토를 구분해 보고한다.
+
 모든 코드 변경은 다음 흐름을 기본으로 한다.
 
 ```text
