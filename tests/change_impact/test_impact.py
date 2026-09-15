@@ -1,5 +1,7 @@
 """Behavioral contracts for authority, source integrity and retry-safe propagation."""
+import base64
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -214,6 +216,108 @@ def test_real_git_snapshot_uses_commit_not_dirty_worktree(tmp_path):
     result = m.snapshot(reader, policy, {repo: old})
     assert result["nodes"]["INT-A"]["text"] == "## Intent\nOriginal"
     assert "text" not in m.public_snapshot(result)["nodes"]["INT-A"]
+
+
+@pytest.fixture
+def pdf_repo(tmp_path):
+    repo = "jayleekr/hypeprooflab"
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args]).decode().strip()
+    git("init", "-q")
+    pdf = b"%PDF-1.7\n%\x93\x8c\x8b\x9e\nprivate binary payload\n%%EOF\n"
+    source = {"path": "protocol.pdf"}
+    manifest = {"version": 1, "repository": repo, "nodes": [
+        {"id": "IMP-PDF", "stage": "implementation", "sources": [source]}]}
+    (tmp_path / "protocol.pdf").write_bytes(pdf)
+    def commit():
+        (tmp_path / "traceability.json").write_text(json.dumps(manifest))
+        git("add", ".")
+        git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture")
+        return git("rev-parse", "HEAD")
+    sha = commit()
+    policy = {"repositories": {repo: {"manifest": "traceability.json"}},
+              "members": [], "canon_owner": "jay"}
+    return repo, manifest, pdf, sha, commit, policy
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_pdf_snapshot_binds_exact_bytes_and_changes_revision(pdf_repo, tmp_path, monkeypatch, remote):
+    repo, manifest, pdf, base, commit, policy = pdf_repo
+    def api(path):
+        prefix = f"repos/{repo}/contents/"
+        assert path.startswith(prefix)
+        file, ref = path[len(prefix):].split("?ref=")
+        data = subprocess.check_output(["git", "-C", str(tmp_path), "show", f"{ref}:{file}"])
+        return {"encoding": "base64", "content": base64.b64encode(data).decode()}
+    reader = m.Reader({repo: str(tmp_path)})
+    if remote:
+        monkeypatch.setattr(m, "gh", api)
+        reader = m.Reader()
+        monkeypatch.setattr(reader, "resolve", lambda _repo, ref: ref)
+    # A dirty artifact must not replace the committed evidence.
+    (tmp_path / "protocol.pdf").write_bytes(pdf + b"dirty")
+    before = m.snapshot(reader, policy, {repo: base})
+    actual = before["nodes"]["IMP-PDF"]
+    evidence = {"kind": "binary", "media_type": "application/pdf",
+                "sha256": hashlib.sha256(pdf).hexdigest(), "size_bytes": len(pdf)}
+    assert actual["revision"] == m.digest({"definition": manifest["nodes"][0], "contents": [evidence]})
+    assert actual["commit"] == base
+    assert evidence["sha256"] in actual["text"]
+    assert "content not extracted" in actual["text"]
+    assert "private binary payload" not in actual["text"]
+    assert "text" not in m.public_snapshot(before)["nodes"]["IMP-PDF"]
+    head = commit()
+    after = m.snapshot(reader, policy, {repo: head})
+    assert after["nodes"]["IMP-PDF"]["revision"] != actual["revision"]
+    assert m.plan(before, after)["changed"] == ["IMP-PDF"]
+    # Removing the head mapping must still allow the old PDF and edges to be reviewed.
+    manifest["nodes"] = []
+    removed = m.snapshot(reader, policy, {repo: commit()})
+    assert m.plan(before, removed)["tasks"][0]["removed"] is True
+
+
+@pytest.mark.parametrize("mutation", ["section", "empty-section", "requirement", "invalid-pdf", "invalid-text"])
+def test_pdf_support_does_not_relax_text_or_section_policy(pdf_repo, tmp_path, mutation):
+    repo, manifest, _pdf, _base, commit, policy = pdf_repo
+    node = manifest["nodes"][0]
+    if mutation in {"section", "empty-section"}:
+        node["sources"][0]["section"] = "## Intent" if mutation == "section" else ""
+    elif mutation == "requirement":
+        node["stage"] = "requirement"
+    elif mutation == "invalid-pdf":
+        (tmp_path / "protocol.pdf").write_bytes(b"This is not a PDF")
+    else:
+        node["sources"][0]["path"] = "criteria.md"
+        (tmp_path / "criteria.md").write_bytes(b"# Criteria\n\x93")
+    reader = m.Reader({repo: str(tmp_path)})
+    with pytest.raises(ValueError):
+        m.snapshot(reader, policy, {repo: commit()})
+
+
+def test_pdf_reader_keeps_text_decode_strict_and_missing_artifacts_fail(pdf_repo, tmp_path):
+    repo, _manifest, pdf, base, _commit, _policy = pdf_repo
+    reader = m.Reader({repo: str(tmp_path)})
+    assert reader.read_bytes(repo, base, "protocol.pdf") == pdf
+    with pytest.raises(UnicodeDecodeError):
+        reader.read(repo, base, "protocol.pdf")
+    with pytest.raises(subprocess.CalledProcessError):
+        reader.read_bytes(repo, base, "missing.pdf")
+
+
+def test_text_source_revision_is_unchanged_by_binary_support():
+    repo = "jayleekr/hypeprooflab"
+    definition = {"id": "IMP-TEXT", "stage": "implementation", "sources": [{"path": "source.md"}]}
+    class Reader:
+        def resolve(self, *_):
+            return "a" * 40
+        def read(self, _repo, _sha, path):
+            if path == "traceability.json":
+                return json.dumps({"version": 1, "repository": repo, "nodes": [definition]})
+            return "기존 UTF-8 text\n"
+    policy = {"repositories": {repo: {"manifest": "traceability.json"}}, "members": []}
+    node = m.snapshot(Reader(), policy, {})["nodes"]["IMP-TEXT"]
+    assert node["text"] == "기존 UTF-8 text\n"
+    assert node["revision"] == m.digest({"definition": definition, "contents": [node["text"]]})
 
 
 def test_design_without_requirement_is_visible_not_assumed_complete():

@@ -23,6 +23,12 @@
 끊긴 연결, 순환, 없는 파일·절이 있으면 검토는 실패한다. PR의 코드나 manifest가
 하네스 실행 정책을 바꿀 수 없다.
 
+구현(`implementation`) 노드의 전체 `.pdf` 파일은 바이너리 산출물 근거로 등록할 수 있다.
+immutable commit에서 실제 바이트를 읽고 PDF signature를 확인한 뒤 SHA-256과 바이트 수를
+revision에 포함한다. 이는 PDF 내용 추출이나 유효성·품질 검증을 뜻하지 않으며, 검토 문맥에도
+내용을 추출하지 않았다고 명시한다. PDF의 `section` 지정이나 다른 단계에서의 PDF 등록은
+실패한다. manifest와 나머지 텍스트 소스는 계속 strict UTF-8로 읽고 정확한 절을 검증한다.
+
 철학·Mission 책임자는 Jay다. 나머지는 해당 노드의 owner가 판단한다. 미지정은
 UNASSIGNED로 표시하고 이슈를 강제 배정하지 않는다. owner 지정은 consumer PR에서
 합의하며 구성원 목록은 `policy/members.yaml`을 참조한다. 미지정 영역의 임시 판단은
@@ -34,7 +40,7 @@ UNASSIGNED로 표시하고 이슈를 강제 배정하지 않는다. owner 지정
 | ID | 요구사항 | 실행 테스트 |
 |---|---|---|
 | CI-01 | Intent 등 임의 단계에서 시작하고 하위 영향·상위 정합성을 연결한다 | intent/diamond/removed edge tests |
-| CI-02 | 정본을 immutable SHA에서 읽고 dirty checkout을 읽지 않는다 | real git snapshot test |
+| CI-02 | 정본을 immutable SHA에서 읽고 dirty checkout을 읽지 않는다. 구현 PDF는 실제 바이트 digest로 추적하며 텍스트·절 검증 실패를 숨기지 않는다 | real git snapshot / PDF evidence / strict text tests |
 | CI-03 | 모델의 영향 없음은 제안이며, 실패·미설정·예산 초과는 pending이다 | AI authority/budget/context tests |
 | CI-04 | 반복 실행과 중간 실패에서 중복 이슈를 만들지 않는다 | sync replay test |
 | CI-05 | 사람 본문을 보존하며 marker 충돌은 중단한다 | upsert/ambiguous marker tests |

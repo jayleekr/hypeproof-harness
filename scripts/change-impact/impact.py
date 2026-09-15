@@ -112,19 +112,23 @@ class Reader:
             return result.returncode == 0
         return gh(f"repos/{repo}/compare/{sha}...{head}").get("status") == "ahead"
 
-    def read(self, repo, sha, path):
+    def read_bytes(self, repo, sha, path):
         if path.startswith("/") or ".." in Path(path).parts:
             raise ValueError("source path must stay inside repository")
         key = repo, sha, path
         if key not in self.cache:
             if repo in self.roots:
-                self.cache[key] = self.git(repo, "show", f"{sha}:{path}").decode()
+                self.cache[key] = self.git(repo, "show", f"{sha}:{path}")
             else:
                 data = gh(f"repos/{repo}/contents/{path}?ref={sha}")
                 if data.get("encoding") != "base64":
                     raise ValueError("unsupported/oversized source; split into smaller files")
-                self.cache[key] = base64.b64decode(data["content"]).decode()
+                self.cache[key] = base64.b64decode(data["content"])
         return self.cache[key]
+
+    def read(self, repo, sha, path):
+        # Manifests and textual criteria must remain strict UTF-8.
+        return self.read_bytes(repo, sha, path).decode("utf-8")
 
     def changed(self, repo, base, head):
         if base == head:
@@ -210,13 +214,27 @@ def snapshot(reader, policy, refs):
                     raise ValueError("canon owner can only be changed in harness policy")
             if not node.get("sources"):
                 raise ValueError(f"no source for {nid}")
-            contents = []
+            contents, excerpts = [], []
             for src in node["sources"]:
                 key = (repo, sha, src["path"])
+                if Path(src["path"]).suffix.lower() == ".pdf":
+                    if node["stage"] != "implementation" or "section" in src:
+                        raise ValueError("PDF evidence requires a whole-file implementation source")
+                    data = reader.read_bytes(*key)
+                    if not data.startswith(b"%PDF-"):
+                        raise ValueError("PDF evidence is missing its PDF signature")
+                    evidence = {"kind": "binary", "media_type": "application/pdf",
+                                "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+                    contents.append(evidence)
+                    excerpts.append("Binary artifact evidence (content not extracted): "
+                                    + json.dumps({"path": src["path"], **evidence}, sort_keys=True))
+                    continue
                 if key not in cache:
                     cache[key] = reader.read(*key)
-                contents.append(section(cache[key], src.get("section")))
-            node.update(repo=repo, commit=sha, text="\n\n".join(contents))
+                content = section(cache[key], src.get("section"))
+                contents.append(content)
+                excerpts.append(content)
+            node.update(repo=repo, commit=sha, text="\n\n".join(excerpts))
             node.setdefault("depends_on", [])
             node["revision"] = digest({"definition": original, "contents": contents})
             nodes[nid] = node
