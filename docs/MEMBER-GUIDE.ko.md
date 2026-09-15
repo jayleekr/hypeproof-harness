@@ -75,12 +75,21 @@ Cloudflare 와 Fly 는 **개인 계정 초대도 개인 토큰도 주지 않는�
 
 | 대상 | 워크플로 | 어떻게 |
 |---|---|---|
-| Studio Worker (Cloudflare) | `hypeproof-studio` → `deploy-worker.yml` | Actions 탭에서 **Run workflow** |
-| Sediment 백엔드 (Fly) | `sediment` → `fly-deploy.yml` | `main` 머지 시 자동 · 수동 재배포는 Run workflow |
+| Studio Worker (Cloudflare) | `hypeproof-studio` → `deploy-worker.yml` | Actions 탭에서 **Run workflow** → **`dry_run` 체크를 끈다** (기본값 `true` 는 테스트·타입체크만 하고 배포하지 않는다) |
+| Sediment 백엔드 (Fly) | `sediment` → `fly-deploy.yml` | 런타임 경로(`services/sediment/{applications,lab_lib,lab_platform,scripts,prompts,data,config}`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `infra/deploy/`)가 바뀐 `main` 머지만 자동 배포 · 그 밖의 변경(프론트·테스트·문서만)은 배포되지 않으니 필요하면 Run workflow |
 
 **즉 "배포할 수 있는 사람 = repo 에 write 가 있는 사람"** 이다. 새 멤버에게 따로 해줄
 것이 없고, 회수는 collaborator 제거 하나로 끝나며, 누가 언제 배포했는지가 Actions 실행
 기록에 남는다. 사람마다 토큰을 쥐여주면 이 셋이 전부 깨진다.
+
+write 는 멤버마다 repo 별로 따로 준다. 2026-09-15 기준 `hypeproof-studio` 는 멤버 전원이
+write 지만 `sediment` 는 **TJ-kr 이 read 뿐**이라 Sediment 배포를 실행할 수 없다. 내 권한은
+repo 의 Settings 가 아니라 `gh api repos/jayleekr/<repo>/collaborators/<내 id>/permission` 으로
+확인하고, `read` 로 나오면 Jay 에게 **그 repo 의 write** 를 요청한다 (계정 토큰이 아니다).
+
+**Studio Worker 는 프로덕션이다. 수업 중에는 배포하지 않는다.** 워크플로가 진행 중인 수업을
+감지하면 멈춘다. `override_live_session` 은 그 판단을 일부러 뒤집는 입력이고 실행 요약에
+기록된다 — 켜기 전에 강사에게 먼저 묻는다.
 
 > 이 표는 2026-08-19 까지 두 줄 다 "Jay 계정 경유 · 직접 배포가 필요해지면 Jay에게 요청"
 > 이라고 적혀 있었다. **위임은 CI 로 이미 끝나 있었고 문서만 안 따라왔다.** 그래서 멤버가
