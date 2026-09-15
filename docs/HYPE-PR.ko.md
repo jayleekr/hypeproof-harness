@@ -1,5 +1,7 @@
 # hype-pr
 
+> 작성일 2026-09-08 · 상태: 활성
+
 > 이 문서는 `hypeproof-harness:docs/HYPE-PR.ko.md`가 원천이다.
 > 제품 repo에 vendoring된 사본은 직접 고치지 말고 harness에서 PR로 바꾼다.
 
@@ -9,19 +11,83 @@
 
 `hype-pr`는 PR 생성 시 팀 운영 규칙을 사람 기억에 맡기지 않기 위한 하네스다.
 
-- PR 작성자를 제외한 active 멤버 전원을 reviewer로 요청한다.
+- reviewer 요청은 기본으로 하지 않는다. 사용자가 특정 PR의 peer review를 명시한
+  경우에만 작성자를 제외한 active 멤버 전원을 요청한다. CODEOWNERS의 catch-all이
+  PR 생성과 함께 자동 요청한 reviewer도 기본 경로에서는 즉시 제거한다.
 - auto-merge는 켜도 되는 PR인지 먼저 판정한다.
 - 보안, 배포, 데이터, dependency, governance 변경은 auto-merge 대상에서 제외한다.
 - 실제 merge는 여전히 branch protection, CODEOWNERS, required checks가 통과해야 한다.
 
-즉, auto-merge는 "리뷰 없이 merge"가 아니라 "필수 보호 조건이 모두 통과하면 GitHub가
-순서대로 merge하게 예약"하는 기능이다.
+auto-merge는 필수 보호 조건이 모두 통과하면 GitHub가 순서대로 merge하게 예약하는
+기능이다. reviewer 요청 여부와는 독립적으로 판정한다.
 
 ---
 
+## Agent가 PR을 만드는 흐름
+
+Harness, Lab, Studio의 PR 생성은 `skills/hype-pr/SKILL.md` 정본을 따른다. consumer에서는
+`.claude/skills/hype-pr/SKILL.md`로 배포되고 `.agents/skills/hype-pr/`도 같은 내용을 가리킨다.
+개발 시작에 기준 연결을 잡고, commit 후 `inspect`로 대상·상위·하위와 미등록 변경을 읽는다.
+Agent가 실제 문서를 읽고 assessment를 작성하며, 별도 모델 API key는 필요 없다.
+`prepare`는 repo/base/head/다른 정본 repo SHA/정책·도구 version에 묶인 receipt를 git metadata에
+저장한다. `create --apply`는 이 receipt를 재검사하고 remote head까지 일치해야 생성한다.
+새 owner/상위 단계 누락은 막고 기존 debt는 별도로 표시한다. 미등록 구현은 REQ와 test에 연결하며,
+새 기준 문서를 supporting/edit-only로 위장하지 않는다. semantic 판단과 test evidence는 Agent의
+attestation이다. 이 과정을 독립 human approval 또는 URL/테스트 결과 자체의 자동 검증이라고 부르지 않는다.
+
+```bash
+python3 scripts/hype-pr/pr.py inspect --repo jayleekr/hypeprooflab \
+  --output /tmp/impact.json --assessment-template /tmp/assessment.json
+# Skill 지침에 따라 assessment를 작성한다. 원문/상세 reasoning은 public PR에 복사하지 않는다.
+python3 scripts/hype-pr/pr.py prepare --repo jayleekr/hypeprooflab --assessment /tmp/assessment.json
+# 출력된 receipt path를 아래 create --preparation 에 전달한다.
+```
+
+consumer 명령은 sibling Harness checkout 또는 `HYPEPROOF_HARNESS`로 정본 명령에 위임한다.
+Harness가 없으면 명시적으로 실패한다. 정책·엔진 복제나 fallback owner 명단은 없다.
+원격 기준 commit이 로컬에 없으면 `git fetch origin main` 후 다시 실행한다. source를 읽을 권한이
+없으면 권한을 복구한다. 코드 변경/새 commit/base·다른 repo의 전진은 다시 검토할 이유다.
+`create`의 `--path`는 dry-run 참고용이며 실제 생성의 위험 판정은 git diff로 계산한다.
+
+## Work GitHub transport
+
+Work에서 `gh` 인증을 사용할 수 없으면 연결된 GitHub 도구가 로컬 CLI의 요청을
+수행한다. 토큰을 셸·파일에 복사하지 않는다. `scripts/hype-pr/work_host.js`의
+`runWorkCommand(tools, options)`를 Work code mode에서 실행한다. 반환값은 종료 코드,
+비공개 stdout/stderr 디렉터리, 생성한 PR 식별자와 부가 작업 오류다.
+
+options는 다음을 지정한다.
+
+- `harness`: 정본 Harness checkout 절대 경로. CLI와 host 모두 이 버전을 사용한다.
+- `checkout`: 작업 repo의 깨끗하고 커밋된 worktree 절대 경로.
+- `args`: 기존 CLI 인수 배열. `inspect` → Agent assessment 작성 → `prepare` →
+  `create --preparation ... --apply`를 동일하게 실행한다. consumer PR에도 같은 경로를 쓴다.
+- `repositories`: `policy/change-impact.json`의 저장소 목록. 임의로 확대하지 않는다.
+- `repo`, `branch`, `author`: 사용자 작업 대상과 연결된 GitHub 계정.
+- `reviewers`: 명시적인 `--request-reviewers`를 사용할 때 허용할 active 비작성자 목록.
+- `allowCreate`: inspect/prepare는 false, 사용자가 요청한 PR 생성은 true.
+- `onProgress`: 선택적인 진행 알림 함수. 원문이나 평가 내용을 출력하지 않는다.
+
+host 소스를 읽어 `runWorkCommand` 함수를 로드하고 현재 연결의 `tools` 객체를 전달한다.
+Python CLI는 임시 0700 디렉터리의 요청/응답으로 통신한다. 응답은 원자적으로 전달되고,
+60초 무응답·응답 ID 불일치·도구 오류는 실패한다. immutable contents만 같은 host 세션에서
+재사용하며 main/head는 매번 다시 읽는다. 생성 직전 source SHA와 연결 계정도 재확인한다.
+원격에 커밋이 없으면 GitHub 연결로 같은 파일 tree를 feature branch에 저장한 뒤 해당
+원격 commit을 로컬로 fetch/checkout하고 검토한다. 다른 SHA를 같은 준비 기록으로 취급하지 않는다.
+
+Work transport는 PR 생성, 기본 reviewer 정리, 명시적으로 선택한 reviewer/label 요청만 쓰기 지원한다. auto-merge,
+기존 PR 변경, impact scan/checkpoint 쓰기는 이 경로의 범위 밖이다. 응답 유실은 생성 실패를
+뜻하지 않으므로 원격 PR부터 확인한다. 테스트나 host 종료 후 임시 원문은 보존 정책에 맞게 정리한다.
+이 모드는 검증 로직을 우회하거나 독립 사람 승인을 부여하지 않는다.
+
+검증: `python -m pytest tests/hype_pr tests/change_impact -q`와
+`node --test tests/hype_pr/work_host.test.js`. 실제 사용은 연결된 세 저장소 읽기와
+guarded PR 생성으로 별도 확인한다. 사용자에게 Work transport 구현을 승인받은 경우
+개발 브랜치의 host/CLI로 해당 변경 자체의 PR 준비를 시험할 수 있다.
+
 ## 기본 사용법
 
-먼저 dry-run으로 reviewer와 auto-merge eligibility를 확인한다.
+먼저 dry-run으로 auto-merge eligibility를 확인한다. reviewer 목록은 기본으로 비어 있다.
 
 ```bash
 python3 scripts/hype-pr/pr.py plan \
@@ -31,7 +97,7 @@ python3 scripts/hype-pr/pr.py plan \
   --auto-merge
 ```
 
-기존 PR에 reviewer를 다시 요청한다.
+사용자가 특정 PR의 리뷰를 명시한 경우에만 기존 PR에 reviewer를 요청한다.
 
 ```bash
 python3 scripts/hype-pr/pr.py request-reviewers \
@@ -45,7 +111,8 @@ python3 scripts/hype-pr/pr.py request-reviewers \
   --apply
 ```
 
-새 PR을 만들 때도 기본은 dry-run이다.
+새 PR을 만들 때도 기본은 dry-run이며 reviewer 요청은 없다. dry-run의
+`reviewer_cleanup_commands`는 CODEOWNERS가 자동으로 붙일 수 있는 요청의 제거 계획이다.
 
 ```bash
 python3 scripts/hype-pr/pr.py create \
@@ -58,11 +125,13 @@ python3 scripts/hype-pr/pr.py create \
   --path docs/HYPE-PR.ko.md
 ```
 
-`--apply`를 붙이면 `gh pr create`를 실행한다. `--auto-merge`를 같이 붙였고
+해당 PR에 peer review가 명시적으로 필요할 때만 `--request-reviewers`를 추가한다.
+
+`--preparation <prepare 출력 경로> --apply`를 붙이면 검토를 재확인한 뒤 `gh pr create`를 실행한다. `--auto-merge`를 같이 붙였고
 eligibility가 통과하면 생성 직후 `gh pr merge --auto --squash --delete-branch`도
 실행한다.
 
-reviewer 요청은 PR 생성 후 1명씩 시도한다. 특정 repo에서 아직 write 권한이 없거나
+`--request-reviewers`를 사용하면 PR 생성 후 1명씩 요청한다. 특정 repo에서 아직 write 권한이 없거나
 초대를 수락하지 않은 멤버가 있으면 PR 생성 자체를 막지 않고, 해당 reviewer 요청
 실패를 JSON 결과에 남긴다.
 
@@ -100,7 +169,7 @@ high-risk path는 auto-merge를 막는다.
 | `dependency` | lockfile, `pyproject.toml`, requirements, `Cargo.lock` |
 | `governance` | `policy/`, `CODEOWNERS`, branch protection, repo-governance |
 
-docs/UI 변경은 high-risk가 아니지만, reviewer가 `human-needed`를 붙이면 auto-merge가
+docs/UI 변경은 high-risk가 아니지만, `human-needed`가 붙으면 auto-merge가
 막힌다.
 
 ---
@@ -149,11 +218,13 @@ docs/UI 변경은 high-risk가 아니지만, reviewer가 `human-needed`를 붙�
 
 PR 작성자는 다음을 기억한다.
 
-1. PR 생성 전 `hype-pr plan`으로 reviewer와 auto-merge 판정을 확인한다.
+1. PR 생성 Skill의 inspect/assessment/prepare를 거친다. plan만으로 생성 검토를 대체하지 않는다.
 2. high-risk 변경이면 `--auto-merge`를 붙이지 않는다.
 3. low-risk 반복 작업이면 `--auto-merge`를 붙일 수 있다.
-4. reviewer는 모두 요청하되, 모든 사람의 승인을 기다리는 정책은 아니다.
-5. merge는 branch protection quorum과 required checks가 결정한다.
+4. reviewer를 요청하지 않는다. 사용자가 해당 PR의 peer review를 명시한 경우에만
+   `--request-reviewers`를 사용한다.
+5. merge는 required checks, exact-head 상태, 적용 가능한 증거 게이트와 실제 branch
+   protection이 결정한다.
 6. 제목은 `type(scope): 한글 요약` 규약을 지킨다(위 "릴리즈 노트 규약"). 이게
    매일 나가는 배포 다이제스트의 한 줄이 된다.
 

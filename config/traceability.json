@@ -1,0 +1,289 @@
+{
+  "version": 1,
+  "repository": "jayleekr/hypeproof-harness",
+  "coverage": "Bootstrap scope only; unregistered product areas are not claimed covered.",
+  "nodes": [
+    {
+      "id": "HAR-INT-CHANGE",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/CHANGE-IMPACT.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-CHANGE",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "docs/CHANGE-IMPACT.ko.md",
+          "section": "## 요구사항과 검증"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-CHANGE",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "docs/CHANGE-IMPACT.ko.md",
+          "section": "## 설계"
+        },
+        {
+          "path": "docs/HYPE-PR.ko.md",
+          "section": "## Agent가 PR을 만드는 흐름"
+        },
+        {
+          "path": "skills/hype-pr/SKILL.md"
+        },
+        {
+          "path": "docs/HYPE-PR.ko.md",
+          "section": "## Work GitHub transport"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-CHANGE",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "scripts/change-impact/impact.py"
+        },
+        {
+          "path": "scripts/hype-pr/pr.py"
+        },
+        {
+          "path": "scripts/hype-pr/preparation.py"
+        },
+        {
+          "path": "scripts/hype-pr/install.py"
+        },
+        {
+          "path": "scripts/hype-pr/work_transport.py"
+        },
+        {
+          "path": "scripts/hype-pr/work_host.js"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-CHANGE",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-CHANGE"
+      ],
+      "sources": [
+        {
+          "path": "tests/change_impact/test_impact.py"
+        },
+        {
+          "path": "tests/hype_pr/test_preparation.py"
+        },
+        {
+          "path": "tests/hype_pr/test_work_transport.py"
+        },
+        {
+          "path": "tests/hype_pr/work_host.test.js"
+        }
+      ]
+    },
+    {
+      "id": "HAR-INT-CREW",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/AI-CREW.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-CREW",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-CREW"
+      ],
+      "sources": [
+        {
+          "path": "docs/AI-CREW.ko.md",
+          "section": "## 요구사항"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-CREW",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-CREW"
+      ],
+      "sources": [
+        {
+          "path": "docs/AI-CREW.ko.md",
+          "section": "## 설계"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-CREW",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-CREW"
+      ],
+      "sources": [
+        {
+          "path": "skills/hypeproof-scout/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-compass/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-forge/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-lens/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-keeper/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-keeper/scripts/check_context.py"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-CREW",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-CREW"
+      ],
+      "sources": [
+        {
+          "path": "tests/test_ai_crew.py"
+        }
+      ]
+    },
+    {
+      "id": "HAR-INT-DELIVERY",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-DELIVERY",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## 요구사항"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-DELIVERY",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## 역할과 호출"
+        },
+        {
+          "path": "docs/FIVE-SESSION-DELIVERY.ko.md",
+          "section": "## 전달 상태"
+        },
+        {
+          "path": "skills/hype-coordinate/references/team-contract.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-DELIVERY",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "skills/hype-coordinate/SKILL.md"
+        },
+        {
+          "path": "skills/hype-coordinate/scripts/delivery_delta.py"
+        },
+        {
+          "path": "skills/hype-coordinate/scripts/wake_role.py"
+        },
+        {
+          "path": "skills/hype-intent/SKILL.md"
+        },
+        {
+          "path": "skills/hype-studio/SKILL.md"
+        },
+        {
+          "path": "skills/hype-chalk/SKILL.md"
+        },
+        {
+          "path": "skills/hype-verify/SKILL.md"
+        },
+        {
+          "path": "skills/hypeproof-operator/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-DELIVERY",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-DELIVERY"
+      ],
+      "sources": [
+        {
+          "path": "tests/hype_coordinate/test_wake_role.py"
+        }
+      ]
+    }
+  ]
+}

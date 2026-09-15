@@ -209,8 +209,13 @@ repositories:
         # exit 4 -> red governance audit). That failure is fail-closed and must be
         # resolved by re-dating this exception after review, NOT by removing
         # target_visibility and NOT by flipping visibility to public.
-        reason: Target visibility is public, but the repo must remain private until the exposed OAuth credential is rotated and the historical commit purge verifier passes.
-        expires_at: 2026-08-31
+        reason: >-
+          Target visibility is public, but the repo must remain private until the
+          exposed OAuth credential is rotated and the historical commit purge
+          verifier passes. Reviewed 2026-09-08 during change-impact operational
+          rollout (#120): retain all readiness blockers; no clearance is claimed.
+          Re-review within seven days; this is not a visibility-change authorization.
+        expires_at: 2026-09-15
       - id: lab-public-readiness-tenant-history-clearance
         owner: jayleekr
         reason: >-
@@ -243,8 +248,12 @@ repositories:
     exceptions:
       - id: github-io-ci-not-yet-created
         owner: jayleekr
-        reason: Add stable PR checks before requiring named status contexts.
-        expires_at: 2026-08-31
+        reason: >-
+          Add stable PR checks before requiring named status contexts. Harness-only
+          record review 2026-09-08 (#120): the external repo's completion state is
+          still unverified; retain the existing exception for seven days pending
+          owner verification. No external repository settings are changed.
+        expires_at: 2026-09-15
 
   - owner: jayleekr
     name: hypeproof-studio-releases
