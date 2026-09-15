@@ -27,6 +27,13 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | 3 consumers `.claude/skills/` |
 | `skills/hype-review/` | PR 리뷰 요청 확인 + 역할별 리뷰 워크시트 스킬 | 3 consumers `.claude/skills/` |
 | `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-deliver/` | 사용자 가시 수직 기능을 구현부터 머지·배포·실제품 확인까지 소유하는 Astra Captain 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-verify/` | 새 구현 SHA 또는 인수 revision만 독립 검증하는 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-intent/` | 실제 제품 모호성만 해결하는 선택적 Intent specialist | 3 consumers `.claude/skills/` |
+| `skills/hype-studio/` | 비중첩 Studio 하위 작업용 선택적 specialist | 3 consumers `.claude/skills/` |
+| `skills/hype-chalk/` | 비중첩 Chalk 하위 작업용 선택적 specialist | 3 consumers `.claude/skills/` |
+| `skills/hype-coordinate/` | 폐기된 5세션 watcher와 queue의 복구 전용 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hypeproof-operator/` | HypeProof 범위의 PR·머지·배포 운영 스킬 | 3 consumers `.claude/skills/` |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `skills/demo-video-harness/` | 웹 앱/페이지를 timeline YAML + Playwright + ffmpeg로 내레이션 있는 데모 mp4로 렌더링하는, 특정 회사/제품에 종속되지 않는 generic 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
@@ -35,6 +42,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `docs/HYPE-REVIEW.ko.md` | `hype-review` 역할별 PR 리뷰 질문·답변 가이드 | 3 consumers `docs/` |
 | `docs/HYPE-PR.ko.md` | `hype-pr` PR 생성·reviewer 요청·auto-merge 판정 가이드 | 3 consumers `docs/` |
 | `docs/WEEKLY-LOOP.ko.md` | 주간 운영 루프 canonical 정의 — 회의 → 이슈 → 번다운 | 3 consumers `docs/` |
+| `docs/FIVE-SESSION-DELIVERY.ko.md` | Delivery Captain, revision-bound 검증, 무모델 watcher 계약(호환 파일명 유지) | 3 consumers `docs/` |
 | `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |

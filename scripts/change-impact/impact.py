@@ -85,6 +85,22 @@ def pages(path):
     raise ValueError("pagination limit reached; refusing incomplete issue inventory")
 
 
+# Explicit media suffixes only: malformed text must never become binary silently.
+BINARY_SOURCE_SUFFIXES = frozenset({".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".avif"})
+
+
+class BinarySource(str):
+    """A raw-byte fingerprint, not decoded document content or extracted prose."""
+
+
+def source_representation(path, raw):
+    suffix = Path(path).suffix.lower()
+    if suffix in BINARY_SOURCE_SUFFIXES:
+        return BinarySource(json.dumps({"kind": "binary-source/v1", "suffix": suffix,
+            "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}, sort_keys=True))
+    return raw.decode("utf-8")
+
+
 class Reader:
     def __init__(self, roots=None):
         self.roots = roots or {}
@@ -118,12 +134,13 @@ class Reader:
         key = repo, sha, path
         if key not in self.cache:
             if repo in self.roots:
-                self.cache[key] = self.git(repo, "show", f"{sha}:{path}").decode()
+                raw = self.git(repo, "show", f"{sha}:{path}")
             else:
                 data = gh(f"repos/{repo}/contents/{path}?ref={sha}")
                 if data.get("encoding") != "base64":
                     raise ValueError("unsupported/oversized source; split into smaller files")
-                self.cache[key] = base64.b64decode(data["content"]).decode()
+                raw = base64.b64decode(data["content"])
+            self.cache[key] = source_representation(path, raw)
         return self.cache[key]
 
     def changed(self, repo, base, head):
@@ -174,6 +191,8 @@ class Reader:
 def section(text, heading):
     if not heading:
         return text
+    if isinstance(text, BinarySource):
+        raise ValueError("binary source does not support section selection")
     lines = text.splitlines()
     matches = [i for i, line in enumerate(lines) if line == heading]
     if len(matches) != 1 or not re.match(r"^#{1,6} ", heading):
