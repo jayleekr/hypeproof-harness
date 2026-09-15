@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -13,6 +15,7 @@ from dataclasses import dataclass
 
 WORKSPACE_TITLE = "studio-testing"
 ROLE_CONFIG = {
+    "a": ("claude-1", "/hype-coordinate"),
     "b": ("claude-2-impl", "/hype-studio"),
     "c": ("claude-3-impl", "/hype-chalk"),
     "x1": ("codex-testing", "$hype-intent"),
@@ -51,6 +54,39 @@ def cmux(*args: str) -> str:
     return proc.stdout
 
 
+# A socket in cmuxOnly mode closes connections from processes that cmux did not
+# start (for example a launchd agent); the CLI then reports a broken pipe even
+# though the socket exists and CMUX_SOCKET_PATH is correct (#180).
+SOCKET_DENIED = re.compile(r"broken pipe|errno 32|access denied|not allowed|unauthori[sz]ed", re.I)
+
+
+def preflight_socket(retries: int = 2, delay: float = 0.5) -> None:
+    """Fail before touching any surface unless cmux answers a ping."""
+    error = ""
+    for attempt in range(retries + 1):
+        try:
+            reply = cmux("ping").strip()
+        except RuntimeError as exc:
+            error = str(exc)
+        else:
+            if reply == "PONG":
+                return
+            error = f"unexpected ping reply {reply!r}"
+        if SOCKET_DENIED.search(error):
+            raise RuntimeError(
+                f"socket_access_denied: cmux rejected this process ({error}). "
+                "In cmuxOnly mode only processes started under cmux may connect; a "
+                "launchd watcher needs socketControlMode=password with "
+                "CMUX_SOCKET_PASSWORD, or must run inside a cmux surface. "
+                "Retrying cannot recover."
+            )
+        if attempt < retries:
+            time.sleep(delay)
+    raise RuntimeError(
+        f"socket_unavailable: cmux ping failed after {retries + 1} attempts ({error})"
+    )
+
+
 def find_surface(title: str) -> Surface:
     current: tuple[str, str, str] | None = None
     for line in cmux("tree", "--all", "--id-format", "both").splitlines():
@@ -76,7 +112,8 @@ def read_screen(surface: Surface, lines: int = 30) -> str:
     )
 
 
-def assert_idle(screen: str) -> None:
+def prompt_state(screen: str) -> str:
+    """Return composer text that may be unsent, after known-inert cases."""
     tail = screen.splitlines()[-12:]
     if any("esc to interrupt" in line.lower() for line in tail):
         raise RuntimeError("target role is running")
@@ -97,8 +134,38 @@ def assert_idle(screen: str) -> None:
         # plain-text screen does not preserve the dim styling, so recognize the
         # suggestion by its exact prefix of a completed earlier prompt.
         prompt = ""
-    if prompt:
+    return prompt
+
+
+def assert_idle(screen: str) -> None:
+    if prompt_state(screen):
         raise RuntimeError("target prompt contains unsent text")
+
+
+# Claude Code shows dim prompt suggestions that are not history entries, and
+# cmux's text read drops the dim styling (#180). Typing one probe character
+# replaces a suggestion but is appended to real input, so the rendered result
+# tells them apart; one backspace then restores the composer either way.
+PROBE = "¶"
+
+
+def classify_prompt(surface: Surface, timeout: float = 2.0) -> None:
+    """Return only when the visible composer text is an inert suggestion."""
+    type_message(surface, PROBE)
+    deadline = time.monotonic() + max(0.1, timeout)
+    observed = None
+    while time.monotonic() < deadline:
+        observed = prompt_state(read_screen(surface, lines=40))
+        if observed.endswith(PROBE):
+            break
+        time.sleep(0.2)
+    else:
+        raise RuntimeError(
+            f"suggestion probe was not rendered; composer not restored, check it for {PROBE}"
+        )
+    cmux("send-key", *target_args(surface), "backspace")
+    if observed != PROBE:
+        raise RuntimeError("target prompt contains unsent text; typed input kept")
 
 
 def target_args(surface: Surface) -> tuple[str, ...]:
@@ -211,6 +278,10 @@ def main() -> int:
     parser.add_argument("--role", choices=sorted(ROLE_CONFIG), required=True)
     parser.add_argument("--packet")
     parser.add_argument("--work-url")
+    parser.add_argument(
+        "--state-file",
+        help="Shared delivery-delta state path included in coordinator packets",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--ack-timeout", type=int, default=30)
@@ -220,8 +291,12 @@ def main() -> int:
 
     try:
         title, invocation = ROLE_CONFIG[args.role]
+        if args.state_file and args.role != "a":
+            raise ValueError("--state-file is only valid for the coordinator role")
+        preflight_socket()
         surface = find_surface(title)
-        assert_idle(read_screen(surface))
+        if prompt_state(read_screen(surface)):
+            classify_prompt(surface)
 
         ack = None
         attempt = f"WAKE_ATTEMPT_{args.role.upper()}_{time.time_ns()}"
@@ -237,13 +312,26 @@ def main() -> int:
                 raise RuntimeError("--packet must use letters, numbers, dot, dash, or underscore")
             if not args.work_url or not WORK_URL.fullmatch(args.work_url):
                 raise RuntimeError("--work-url must be an allowed HypeProof GitHub issue or PR")
-            message = (
-                f"{invocation} Coordinator dispatch packet {args.packet}. "
-                f"Dispatch attempt {attempt}. "
-                f"Read and execute {args.work_url}. Acknowledge the real session "
-                "and branch in the GitHub record, work through tests and handoff, "
-                "use English for engineering work, and report to the user in Korean."
-            )
+            if args.role == "a" and args.state_file:
+                state_file = Path(args.state_file).expanduser().resolve()
+                message = (
+                    f"{invocation} Deterministic watcher packet {args.packet}. "
+                    f"Dispatch attempt {attempt}. Run delivery_delta.py with "
+                    f"--state-file {shlex.quote(str(state_file))}, reconcile pending "
+                    f"token {args.packet} from {args.work_url}, route and verify actual "
+                    "worker acknowledgment, then acknowledge that token only after the "
+                    "durable GitHub outcome. Do not register a recurring task in this "
+                    "session. Use English for engineering work and report to the user "
+                    "in Korean."
+                )
+            else:
+                message = (
+                    f"{invocation} Coordinator dispatch packet {args.packet}. "
+                    f"Dispatch attempt {attempt}. "
+                    f"Read and execute {args.work_url}. Acknowledge the real session "
+                    "and branch in the GitHub record, work through tests and handoff, "
+                    "use English for engineering work, and report to the user in Korean."
+                )
 
         result = {
             "status": "ready" if not args.apply else "submitted",

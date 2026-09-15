@@ -297,6 +297,25 @@ def test_rollup_checks_ok_treats_empty_rollup_as_not_ok() -> None:
     assert item.status == "blocked"
 
 
+def test_fetch_open_prs_uses_one_complete_list_query(monkeypatch) -> None:
+    module = load_module()
+    calls: list[list[str]] = []
+
+    def fake_run_gh(args: list[str]):
+        calls.append(args)
+        return [pr()]
+
+    monkeypatch.setattr(module, "run_gh", fake_run_gh)
+    items = module.fetch_open_prs("jayleekr/hypeproof-studio", 100)
+
+    assert len(calls) == 1
+    assert calls[0][:2] == ["pr", "list"]
+    fields = calls[0][calls[0].index("--json") + 1]
+    assert "statusCheckRollup" in fields
+    assert "latestReviews" in fields
+    assert items[0]["repository"]["nameWithOwner"] == "jayleekr/hypeproof-studio"
+
+
 def test_automerge_apply_enables_and_reports_failure(monkeypatch) -> None:
     automerge = load_automerge()
 
