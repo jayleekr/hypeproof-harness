@@ -512,3 +512,61 @@ def test_comparison_split_budget_is_bounded(monkeypatch):
     with pytest.raises(ValueError, match="limit"):
         m.Reader().changed("x/y", "a" * 40, "b" * 40)
     assert len(calls) == 63
+
+
+def test_binary_git_github_parity_and_revision_sensitivity(tmp_path, monkeypatch):
+    import base64
+    import hashlib
+    repo = "example/binary"
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args]).decode().strip()
+    git("init", "-q")
+    manifest = {"version": 1, "repository": repo, "nodes": [
+        {"id": "INT-PDF", "stage": "intent", "sources": [{"path": "protocol.pdf"}]}]}
+    (tmp_path / "traceability.json").write_text(json.dumps(manifest))
+    first = b"%PDF-1.7\n\xff\x00binary-a\n"
+    (tmp_path / "protocol.pdf").write_bytes(first)
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "first")
+    before = git("rev-parse", "HEAD")
+    (tmp_path / "protocol.pdf").write_bytes(first.replace(b"binary-a", b"binary-b"))
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "changed")
+    after = git("rev-parse", "HEAD")
+    # Working-copy bytes must not replace either pinned source.
+    (tmp_path / "protocol.pdf").write_bytes(b"uncommitted")
+    def github(path):
+        if "/commits/" in path:
+            return {"sha": path.rsplit("/", 1)[1]}
+        resource, sha = path.split("?ref=")
+        file = resource.split("/contents/")[1]
+        raw = subprocess.check_output(["git", "-C", str(tmp_path), "show", f"{sha}:{file}"])
+        return {"encoding": "base64", "content": base64.b64encode(raw).decode()}
+    monkeypatch.setattr(m, "gh", github)
+    local, remote = m.Reader({repo: str(tmp_path)}), m.Reader()
+    policy = {"repositories": {repo: {"manifest": "traceability.json"}}, "members": [], "canon_owner": "jay"}
+    snapshots = []
+    for sha in [before, after]:
+        assert local.read(repo, sha, "protocol.pdf") == remote.read(repo, sha, "protocol.pdf")
+        assert isinstance(remote.read(repo, sha, "protocol.pdf"), m.BinarySource)
+        local_snap = m.snapshot(local, policy, {repo: sha})
+        assert local_snap == m.snapshot(remote, policy, {repo: sha})
+        snapshots.append(local_snap)
+    assert json.loads(local.read(repo, before, "protocol.pdf"))["sha256"] == hashlib.sha256(first).hexdigest()
+    assert snapshots[0]["nodes"]["INT-PDF"]["revision"] != snapshots[1]["nodes"]["INT-PDF"]["revision"]
+    assert m.plan(*snapshots)["tasks"][0]["id"] == "INT-PDF"
+    with pytest.raises(ValueError, match="binary source does not support section"):
+        m.section(local.read(repo, before, "protocol.pdf"), "## Intent")
+
+
+@pytest.mark.parametrize("transport", ["git", "github"])
+def test_unknown_or_malformed_text_still_fails_utf8(transport, monkeypatch):
+    import base64
+    raw = b"# Intent\n\xffinvalid-text"
+    monkeypatch.setattr(m.Reader, "git", lambda *_: raw)
+    monkeypatch.setattr(m, "gh", lambda _: {"encoding": "base64", "content": base64.b64encode(raw).decode()})
+    reader = m.Reader({"x/y": "/unused"} if transport == "git" else {})
+    for path in ["intent.md", "implementation.py", "unknown.bin"]:
+        with pytest.raises(UnicodeDecodeError):
+            reader.read("x/y", "a" * 40, path)
+    assert isinstance(reader.read("x/y", "a" * 40, "protocol.PDF"), m.BinarySource)
