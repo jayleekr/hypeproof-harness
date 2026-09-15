@@ -286,6 +286,81 @@
       ]
     },
     {
+      "id": "HAR-INT-MERGE",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "LAB-MISSION"
+      ],
+      "sources": [
+        {
+          "path": "docs/HYPE-MERGE.ko.md",
+          "section": "## Intent"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-MERGE",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-MERGE"
+      ],
+      "sources": [
+        {
+          "path": "docs/HYPE-MERGE.ko.md",
+          "section": "## 요구사항"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-MERGE",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-MERGE"
+      ],
+      "sources": [
+        {
+          "path": "docs/HYPE-MERGE.ko.md",
+          "section": "## 설계"
+        },
+        {
+          "path": "docs/AGENT-GUIDE.ko.md",
+          "section": "## 2. 작업 흐름"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-MERGE",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-MERGE"
+      ],
+      "sources": [
+        {
+          "path": "scripts/hype-merge/monitor.py"
+        },
+        {
+          "path": "scripts/hype-merge/automerge.py"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-MERGE",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-MERGE"
+      ],
+      "sources": [
+        {
+          "path": "tests/hype_merge/test_hype_merge.py"
+        }
+      ]
+    },
+    {
       "id": "HAR-INT-WORK",
       "stage": "intent",
       "owner": "jayleekr",

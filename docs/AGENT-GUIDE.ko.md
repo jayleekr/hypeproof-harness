@@ -49,6 +49,10 @@ ready, 다른 세션 작업, 리뷰 대기, 의존성, 사람/환경 대기, 재
   `plan`은 초기 참고용이다.
   Skill은 `.agents/skills/hype-pr/`에서도 발견할 수 있다. 별도 GitHub required check는 추가하지 않는다.
 - `main` 직접 push는 메인테이너가 명시한 경우에만 한다.
+- 정본 policy가 요구하는 비작성자 승인과 명시적 사람 gate가 충족된 뒤의 merge는
+  조정 에이전트가 수행한다. 사람의 승인과 merge 버튼 누르기를 같은 gate로 만들지
+  않는다. `hype-merge`가 `ready`로 판정한 정확한 head만 병합하고 merge SHA와 main
+  checks/deploy를 확인한 뒤 다음 의존 PR을 갱신한다.
 - harness 변경은 세 consumer repo에 영향을 줄 수 있으므로 더 좁고 검증 가능한
   변경으로 유지한다.
 
