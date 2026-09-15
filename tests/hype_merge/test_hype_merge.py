@@ -375,7 +375,7 @@ def test_merge_ready_apply_uses_exact_head_without_auto(monkeypatch) -> None:
     monkeypatch.setattr(
         automerge,
         "run_gh_text",
-        lambda args: (calls.append(args) or 0, "merged"),
+        lambda args: (calls.append(args) or 0, "f" * 40 if args[:2] == ["pr", "view"] else "merged"),
     )
 
     actions = automerge.plan_actions(
@@ -386,6 +386,100 @@ def test_merge_ready_apply_uses_exact_head_without_auto(monkeypatch) -> None:
     assert "--auto" not in calls[0]
     assert "--match-head-commit" in calls[0]
     assert "abc123" in calls[0]
+    # The merge commit is confirmed and reported so follow-up has an exact revert unit.
+    assert calls[1][:2] == ["pr", "view"]
+    assert actions[0].merge_commit == "f" * 40
+    assert actions[0].reason == "merge_commit:" + "f" * 40
+
+
+def ready_pr(repo: str, number: int) -> dict:
+    item = pr(author="JinyongShin", reviews=[review("jayleekr", "APPROVED")])
+    item["repository"] = {"nameWithOwner": repo}
+    item["number"] = number
+    return item
+
+
+def record_gh(monkeypatch, automerge, result=(0, "merged")) -> list[list[str]]:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(automerge, "run_gh_text", lambda args: (calls.append(args), result)[1])
+    return calls
+
+
+def test_merge_ready_offline_file_cannot_merge_multiple_repositories(tmp_path: Path, monkeypatch) -> None:
+    # Review blocker on #165: --offline-file used to skip the single repo/PR guard entirely.
+    automerge = load_automerge()
+    data = tmp_path / "two-ready.json"
+    data.write_text(json.dumps([
+        ready_pr("jayleekr/hypeproof-studio", 901),
+        ready_pr("jayleekr/hypeproof-harness", 902),
+    ]), encoding="utf-8")
+    calls = record_gh(monkeypatch, automerge)
+
+    assert automerge.main(["--offline-file", str(data), "--merge-ready", "--apply"]) == 2
+    assert automerge.main(["--offline-file", str(data), "--merge-ready", "--apply",
+                           "--repo", "jayleekr/hypeproof-studio"]) == 2
+    assert calls == []
+
+    # Positive control: the same file with one selected repo/PR merges exactly that PR.
+    record = record_gh(monkeypatch, automerge)
+    assert automerge.main(["--offline-file", str(data), "--merge-ready", "--apply",
+                           "--repo", "jayleekr/hypeproof-studio", "--pr", "901"]) == 0
+    merges = [c for c in record if c[:2] == ["pr", "merge"]]
+    assert len(merges) == 1 and merges[0][2] == "901"
+
+
+def test_merge_ready_refuses_profile_without_machine_merge(tmp_path: Path, monkeypatch) -> None:
+    automerge = load_automerge()
+    module = load_module()
+    assert "jayleekr/hypeprooflab" not in module.load_auto_merge_policy_repos()
+    data = tmp_path / "lab.json"
+    data.write_text(json.dumps([ready_pr("jayleekr/hypeprooflab", 119)]), encoding="utf-8")
+    calls = record_gh(monkeypatch, automerge)
+
+    assert automerge.main(["--offline-file", str(data), "--merge-ready", "--apply",
+                           "--repo", "jayleekr/hypeprooflab", "--pr", "119"]) == 2
+    assert calls == []
+
+
+def test_merge_ready_never_merges_blocked_or_unconfirmed_prs(monkeypatch) -> None:
+    automerge = load_automerge()
+    failing = ready_pr("jayleekr/hypeproof-studio", 1)
+    failing["statusCheckRollup"] = [check("build", conclusion="FAILURE")]
+    conflicting = ready_pr("jayleekr/hypeproof-studio", 2)
+    conflicting["mergeable"] = "CONFLICTING"
+    platform_blocked = ready_pr("jayleekr/hypeproof-studio", 3)
+    platform_blocked["mergeStateStatus"] = "BLOCKED"
+    unknown = ready_pr("jayleekr/hypeproof-studio", 4)
+    unknown["mergeStateStatus"] = ""
+    held = ready_pr("jayleekr/hypeproof-studio", 5)
+    held["labels"] = [{"name": "hold"}]
+    calls = record_gh(monkeypatch, automerge)
+
+    actions = automerge.plan_actions(
+        automerge.build_queue([failing, conflicting, platform_blocked, unknown, held]),
+        apply=True, merge_ready=True,
+    )
+
+    assert calls == []
+    assert {a.number: a.status for a in actions} == {1: "skipped", 2: "skipped", 3: "skipped", 4: "skipped", 5: "skipped"}
+    assert {a.number: a.reason for a in actions}[3] == "merge_state_not_clean:BLOCKED"
+    assert {a.number: a.reason for a in actions}[4] == "merge_state_not_clean:unknown"
+
+
+def test_merge_ready_reports_merge_failure_and_unconfirmed_commit(monkeypatch) -> None:
+    automerge = load_automerge()
+    queue = automerge.build_queue([ready_pr("jayleekr/hypeproof-studio", 7)])
+
+    record_gh(monkeypatch, automerge, (1, "GraphQL: Head branch was modified"))
+    failed = automerge.plan_actions(queue, apply=True, merge_ready=True)
+    assert failed[0].status == "failed"
+    assert "Head branch was modified" in failed[0].reason
+    assert failed[0].merge_commit == ""
+
+    record_gh(monkeypatch, automerge, (0, ""))
+    unconfirmed = automerge.plan_actions(queue, apply=True, merge_ready=True)
+    assert unconfirmed[0].status == "merged"
+    assert unconfirmed[0].reason == "merge_commit_unconfirmed"
 
 
 def test_monitor_markdown_shows_auto_merge_status(tmp_path: Path) -> None:

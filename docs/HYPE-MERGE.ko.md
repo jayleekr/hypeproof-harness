@@ -65,7 +65,8 @@ python3 scripts/hype-merge/automerge.py \
 2. ready PR만 squash merge 대상으로 본다.
 3. 조정 에이전트가 의존 관계, 현재 X2 판정, 최신 head를 확인한다.
 4. `--merge-ready --repo <repo> --pr <n> --apply`로 exact-head squash merge한다.
-5. merge SHA, main CI, 배포를 확인하고 다음 의존 브랜치를 갱신한다.
+5. 출력의 merge commit(`mergeCommit`)을 기록하고 main CI·배포를 확인한 뒤 다음 의존
+   브랜치를 갱신한다. `merge_commit_unconfirmed`이면 다음 병합으로 넘어가지 않는다.
 
 이 도구의 출력은 merge 후보를 줄이는 보조 신호다. 실제 merge는 GitHub branch
 protection, CODEOWNERS, required checks, 그리고 PR의 최신 review state가 최종
@@ -87,4 +88,15 @@ protection, CODEOWNERS, required checks, 그리고 PR의 최신 review state가 
 따라서 failed check, conflict, changes requested, `do-not-merge`/`blocked`/`hold`
 라벨이 있는 PR은 auto-merge 예약 대상이 아니다. `ready` PR은 `--merge-ready`와
 단일 `--repo`/`--pr`로만 직접 병합한다. 이 제한은 여러 저장소의 ready PR을
-의존 순서 확인 없이 한 번에 병합하지 못하게 한다.
+의존 순서 확인 없이 한 번에 병합하지 못하게 한다. `--offline-file` 입력에도 같은
+제한이 걸리며, 선택 결과가 정확히 PR 하나가 아니면 병합하지 않는다.
+
+`ready`는 draft·conflict(`mergeable`≠`MERGEABLE`)·실패/대기 check·changes requested·
+`do-not-merge`/`blocked`/`hold` 라벨·정본 승인 수 미달이 하나도 없다는 뜻이다. 직접
+병합은 여기에 두 조건을 더한다.
+
+- 정본 profile의 `allow_auto_merge`가 `true`인 저장소만 대상이다. `false`인 저장소
+  (예: `hypeprooflab`의 `content-vault`)는 `--merge-ready`가 거부한다.
+- GitHub `mergeStateStatus`가 `CLEAN`/`HAS_HOOKS`여야 한다. `BLOCKED`·빈 값이면
+  건너뛴다. 따라서 이름 있는 required check, CODEOWNER 승인, last-push 승인은 GitHub가
+  확인한 결과를 따른다. 이 도구는 승인 **수**만 직접 센다.

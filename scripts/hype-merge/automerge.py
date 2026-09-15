@@ -10,13 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from monitor import MergeAssessment, build_queue, fetch_open_prs, load_auto_merge_policy_repos
+from monitor import MergeAssessment, build_queue, fetch_open_prs, load_auto_merge_policy_repos, repo_name
 
 
 REVIEW_ONLY_BLOCKERS = {
     "human_needed_without_non_author_approval",
     "branch_review_required",
 }
+# GitHub's own verdict must agree before a direct merge. BLOCKED/UNKNOWN/empty mean the platform
+# has not confirmed required checks, reviews (including code owner / last push) or mergeability.
+DIRECT_MERGE_STATES = {"CLEAN", "HAS_HOOKS"}
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,7 @@ class AutoMergeAction:
     head_oid: str
     status: str
     reason: str
+    merge_commit: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +42,7 @@ class AutoMergeAction:
             "headRefOid": self.head_oid,
             "status": self.status,
             "reason": self.reason,
+            "mergeCommit": self.merge_commit,
         }
 
 
@@ -82,7 +87,11 @@ def plan_actions(
 ) -> list[AutoMergeAction]:
     actions: list[AutoMergeAction] = []
     for item in items:
-        if item.status == "ready" and merge_ready:
+        merge_commit = ""
+        if item.status == "ready" and merge_ready and item.merge_state not in DIRECT_MERGE_STATES:
+            status = "skipped"
+            reason = f"merge_state_not_clean:{item.merge_state or 'unknown'}"
+        elif item.status == "ready" and merge_ready:
             status = "would_merge"
             reason = "policy_and_checks_ready"
             if apply:
@@ -100,6 +109,9 @@ def plan_actions(
                 status = "merged" if code == 0 else "failed"
                 if code != 0:
                     reason = detail.splitlines()[-1] if detail else "direct_merge_failed"
+                else:
+                    merge_commit = confirmed_merge_commit(item)
+                    reason = f"merge_commit:{merge_commit}" if merge_commit else "merge_commit_unconfirmed"
         elif eligible_for_auto_merge(item):
             status = "would_enable"
             reason = "waiting_for_required_review"
@@ -133,8 +145,19 @@ def plan_actions(
             head_oid=item.head_oid,
             status=status,
             reason=reason,
+            merge_commit=merge_commit,
         ))
     return actions
+
+
+def confirmed_merge_commit(item: MergeAssessment) -> str:
+    """The squash commit GitHub recorded, so main CI/deploy follow-up has an exact revert unit."""
+    code, detail = run_gh_text([
+        "pr", "view", str(item.number), "--repo", item.repo,
+        "--json", "mergeCommit", "--jq", ".mergeCommit.oid // empty",
+    ])
+    sha = detail.strip() if code == 0 else ""
+    return sha if len(sha) == 40 and all(c in "0123456789abcdef" for c in sha) else ""
 
 
 def render_markdown(actions: list[AutoMergeAction]) -> str:
@@ -171,7 +194,7 @@ def render_markdown(actions: list[AutoMergeAction]) -> str:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Enable auto-merge for PRs only waiting on required review.")
     parser.add_argument("--repo", action="append", default=[], help="Repository in owner/name form. Defaults to policy auto-merge repos.")
-    parser.add_argument("--pr", type=int, help="Limit a live run to one PR; requires exactly one --repo.")
+    parser.add_argument("--pr", type=int, help="Limit the run (live or offline) to one PR of the selected --repo.")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--offline-file", help="JSON file containing a PR object or PR object list.")
     parser.add_argument("--apply", action="store_true", help="Mutate GitHub by enabling auto-merge.")
@@ -187,8 +210,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     try:
-        if args.merge_ready and not args.offline_file and (len(args.repo) != 1 or not args.pr):
+        # The single-repo/single-PR limit applies to every input path, offline files included.
+        if args.merge_ready and (len(args.repo) != 1 or not args.pr):
             raise RuntimeError("--merge-ready requires exactly one --repo and --pr")
+        if args.merge_ready and args.repo[0] not in load_auto_merge_policy_repos():
+            raise RuntimeError(
+                f"--merge-ready refused: policy profile for {args.repo[0]} does not allow machine merge"
+            )
         if args.offline_file:
             data = json.loads(Path(args.offline_file).read_text(encoding="utf-8"))
             prs = data if isinstance(data, list) else [data]
@@ -196,10 +224,15 @@ def main(argv: list[str] | None = None) -> int:
             prs = []
             for repo in args.repo or load_auto_merge_policy_repos():
                 prs.extend(fetch_open_prs(repo, args.limit))
-            if args.pr:
-                prs = [pr for pr in prs if int(pr.get("number") or 0) == args.pr]
-                if not prs:
-                    raise RuntimeError(f"open PR not found: {args.repo[0]}#{args.pr}")
+        if args.pr:
+            prs = [
+                pr for pr in prs
+                if int(pr.get("number") or 0) == args.pr and (not args.repo or repo_name(pr) in args.repo)
+            ]
+            if not prs:
+                raise RuntimeError(f"open PR not found: {','.join(args.repo) or '<any>'}#{args.pr}")
+        if args.merge_ready and len(prs) != 1:
+            raise RuntimeError(f"--merge-ready matched {len(prs)} PRs; refusing to merge more than one")
         actions = plan_actions(build_queue(prs), apply=args.apply, merge_ready=args.merge_ready)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
         print(f"hype-merge automerge: {exc}", file=sys.stderr)
