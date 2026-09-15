@@ -25,7 +25,7 @@
 
 구현(`implementation`) 노드의 전체 `.pdf` 파일은 바이너리 산출물 근거로 등록할 수 있다.
 immutable commit에서 실제 바이트를 읽고 PDF signature를 확인한 뒤 SHA-256과 바이트 수를
-revision에 포함한다. 이는 PDF 내용 추출이나 유효성·품질 검증을 뜻하지 않으며, 검토 문맥에도
+revision에 포함한다(표현은 CI-11의 바이너리 fingerprint와 같다). 이는 PDF 내용 추출이나 유효성·품질 검증을 뜻하지 않으며, 검토 문맥에도
 내용을 추출하지 않았다고 명시한다. PDF의 `section` 지정이나 다른 단계에서의 PDF 등록은
 실패한다. manifest와 나머지 텍스트 소스는 계속 strict UTF-8로 읽고 정확한 절을 검증한다.
 
@@ -48,6 +48,7 @@ UNASSIGNED로 표시하고 이슈를 강제 배정하지 않는다. owner 지정
 | CI-07 | 오래된 승인·권한 없는 댓글·bot·증거 없는 완료를 수용하지 않는다 | resolution tests |
 | CI-08 | 미등록 변경은 mapping review로 드러낸다 | unregistered path test |
 | CI-09 | 기준 채택과 전체 반영 완료를 구분한다 | status reports + version-bound resolution |
+| CI-11 | 명시된 PDF·이미지 바이너리는 원시 바이트 해시로 추적하고 절 선택은 거부한다. PDF는 implementation 단계의 전체 파일만 허용하고 `%PDF-` 서명을 확인한다. 텍스트의 잘못된 UTF-8은 계속 실패한다 | binary Git/GitHub parity and revision tests / PDF stage·signature tests |
 | CI-10 | Work에서도 동일한 PR 준비 검증과 live SHA 확인을 거치고 연결 오류·무응답에 실패한다 | Work transport / stale source / host contract tests |
 
 `python -m pytest tests/change_impact -q`로 실행한다. 완료 증거 URL은 책임자의
@@ -58,6 +59,8 @@ attestation이며 엔진이 URL의 사용자·학습효과를 판정하지 않�
 
 1. 모든 repo main SHA를 먼저 고정하고 manifest와 source를 읽는다.
 2. 등록 정의와 내용의 hash를 비교한다. 담당자·연결 변경도 재검토 대상이다.
+   명시된 PDF·이미지 확장자는 종류·확장자·바이트 길이·SHA-256으로 표현하며 원문 내용을 해석했다는 뜻이 아니다.
+   바이너리 절 선택은 거부하고, 그 외 파일은 엄격한 UTF-8 텍스트로 읽는다.
 3. 삭제 전·후 연결을 합쳐 영향 범위를 구한다. 삭제로 후속 작업을 숨길 수 없다.
    GitHub compare의 300개 파일 한도에 도달하면 고정된 중간 commit으로 나눠 비교한다.
    각 구간의 ancestor 관계와 완전한 파일 목록을 확인한 뒤 경로를 합친다. 중간에 변경했다가

@@ -258,11 +258,11 @@ def test_pdf_snapshot_binds_exact_bytes_and_changes_revision(pdf_repo, tmp_path,
     (tmp_path / "protocol.pdf").write_bytes(pdf + b"dirty")
     before = m.snapshot(reader, policy, {repo: base})
     actual = before["nodes"]["IMP-PDF"]
-    evidence = {"kind": "binary", "media_type": "application/pdf",
-                "sha256": hashlib.sha256(pdf).hexdigest(), "size_bytes": len(pdf)}
+    evidence = m.source_representation("protocol.pdf", pdf)
+    assert json.loads(evidence)["sha256"] == hashlib.sha256(pdf).hexdigest()
     assert actual["revision"] == m.digest({"definition": manifest["nodes"][0], "contents": [evidence]})
     assert actual["commit"] == base
-    assert evidence["sha256"] in actual["text"]
+    assert json.loads(evidence)["sha256"] in actual["text"]
     assert "content not extracted" in actual["text"]
     assert "private binary payload" not in actual["text"]
     assert "text" not in m.public_snapshot(before)["nodes"]["IMP-PDF"]
@@ -276,14 +276,14 @@ def test_pdf_snapshot_binds_exact_bytes_and_changes_revision(pdf_repo, tmp_path,
     assert m.plan(before, removed)["tasks"][0]["removed"] is True
 
 
-@pytest.mark.parametrize("mutation", ["section", "empty-section", "requirement", "invalid-pdf", "invalid-text"])
+@pytest.mark.parametrize("mutation", ["section", "empty-section", "requirement", "intent", "invalid-pdf", "invalid-text"])
 def test_pdf_support_does_not_relax_text_or_section_policy(pdf_repo, tmp_path, mutation):
     repo, manifest, _pdf, _base, commit, policy = pdf_repo
     node = manifest["nodes"][0]
     if mutation in {"section", "empty-section"}:
         node["sources"][0]["section"] = "## Intent" if mutation == "section" else ""
-    elif mutation == "requirement":
-        node["stage"] = "requirement"
+    elif mutation in {"requirement", "intent"}:
+        node["stage"] = mutation
     elif mutation == "invalid-pdf":
         (tmp_path / "protocol.pdf").write_bytes(b"This is not a PDF")
     else:
@@ -298,8 +298,9 @@ def test_pdf_reader_keeps_text_decode_strict_and_missing_artifacts_fail(pdf_repo
     repo, _manifest, pdf, base, _commit, _policy = pdf_repo
     reader = m.Reader({repo: str(tmp_path)})
     assert reader.read_bytes(repo, base, "protocol.pdf") == pdf
-    with pytest.raises(UnicodeDecodeError):
-        reader.read(repo, base, "protocol.pdf")
+    # The fingerprint is cached over the cached bytes; the payload is never decoded as text.
+    assert isinstance(reader.read(repo, base, "protocol.pdf"), m.BinarySource)
+    assert b"private binary payload".decode() not in reader.read(repo, base, "protocol.pdf")
     with pytest.raises(subprocess.CalledProcessError):
         reader.read_bytes(repo, base, "missing.pdf")
 
@@ -616,3 +617,61 @@ def test_comparison_split_budget_is_bounded(monkeypatch):
     with pytest.raises(ValueError, match="limit"):
         m.Reader().changed("x/y", "a" * 40, "b" * 40)
     assert len(calls) == 63
+
+
+def test_binary_git_github_parity_and_revision_sensitivity(tmp_path, monkeypatch):
+    import base64
+    import hashlib
+    repo = "example/binary"
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args]).decode().strip()
+    git("init", "-q")
+    manifest = {"version": 1, "repository": repo, "nodes": [
+        {"id": "IMP-PDF", "stage": "implementation", "sources": [{"path": "protocol.pdf"}]}]}
+    (tmp_path / "traceability.json").write_text(json.dumps(manifest))
+    first = b"%PDF-1.7\n\xff\x00binary-a\n"
+    (tmp_path / "protocol.pdf").write_bytes(first)
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "first")
+    before = git("rev-parse", "HEAD")
+    (tmp_path / "protocol.pdf").write_bytes(first.replace(b"binary-a", b"binary-b"))
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "changed")
+    after = git("rev-parse", "HEAD")
+    # Working-copy bytes must not replace either pinned source.
+    (tmp_path / "protocol.pdf").write_bytes(b"uncommitted")
+    def github(path):
+        if "/commits/" in path:
+            return {"sha": path.rsplit("/", 1)[1]}
+        resource, sha = path.split("?ref=")
+        file = resource.split("/contents/")[1]
+        raw = subprocess.check_output(["git", "-C", str(tmp_path), "show", f"{sha}:{file}"])
+        return {"encoding": "base64", "content": base64.b64encode(raw).decode()}
+    monkeypatch.setattr(m, "gh", github)
+    local, remote = m.Reader({repo: str(tmp_path)}), m.Reader()
+    policy = {"repositories": {repo: {"manifest": "traceability.json"}}, "members": [], "canon_owner": "jay"}
+    snapshots = []
+    for sha in [before, after]:
+        assert local.read(repo, sha, "protocol.pdf") == remote.read(repo, sha, "protocol.pdf")
+        assert isinstance(remote.read(repo, sha, "protocol.pdf"), m.BinarySource)
+        local_snap = m.snapshot(local, policy, {repo: sha})
+        assert local_snap == m.snapshot(remote, policy, {repo: sha})
+        snapshots.append(local_snap)
+    assert json.loads(local.read(repo, before, "protocol.pdf"))["sha256"] == hashlib.sha256(first).hexdigest()
+    assert snapshots[0]["nodes"]["IMP-PDF"]["revision"] != snapshots[1]["nodes"]["IMP-PDF"]["revision"]
+    assert m.plan(*snapshots)["tasks"][0]["id"] == "IMP-PDF"
+    with pytest.raises(ValueError, match="binary source does not support section"):
+        m.section(local.read(repo, before, "protocol.pdf"), "## Intent")
+
+
+@pytest.mark.parametrize("transport", ["git", "github"])
+def test_unknown_or_malformed_text_still_fails_utf8(transport, monkeypatch):
+    import base64
+    raw = b"# Intent\n\xffinvalid-text"
+    monkeypatch.setattr(m.Reader, "git", lambda *_: raw)
+    monkeypatch.setattr(m, "gh", lambda _: {"encoding": "base64", "content": base64.b64encode(raw).decode()})
+    reader = m.Reader({"x/y": "/unused"} if transport == "git" else {})
+    for path in ["intent.md", "implementation.py", "unknown.bin"]:
+        with pytest.raises(UnicodeDecodeError):
+            reader.read("x/y", "a" * 40, path)
+    assert isinstance(reader.read("x/y", "a" * 40, "protocol.PDF"), m.BinarySource)

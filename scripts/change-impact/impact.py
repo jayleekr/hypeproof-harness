@@ -85,10 +85,26 @@ def pages(path):
     raise ValueError("pagination limit reached; refusing incomplete issue inventory")
 
 
+# Explicit media suffixes only: malformed text must never become binary silently.
+BINARY_SOURCE_SUFFIXES = frozenset({".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".avif"})
+
+
+class BinarySource(str):
+    """A raw-byte fingerprint, not decoded document content or extracted prose."""
+
+
+def source_representation(path, raw):
+    suffix = Path(path).suffix.lower()
+    if suffix in BINARY_SOURCE_SUFFIXES:
+        return BinarySource(json.dumps({"kind": "binary-source/v1", "suffix": suffix,
+            "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}, sort_keys=True))
+    return raw.decode("utf-8")
+
+
 class Reader:
     def __init__(self, roots=None):
         self.roots = roots or {}
-        self.cache = {}
+        self.raw_cache, self.cache = {}, {}
 
     def git(self, repo, *args):
         return subprocess.check_output(["git", "-C", self.roots[repo], *args], timeout=60)
@@ -116,19 +132,22 @@ class Reader:
         if path.startswith("/") or ".." in Path(path).parts:
             raise ValueError("source path must stay inside repository")
         key = repo, sha, path
-        if key not in self.cache:
+        if key not in self.raw_cache:
             if repo in self.roots:
-                self.cache[key] = self.git(repo, "show", f"{sha}:{path}")
+                self.raw_cache[key] = self.git(repo, "show", f"{sha}:{path}")
             else:
                 data = gh(f"repos/{repo}/contents/{path}?ref={sha}")
                 if data.get("encoding") != "base64":
                     raise ValueError("unsupported/oversized source; split into smaller files")
-                self.cache[key] = base64.b64decode(data["content"])
-        return self.cache[key]
+                self.raw_cache[key] = base64.b64decode(data["content"])
+        return self.raw_cache[key]
 
     def read(self, repo, sha, path):
-        # Manifests and textual criteria must remain strict UTF-8.
-        return self.read_bytes(repo, sha, path).decode("utf-8")
+        # Manifests and textual criteria stay strict UTF-8; only explicit media suffixes are fingerprinted.
+        key = repo, sha, path
+        if key not in self.cache:
+            self.cache[key] = source_representation(path, self.read_bytes(repo, sha, path))
+        return self.cache[key]
 
     def changed(self, repo, base, head):
         if base == head:
@@ -178,6 +197,8 @@ class Reader:
 def section(text, heading):
     if not heading:
         return text
+    if isinstance(text, BinarySource):
+        raise ValueError("binary source does not support section selection")
     lines = text.splitlines()
     matches = [i for i, line in enumerate(lines) if line == heading]
     if len(matches) != 1 or not re.match(r"^#{1,6} ", heading):
@@ -220,19 +241,15 @@ def snapshot(reader, policy, refs):
                 if Path(src["path"]).suffix.lower() == ".pdf":
                     if node["stage"] != "implementation" or "section" in src:
                         raise ValueError("PDF evidence requires a whole-file implementation source")
-                    data = reader.read_bytes(*key)
-                    if not data.startswith(b"%PDF-"):
+                    if not reader.read_bytes(*key).startswith(b"%PDF-"):
                         raise ValueError("PDF evidence is missing its PDF signature")
-                    evidence = {"kind": "binary", "media_type": "application/pdf",
-                                "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
-                    contents.append(evidence)
-                    excerpts.append("Binary artifact evidence (content not extracted): "
-                                    + json.dumps({"path": src["path"], **evidence}, sort_keys=True))
-                    continue
                 if key not in cache:
                     cache[key] = reader.read(*key)
                 content = section(cache[key], src.get("section"))
                 contents.append(content)
+                if isinstance(content, BinarySource):
+                    content = "Binary source fingerprint (content not extracted): " + json.dumps(
+                        {"path": src["path"], **json.loads(content)}, sort_keys=True)
                 excerpts.append(content)
             node.update(repo=repo, commit=sha, text="\n\n".join(excerpts))
             node.setdefault("depends_on", [])
