@@ -122,27 +122,51 @@ class DiscoveryTests(unittest.TestCase):
     def test_explicit_pr_references_count_as_active_work(self):
         # X2 P2 on #162: a PR body saying "Refs #1020, #852" overlaps the #852 packet.
         repo='jayleekr/hypeproof-studio'
-        self.assertEqual(d.referenced_issues(repo, 'Refs #1020, #852', [1021]), [852, 1020, 1021])
-        self.assertEqual(d.referenced_issues(repo, 'See jayleekr/hypeproof-studio#852 and other/repo#9'), [852])
-        self.assertEqual(d.referenced_issues(repo, 'https://github.com/jayleekr/hypeproof-studio/issues/852 https://github.com/other/repo/issues/7'), [852])
-        self.assertEqual(d.referenced_issues(repo, 'heading ## 3 and a#5 token'), [])
-        self.snapshot['pull_requests']=[dict(number=1025, issues=d.referenced_issues(repo, 'Refs #1020, #1', [1021]))]
+        rel=lambda text, closing=(): d.issue_relations(repo, text, closing)
+        self.assertEqual(rel('Refs #1020, #852', [1021]), dict(closing=[1021], related=[852, 1020], mentions=[]))
+        self.assertEqual(rel('See jayleekr/hypeproof-studio#852 and other/repo#9')['related'], [852])
+        self.assertEqual(rel('Part of https://github.com/jayleekr/hypeproof-studio/issues/852 https://github.com/other/repo/issues/7'),
+                         dict(closing=[], related=[852], mentions=[]))
+        self.assertEqual(rel('heading ## 3 and a#5 token'), dict(closing=[], related=[], mentions=[]))
+        self.snapshot['pull_requests']=[d.pull_request_entry(repo, dict(number=1025, title='', body='Refs #1020, #1',
+                                                                         closingIssuesReferences=[dict(number=1021)]))]
         self.assertEqual(self.state(), 'in_review')
+
+    def test_prose_mentions_are_reported_but_do_not_hide_ready_work(self):
+        # Review on #162: a contrast or follow-up note is not a work relation. The packet stays ready
+        # and the mention stays visible.
+        repo='jayleekr/hypeproof-studio'
+        self.assertEqual(d.issue_relations(repo, '#1 과 달리 이 PR 은 저장만 고친다. #456 후속'),
+                         dict(closing=[], related=[], mentions=[1, 456]))
+        self.snapshot['pull_requests']=[d.pull_request_entry(repo, dict(number=1030, title='fix: unlike #1', body='',
+                                                                         closingIssuesReferences=[]))]
+        row=d.classify(self.root, self.manifest, self.snapshot, self.now)[0]
+        self.assertEqual(row['state'], 'ready')
+        self.assertEqual(row['mentioned_in_prs'], [1030])
+        self.assertIn('#1030', row['reason'])
 
     def test_live_snapshot_keeps_non_closing_references(self):
         calls=[]
         def fake_gh(*args):
             calls.append(args)
+            if args[0]=='api' and '/comments' in args[-1]:
+                return [[dict(created_at='2026-09-15T00:00:00Z', body='작업 시작')]]
             if args[0]=='api':
-                return [[dict(number=1, state='open', labels=[])]]
-            return [dict(number=1025, title='docs(measurement)', body='Refs #1020, #1', closingIssuesReferences=[dict(number=1021)])]
+                return [[dict(number=1, state='open', labels=[dict(name='wip')]),
+                         dict(number=2, state='open', labels=[dict(name='wip')])]]
+            return [dict(number=1025, title='docs(measurement)', body='Refs #1020, #1; unlike #7',
+                         closingIssuesReferences=[dict(number=1021)])]
         original=d.gh; d.gh=fake_gh
         try:
-            snap=d.live_snapshot('jayleekr/hypeproof-studio')
+            snap=d.live_snapshot('jayleekr/hypeproof-studio', {1})
         finally:
             d.gh=original
         self.assertIn('body', calls[-1][calls[-1].index('--json')+1])
-        self.assertEqual(snap['pull_requests'], [dict(number=1025, issues=[1, 1020, 1021])])
+        self.assertEqual(snap['pull_requests'], [dict(number=1025, issues=[1, 1020, 1021], closing=[1021], mentions=[7])])
+        # Claim comments are fetched for the tracked wip issue only, not for untracked wip #2.
+        self.assertEqual([c for c in calls if '/comments' in c[-1]], [calls[1]])
+        self.assertEqual(snap['issues'][0]['claim_at'], '2026-09-15T00:00:00Z')
+        self.assertNotIn('claim_at', snap['issues'][1])
 
     def test_scope_digest_cli(self):
         manifest=self.root/'manifest.json'; manifest.write_text(json.dumps(self.manifest))

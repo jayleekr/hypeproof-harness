@@ -22,8 +22,11 @@
   같은 파일이라도 packet에 요구사항이 추가되거나 인수 기준이 바뀌면 재검증으로 돌아간다.
 - WD-05: 전체 GitHub 이슈·PR을 현재 조회하며 fresh wip를 보존한다. 조회 실패·오래된
   snapshot·claim 시각 불명은 가용성 미확인이다. 목록은 추천이며 claim과 merge를 수행하지 않는다.
-  열린 PR의 자동 닫기 링크뿐 아니라 제목·본문의 명시 참조(`Refs #N`, 같은 저장소 `owner/repo#N`·URL)도
-  진행 중인 작업으로 보고 해당 packet을 in_review로 둔다. 다른 저장소 참조는 포함하지 않는다.
+  열린 PR의 자동 닫기 링크(closing)와 관계 키워드가 붙은 명시 참조(related: `Refs #N`, `Part of`,
+  `See`, `Implements` 등 뒤의 `#N`·같은 저장소 `owner/repo#N`·URL)는 진행 중인 작업으로 보고 해당
+  packet을 in_review로 둔다. 키워드 없는 단순 언급(mentions: "#123 과 달리", "#456 후속")은 작업으로
+  세지 않고 `mentioned_in_prs`와 사유에만 표시한다. 다른 저장소 참조는 포함하지 않는다.
+  claim 댓글은 원장이 추적하는 wip 이슈에만 조회한다.
 - WD-06: "할 일 없음"은 등록 범위, 조회 시각, 미등록/미충족/검증 대기/사람 대기 수와
   함께 보고한다. ready 0개는 종료의 증거가 아니다. 미등록 영역까지 제품 완료를 확장하지 않는다.
 
@@ -68,8 +71,8 @@ human gate 뒤에 임의로 넣지 않으며, 새 원장이 배포 승인이나 
 
 ## 검증
 
-`python3 -m unittest discover -s tests/work_discovery -v`.
+`python -m pytest tests/work_discovery -q`.
 정상 원장, 누락/추가/수정 REQ, 미등록 문서, 순환 의존성, 닫힌 이슈, fresh/stale claim,
 입력 변경 후 완료 무효화, packet 범위 확장·인수 기준 변경·범위 digest 누락 시 완료 무효화,
-사람 gate, 열린 PR의 자동 닫기·명시 참조(다른 저장소 제외), 원문 접근 실패를 대조한다.
+사람 gate, 열린 PR의 자동 닫기·명시 참조·단순 언급 구분(다른 저장소 제외), 원문 접근 실패를 대조한다.
 이 테스트는 작업 탐색 계약의 검사이며 Studio의 제품 인수가 아니다.

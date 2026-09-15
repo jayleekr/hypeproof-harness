@@ -41,7 +41,7 @@ def audit(root, manifest):
         if not source.is_file():
             errors.append(f'missing document: {path}')
             continue
-        actual = requirement_ids(source.read_text(), doc.get('inline_prefixes', []))
+        actual = requirement_ids(source.read_text(encoding='utf-8'), doc.get('inline_prefixes', []))
         if not actual or actual != sorted(doc['ids']):
             errors.append(f'requirement inventory changed: {path}')
         if digest(source) != doc['sha256']:
@@ -136,18 +136,26 @@ def fulfilled(root, item):
 def classify(root, manifest, snapshot, now):
     issues = {x['number']: x for x in snapshot['issues']}
     complete = {w['id'] for w in manifest['work_items'] if fulfilled(root, w)}
+    prs = snapshot.get('pull_requests', [])
     rows = []
     for item in manifest['work_items']:
         issue = issues.get(item['issue'])
         state, reason = 'ready', item['next_action']
+        # Entries without the closing/mentions split carry only `issues`; treat those as closing.
+        closing = [p['number'] for p in prs if item['issue'] in p.get('closing', p.get('issues', []))]
+        related = [p['number'] for p in prs if item['issue'] in p.get('issues', []) and p['number'] not in closing]
+        mentioned = [p['number'] for p in prs if item['issue'] in p.get('mentions', [])]
         if item['id'] in complete:
             state, reason = 'complete', 'Reviewed evidence inputs still match; scope limited to this packet.'
         elif issue is None:
             state, reason = 'reconcile', 'Issue is missing from the complete snapshot.'
         elif issue['state'].upper() == 'CLOSED':
             state, reason = 'reconcile', 'Closed issue has no current packet completion evidence. Inspect closure/PR; do not recreate blindly.'
-        elif any(item['issue'] in p.get('issues', []) for p in snapshot.get('pull_requests', [])):
-            state, reason = 'in_review', 'An open PR references this issue; inspect its remaining scope.'
+        elif closing:
+            state, reason = 'in_review', f'Open PR {prs_text(closing)} closes this issue; inspect its remaining scope.'
+        elif related:
+            state, reason = 'in_review', (f'Open PR {prs_text(related)} references this issue without closing it; '
+                                          'confirm which scope it covers before claiming.')
         elif 'wip' in [x['name'] if isinstance(x, dict) else x for x in issue.get('labels', [])]:
             claim = issue.get('claim_at')
             if claim is None or now - datetime.fromisoformat(claim.replace('Z', '+00:00')) < timedelta(hours=24):
@@ -158,34 +166,62 @@ def classify(root, manifest, snapshot, now):
             state, reason = 'blocked', item['gate']['reason']
         elif any(dep not in complete for dep in item.get('depends_on', [])):
             state, reason = 'dependency', 'Unfulfilled packets: ' + ', '.join(d for d in item['depends_on'] if d not in complete)
-        rows.append({**item, 'state': state, 'reason': reason})
+        if mentioned and state == 'ready':
+            reason += (f' Also mentioned without a relation keyword in open PR {prs_text(mentioned)};'
+                       ' check it is not overlapping work.')
+        rows.append({**item, 'state': state, 'reason': reason, 'mentioned_in_prs': mentioned})
     return rows
+
+
+def prs_text(numbers):
+    return ', '.join(f'#{n}' for n in numbers)
 
 
 def gh(*args):
     return json.loads(subprocess.check_output(['gh', *args], text=True))
 
 
-def referenced_issues(repo, text, closing=()):
-    """Issue numbers an open PR is working on: auto-closing links plus explicit references.
+REF = r'(?:(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#\d+|https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/\d+)'
+RELATION = (r'(?<![\w-])(?:refs?|references?|related(?:\s+to)?|relates\s+to|part\s+of|implements|addresses|towards?|see)'
+            r'\b[:\s]*(' + REF + r'(?:\s*(?:,|and|&)\s*' + REF + r')*)')
 
-    `Refs #852`, `jayleekr/hypeproof-studio#852` and same-repo issue/PR URLs count; references
-    qualified with another repository do not. Non-closing references are active work too.
-    """
-    refs = {int(n) for n in closing}
-    owner_repo = re.escape(repo)
+
+def same_repo_refs(repo, text):
+    refs = set()
     for match in re.finditer(r'(?<![\w/.#-])(?:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#(\d+)\b', text or ''):
         if match.group(1) is None or match.group(1).lower() == repo.lower():
             refs.add(int(match.group(2)))
-    for match in re.finditer(r'https://github\.com/' + owner_repo + r'/(?:issues|pull)/(\d+)\b', text or '', re.I):
+    for match in re.finditer(r'https://github\.com/' + re.escape(repo) + r'/(?:issues|pull)/(\d+)\b', text or '', re.I):
         refs.add(int(match.group(1)))
-    return sorted(refs)
+    return refs
 
 
-def live_snapshot(repo):
+def issue_relations(repo, text, closing=()):
+    """How an open PR points at same-repository issues.
+
+    `closing` are GitHub auto-closing links. `related` are explicit non-closing relations introduced
+    by a keyword (`Refs #1020, #852`, `Part of owner/repo#852`, `See <issue URL>`); both are active
+    work. `mentions` are any other references such as "unlike #123" or "#456 follow-up": reported,
+    never treated as active work, so a contrast in prose cannot hide a ready packet.
+    """
+    closing = {int(n) for n in closing}
+    related = set()
+    for match in re.finditer(RELATION, text or '', re.I):
+        related |= same_repo_refs(repo, match.group(1))
+    related -= closing
+    mentions = same_repo_refs(repo, text) - closing - related
+    return {'closing': sorted(closing), 'related': sorted(related), 'mentions': sorted(mentions)}
+
+
+def live_snapshot(repo, tracked_issues=None):
+    # `--paginate` follows every Link page, so the inventory is complete by construction: about one
+    # request per 100 issues (~10 for a 1,000-issue repository against the 5,000/h REST budget).
     pages = gh('api', '--paginate', '--slurp', f'repos/{repo}/issues?state=all&per_page=100')
     issues = [i for page in pages for i in page if 'pull_request' not in i]
     for issue in issues:
+        # Claim comments are fetched only for wip issues that a work item tracks.
+        if tracked_issues is not None and issue['number'] not in tracked_issues:
+            continue
         if 'wip' in [l['name'] for l in issue['labels']]:
             pages = gh('api', '--paginate', '--slurp', f'repos/{repo}/issues/{issue["number"]}/comments?per_page=100')
             claims = [c['created_at'] for page in pages for c in page
@@ -196,11 +232,14 @@ def live_snapshot(repo):
     if len(prs) == 1000:
         raise ValueError('PR listing may be truncated')
     return {'repository': repo, 'complete': True, 'fetched_at': datetime.now(timezone.utc).isoformat(),
-            'issues': issues, 'pull_requests': [
-                {'number': p['number'], 'issues': referenced_issues(
-                    repo, (p.get('title') or '') + '\n' + (p.get('body') or ''),
-                    [i['number'] for i in p['closingIssuesReferences']])}
-                for p in prs]}
+            'issues': issues, 'pull_requests': [pull_request_entry(repo, p) for p in prs]}
+
+
+def pull_request_entry(repo, pr):
+    relations = issue_relations(repo, (pr.get('title') or '') + '\n' + (pr.get('body') or ''),
+                                [i['number'] for i in pr['closingIssuesReferences']])
+    return {'number': pr['number'], 'issues': sorted(relations['closing'] + relations['related']),
+            'closing': relations['closing'], 'mentions': relations['mentions']}
 
 
 def main():
@@ -214,7 +253,7 @@ def main():
     parser.add_argument('--scope-digest', metavar='WORK_ITEM', help='Print the scope_sha256 to record in that item\'s completion')
     args = parser.parse_args()
     root = args.checkout.resolve()
-    manifest = json.loads((root / args.manifest).read_text())
+    manifest = json.loads((root / args.manifest).read_text(encoding='utf-8'))
     if args.scope_digest:
         item = next((w for w in manifest['work_items'] if w['id'] == args.scope_digest), None)
         if item is None:
@@ -225,12 +264,13 @@ def main():
     now = datetime.now(timezone.utc)
     result = {'repository': manifest['repository'], 'errors': errors, 'integrity_only': args.check}
     if not args.check:
-        snapshot = json.loads(args.snapshot.read_text()) if args.snapshot else live_snapshot(manifest['repository'])
+        snapshot = (json.loads(args.snapshot.read_text(encoding='utf-8')) if args.snapshot else
+                    live_snapshot(manifest['repository'], {w['issue'] for w in manifest['work_items']}))
         age = now - datetime.fromisoformat(snapshot['fetched_at'].replace('Z', '+00:00'))
         if snapshot.get('repository') != manifest['repository'] or snapshot.get('complete') is not True or age > timedelta(hours=1) or age < -timedelta(minutes=5):
             raise ValueError('Wrong, incomplete or stale GitHub snapshot; availability is unknown')
         if args.save_snapshot:
-            args.save_snapshot.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + '\n')
+            args.save_snapshot.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         result['fetched_at'] = snapshot['fetched_at']
         result['work_items'] = classify(root, manifest, snapshot, now)
         result['counts'] = dict(Counter(w['state'] for w in result['work_items']))
