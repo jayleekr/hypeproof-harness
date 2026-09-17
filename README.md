@@ -62,6 +62,23 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 
 ---
 
+## 실행 전제
+
+harness의 Python 도구(`scripts/hype-pr`, `scripts/repo-governance`,
+`scripts/change-impact` 등)는 `policy/*.yaml`을 읽으므로 **PyYAML**이 필요하다.
+
+```bash
+python3 -m pip install -r requirements.txt       # 도구 실행
+python3 -m pip install -r requirements-dev.txt   # 테스트까지
+```
+
+CI가 검증하는 버전은 **Python 3.11+**이다. consumer 저장소가 아니라 **harness
+checkout의 인터프리터**에 설치해야 한다 — 자세한 이유는 `docs/HYPE-PR.ko.md`의
+"실행 전제"를 참고한다. `scripts/notify/`는 httpx·jinja2를 추가로 쓰며 자체
+요구사항을 `scripts/notify/README.md`에 선언한다.
+
+---
+
 ## Quick start
 
 ### 👥 신규 멤버 — 1회성 온보딩
