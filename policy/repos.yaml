@@ -215,7 +215,11 @@ repositories:
           verifier passes. Reviewed 2026-09-08 during change-impact operational
           rollout (#120): retain all readiness blockers; no clearance is claimed.
           Re-review within seven days; this is not a visibility-change authorization.
-        expires_at: 2026-09-15
+          Owner decision 2026-09-17 (jayleekr, #191): hypeprooflab stays private
+          with no re-review deadline. 2099-12-31 means indefinite because
+          expires_at is required. Blockers retained, no clearance claimed; the
+          public flip still requires closing public_readiness.blocked_by.
+        expires_at: 2099-12-31
       - id: lab-public-readiness-tenant-history-clearance
         owner: jayleekr
         reason: >-
@@ -253,7 +257,10 @@ repositories:
           record review 2026-09-08 (#120): the external repo's completion state is
           still unverified; retain the existing exception for seven days pending
           owner verification. No external repository settings are changed.
-        expires_at: 2026-09-15
+          Owner decision 2026-09-17 (jayleekr, #191): no PR checks are required
+          on this repo, with no re-review deadline. 2099-12-31 means indefinite
+          because expires_at is required.
+        expires_at: 2099-12-31
 
   - owner: jayleekr
     name: hypeproof-studio-releases
