@@ -279,3 +279,65 @@ def test_consumer_refuses_delegation_to_old_harness(tmp_path):
                           env={**os.environ, "HYPEPROOF_HARNESS": str(canonical)}, capture_output=True, text=True)
     assert proc.returncode != 0
     assert "outdated" in proc.stderr and "unguarded old entrypoint ran" not in proc.stderr
+
+
+@pytest.mark.parametrize(
+    "remote,allowed",
+    [
+        ("https://github.com/jayleekr/sediment.git", True),
+        ("git@github.com:jayleekr/sediment.git", True),
+        ("https://github.com/jayleekr/hypeprooflab.git", True),
+        ("git@github.com:jayleekr/hypeproof-studio.git", True),
+        ("https://github.com/jayleekr/personal-blog.git", False),
+        ("https://github.com/someoneelse/sediment.git", False),
+    ],
+)
+def test_installer_scope_matches_the_repos_sync_vendors_to(tmp_path, remote, allowed):
+    """Every consumer in tests/consumers.txt must also be installable.
+
+    sync.sh vendors the hype-pr skill to studio, sediment and lab, but the
+    entrypoint block, the .agents alias and SKILLS.md come from this installer.
+    A repo that sync vendors to and the installer refuses is left half-installed
+    (harness #210), so the two lists are asserted together here.
+    """
+    spec = importlib.util.spec_from_file_location(f"install_scope_{abs(hash(remote))}", ROOT / "scripts/hype-pr/install.py")
+    install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(install)
+
+    target = tmp_path / "checkout"
+    target.mkdir()
+    run(target, "init", "-qb", "main")
+    run(target, "config", "user.email", "test@example.com")
+    run(target, "config", "user.name", "Fixture")
+    run(target, "remote", "add", "origin", remote)
+    (target / "README.md").write_text("consumer\n")
+    commit(target, "base")
+
+    if allowed:
+        install.install(target)
+        assert (target / ".claude/skills/hype-pr/SKILL.md").is_file()
+        assert (target / ".agents/skills/hype-pr/SKILL.md").is_file()
+        assert "docs/AGENT-GUIDE.ko.md" in (target / "CLAUDE.md").read_text()
+        assert "docs/AGENT-GUIDE.ko.md" in (target / "AGENTS.md").read_text()
+    else:
+        with pytest.raises(ValueError, match="scoped to explicit"):
+            install.install(target)
+        assert not (target / ".claude/skills/hype-pr").exists()
+
+
+def test_installer_scope_covers_every_sync_consumer():
+    """tests/consumers.txt and the installer allowlist must not drift apart."""
+    spec = importlib.util.spec_from_file_location("install_scope_list", ROOT / "scripts/hype-pr/install.py")
+    install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(install)
+
+    consumers = [
+        line.strip().rsplit("/", 1)[-1]
+        for line in (ROOT / "tests/consumers.txt").read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert consumers, "consumers.txt yielded no repos"
+    for name in consumers:
+        assert install.CONSUMER_REMOTE.fullmatch(
+            f"https://github.com/jayleekr/{name}.git"
+        ), f"{name} is vendored by sync.sh but refused by the installer"
