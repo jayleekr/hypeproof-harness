@@ -52,9 +52,17 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `docs/studio-quality-dashboard.html` | 강의별 HypeProof Studio 사용 가능 여부를 보는 quality dashboard | (harness-local) |
 | `scripts/studio-quality-dashboard/` | 강의별 단일 JSON 생성 + G1/G2/G3 GitHub 이슈 발행 CLI | (harness-local) |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
+| `scripts/consumer-drift/` | 실제 consumer를 clone해 캐노니컬과 대조 (주간 CI + 수동 실행) | (maintainer) |
 | `scripts/register-skills.sh` | harness-local `.claude/skills/<name>` 심링크 생성/검증 (`--check`) | (harness-local) |
 | `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V13) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
+
+**실제 consumer의 드리프트는 어떻게 보나**: CI의 `gate` 잡은 갓 만든 mock
+repo에 벤더링하므로 sync.sh가 동작하는지만 검증한다. 실제 consumer가 얼마나
+벌어졌는지는 `consumer-drift` 워크플로가 본다 — 매주 월요일과 수동 실행.
+로컬에서는 `bash scripts/consumer-drift/check.sh`. 비공개 consumer는 읽기 권한이
+있는 `CONSUMER_READ_TOKEN` 시크릿이 있어야 검사 대상에 들어가며, 없으면 통과가
+아니라 **coverage 불완전**으로 보고한다.
 
 **Not shared here**: studio-only 규칙(`branding-swap`, `build-pipeline`,
 `extension-dev`), `e2e/`, `vscodium-base` 서브모듈, 각 repo의 `.github/` 템플릿
