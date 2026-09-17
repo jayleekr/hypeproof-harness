@@ -25,8 +25,13 @@ auto-merge는 필수 보호 조건이 모두 통과하면 GitHub가 순서대로
 
 ## Agent가 PR을 만드는 흐름
 
-Harness, Lab, Studio의 PR 생성은 `skills/hype-pr/SKILL.md` 정본을 따른다. consumer에서는
+Harness, Lab, Studio, Sediment의 PR 생성은 `skills/hype-pr/SKILL.md` 정본을 따른다. consumer에서는
 `.claude/skills/hype-pr/SKILL.md`로 배포되고 `.agents/skills/hype-pr/`도 같은 내용을 가리킨다.
+설치 대상은 `scripts/hype-pr/install.py`의 `CONSUMER_REMOTE`가 정하며 `tests/consumers.txt`와
+같은 집합이어야 한다. 단 **preparation 게이트가 걸리는 저장소는 이와 별개**로
+`policy/change-impact.json`의 `repositories` 목록이다. Sediment는 설치 대상이지만 아직 이
+목록에 없어 `create`가 preparation 없이 진행된다(`pr.py`가 대상 repo로 게이트 여부를 정한다).
+Sediment에 게이트를 걸려면 먼저 그 repo에 `config/traceability.json`을 두고 오너가 정해야 한다.
 개발 시작에 기준 연결을 잡고, commit 후 `inspect`로 대상·상위·하위와 미등록 변경을 읽는다.
 Agent가 실제 문서를 읽고 assessment를 작성하며, 별도 모델 API key는 필요 없다.
 `prepare`는 repo/base/head/다른 정본 repo SHA/정책·도구 version에 묶인 receipt를 git metadata에
