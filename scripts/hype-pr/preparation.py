@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -28,6 +29,45 @@ def repo_identity(checkout):
     if not match:
         raise ValueError("origin must identify the intended GitHub repository")
     return match[1]
+
+
+def local_sources(policy, checkout):
+    """Sibling checkouts whose source blobs can be read without the GitHub API.
+
+    A snapshot reads every registered source of every registered repository, and
+    `inspect` builds two snapshots while `prepare` builds two more. Only the
+    repository being inspected was ever read locally, so the other registered
+    repositories cost one `contents` request per source file per snapshot. With
+    254 registered sources in the Lab manifest alone that is enough requests in
+    a burst to trip GitHub's secondary rate limit.
+
+    A checkout is used only when its own origin says it is that repository, and
+    only for blob reads (see `Reader.content_roots`). Set
+    HYPEPROOF_NO_LOCAL_SOURCES to read everything from the API instead.
+    """
+    if os.environ.get("HYPEPROOF_NO_LOCAL_SOURCES"):
+        return {}
+    bases = {ROOT.parent}
+    try:
+        # The consumer may be a worktree, whose siblings are not next to it.
+        common = Path(git(checkout, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+        bases.add(common.parent.parent)
+    except (subprocess.SubprocessError, OSError, IndexError):
+        pass
+    found = {}
+    for repo in policy["repositories"]:
+        for base in bases:
+            candidate = base / repo.split("/")[-1]
+            if not (candidate / ".git").exists():
+                continue
+            try:
+                if repo_identity(candidate) != repo:
+                    continue
+            except (subprocess.SubprocessError, OSError, ValueError):
+                continue
+            found[repo] = str(candidate)
+            break
+    return found
 
 
 def tool_version():
@@ -60,7 +100,7 @@ def inspect(checkout, repo, base="main", roots=None, members=()):
     if repo not in policy["repositories"]:
         raise ValueError("repository is outside change-impact onboarding scope")
     policy["members"] = list(members)
-    reader = impact.Reader({**(roots or {}), repo: str(checkout)})
+    reader = impact.Reader({**(roots or {}), repo: str(checkout)}, local_sources(policy, checkout))
     after = impact.snapshot(reader, policy, {repo: head})
     before = impact.snapshot(reader, policy, {**after["commits"], repo: merge_base})
     planned = impact.plan(before, after)
