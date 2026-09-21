@@ -48,6 +48,11 @@ def local_sources(policy, checkout):
     if os.environ.get("HYPEPROOF_NO_LOCAL_SOURCES"):
         return {}
     bases = {ROOT.parent}
+    # ROOT can be a throwaway clone with no siblings, in which case the real
+    # working copies are next to the canonical Harness checkout instead.
+    configured = os.environ.get("HYPEPROOF_HARNESS")
+    if configured:
+        bases.add(Path(configured).expanduser().resolve().parent)
     try:
         # The consumer may be a worktree, whose siblings are not next to it.
         common = Path(git(checkout, "rev-parse", "--path-format=absolute", "--git-common-dir"))

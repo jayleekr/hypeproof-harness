@@ -355,3 +355,26 @@ def test_a_local_checkout_never_gets_to_say_what_main_is(tmp_path):
     reader = prep.impact.Reader(content_roots={"jayleekr/hypeproof-studio": str(repo)})
 
     assert reader.roots == {}
+
+
+def test_local_sources_looks_beside_the_canonical_checkout_too(tmp_path, monkeypatch):
+    """ROOT can be a throwaway clone whose siblings are not the real ones."""
+    workspace = tmp_path / "workspace"
+    repo, _ = _repo_with_blob(workspace, "hypeproof-studio",
+                              "https://github.com/jayleekr/hypeproof-studio", "x\n")
+    (workspace / "hypeproof-harness").mkdir()
+    throwaway = tmp_path / "scratch" / "harness"
+    throwaway.mkdir(parents=True)
+    monkeypatch.setattr(prep, "ROOT", throwaway)
+    policy = {"repositories": {"jayleekr/hypeproof-studio": {}}}
+
+    monkeypatch.delenv("HYPEPROOF_HARNESS", raising=False)
+    assert prep.local_sources(policy, str(repo)) == {"jayleekr/hypeproof-studio": str(repo)}
+
+    # A checkout with no siblings at all still finds them through the canonical path.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    subprocess.run(["git", "init", "--quiet", str(elsewhere)], check=True)
+    assert prep.local_sources(policy, str(elsewhere)) == {}
+    monkeypatch.setenv("HYPEPROOF_HARNESS", str(workspace / "hypeproof-harness"))
+    assert prep.local_sources(policy, str(elsewhere)) == {"jayleekr/hypeproof-studio": str(repo)}
