@@ -21,6 +21,52 @@ from pathlib import Path
 from typing import Any
 
 
+def refresh_canonical(canonical):
+    """Fast-forward the canonical checkout to origin/main before delegating to it.
+
+    A consumer that delegates to a stale or broken checkout runs yesterday's
+    engine against today's policy, and the old failure mode only said
+    "outdated" without saying what to do. This repairs the cheap cases and
+    names the rest.
+
+    Nothing is ever discarded. Uncommitted changes and commits that are not on
+    origin/main stop the repair and are reported, because neither can be
+    recreated once overwritten. Being left on a feature branch is repaired:
+    the branch keeps its commits and only the checkout moves to main.
+
+    Returns None when the checkout is usable, otherwise a reason a human must
+    resolve. Set HYPEPROOF_HARNESS_PIN to stay on a chosen revision.
+    """
+    if os.environ.get("HYPEPROOF_HARNESS_PIN"):
+        return None
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(canonical), *args], text=True, capture_output=True)
+
+    def out(*args):
+        return git(*args).stdout.strip()
+
+    if git("rev-parse", "--git-dir").returncode:
+        return "not a git checkout"
+    if git("fetch", "--quiet", "origin", "main").returncode:
+        return "cannot fetch origin/main; check network access and credentials"
+    if out("rev-parse", "HEAD") == out("rev-parse", "origin/main"):
+        return None
+
+    dirty = [line[3:] for line in out("status", "--porcelain").splitlines() if line]
+    if dirty:
+        return "uncommitted changes would be overwritten: " + ", ".join(sorted(dirty)[:5])
+    branch = out("rev-parse", "--abbrev-ref", "HEAD")
+    if branch != "main" and git("checkout", "main").returncode:
+        return f"cannot leave branch {branch} for main"
+    ahead = [line for line in out("log", "--oneline", "origin/main..HEAD").splitlines() if line]
+    if ahead:
+        return "local commits are not on origin/main: " + ", ".join(ahead[:3])
+    if git("merge", "--ff-only", "origin/main").returncode:
+        return "fast-forward to origin/main failed"
+    return None
+
+
 ROOT = Path(__file__).resolve().parents[2]
 # Consumer copies delegate to the canonical checkout; policy/engine are never vendored.
 if not (ROOT / "policy/repos.yaml").is_file():
@@ -33,8 +79,14 @@ if not (ROOT / "policy/repos.yaml").is_file():
     target = canonical / "scripts/hype-pr/pr.py"
     if not target.is_file() or not (canonical / "policy/repos.yaml").is_file():
         raise SystemExit("hype-pr: canonical Harness checkout missing; clone hypeproof-harness as a sibling or set HYPEPROOF_HARNESS")
+    unresolved = refresh_canonical(canonical)
+    # Staleness keeps its own verdict: the automatic update is what should have
+    # fixed it, so its reason belongs in that message rather than replacing it.
     if not (canonical / "scripts/hype-pr/preparation.py").is_file():
-        raise SystemExit("hype-pr: canonical Harness checkout is outdated; update it to current main or set HYPEPROOF_HARNESS to an updated checkout")
+        raise SystemExit("hype-pr: canonical Harness checkout is outdated; update it to current main or set HYPEPROOF_HARNESS to an updated checkout"
+                         + (f" (automatic update stopped: {unresolved})" if unresolved else ""))
+    if unresolved:
+        raise SystemExit(f"hype-pr: canonical Harness checkout at {canonical} needs attention: {unresolved}")
     if __name__ == "__main__":
         os.execv(sys.executable, [sys.executable, str(target), *sys.argv[1:]])
     raise RuntimeError("import hype-pr from the canonical Harness checkout")

@@ -290,3 +290,75 @@ def test_actual_prepared_diff_overrides_claimed_low_risk_paths(monkeypatch):
     monkeypatch.setattr(module, "prepared_report", lambda *_: {"paths": ["policy/repos.yaml"], "head": "a" * 40, "base_tip": "b" * 40, "tasks": [], "existing_debt": []})
     assert module.command_create(_create_args(module, path=["docs/harmless.md"]), module.load_policy()) == 0
     assert not fake.merge_calls()
+
+
+def _canonical_pair(tmp_path):
+    """Build an origin and a clone of it, both with one commit on main."""
+    origin, clone = tmp_path / "origin", tmp_path / "clone"
+    subprocess.run(["git", "init", "--quiet", "--initial-branch", "main", str(origin)], check=True)
+    (origin / "seed.txt").write_text("1\n")
+    for args in (["add", "seed.txt"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--quiet", "-m", "seed"]):
+        subprocess.run(["git", "-C", str(origin), *args], check=True)
+    subprocess.run(["git", "clone", "--quiet", str(origin), str(clone)], check=True)
+    return origin, clone
+
+
+def _advance(origin, text):
+    (origin / "seed.txt").write_text(text)
+    for args in (["add", "seed.txt"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--quiet", "-m", text]):
+        subprocess.run(["git", "-C", str(origin), *args], check=True)
+
+
+def _head(path):
+    return subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], text=True, capture_output=True).stdout.strip()
+
+
+def test_refresh_canonical_fast_forwards_a_behind_checkout(tmp_path):
+    origin, clone = _canonical_pair(tmp_path)
+    _advance(origin, "2\n")
+
+    assert load_module().refresh_canonical(clone) is None
+    assert _head(clone) == _head(origin)
+
+
+def test_refresh_canonical_returns_to_main_from_a_feature_branch(tmp_path):
+    origin, clone = _canonical_pair(tmp_path)
+    subprocess.run(["git", "-C", str(clone), "checkout", "--quiet", "-b", "feat/left-here"], check=True)
+    _advance(origin, "2\n")
+
+    assert load_module().refresh_canonical(clone) is None
+    assert _head(clone) == _head(origin)
+    # The branch is repaired by moving the checkout, never by dropping its commits.
+    assert subprocess.run(["git", "-C", str(clone), "rev-parse", "--verify", "feat/left-here"],
+                          capture_output=True).returncode == 0
+
+
+def test_refresh_canonical_refuses_to_overwrite_uncommitted_work(tmp_path):
+    origin, clone = _canonical_pair(tmp_path)
+    _advance(origin, "2\n")
+    (clone / "seed.txt").write_text("mine\n")
+
+    assert "uncommitted" in (load_module().refresh_canonical(clone) or "")
+    assert (clone / "seed.txt").read_text() == "mine\n"
+
+
+def test_refresh_canonical_refuses_when_local_commits_are_not_upstream(tmp_path):
+    origin, clone = _canonical_pair(tmp_path)
+    _advance(origin, "2\n")
+    (clone / "local.txt").write_text("keep\n")
+    for args in (["add", "local.txt"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--quiet", "-m", "local only"]):
+        subprocess.run(["git", "-C", str(clone), *args], check=True)
+    unpushed = _head(clone)
+
+    assert "not on origin/main" in (load_module().refresh_canonical(clone) or "")
+    assert _head(clone) == unpushed
+
+
+def test_refresh_canonical_is_skipped_when_pinned(tmp_path, monkeypatch):
+    origin, clone = _canonical_pair(tmp_path)
+    _advance(origin, "2\n")
+    behind = _head(clone)
+    monkeypatch.setenv("HYPEPROOF_HARNESS_PIN", "1")
+
+    assert load_module().refresh_canonical(clone) is None
+    assert _head(clone) == behind
