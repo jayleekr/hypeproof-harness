@@ -67,6 +67,39 @@ def refresh_canonical(canonical):
     return None
 
 
+BUNDLE_PATHS = ("scripts/hype-pr", "skills/hype-pr", "docs/AGENT-GUIDE.ko.md", "docs/HYPE-PR.ko.md")
+
+
+def bundle_drift(canonical, root):
+    """Report when the installed bundle no longer matches the canonical one.
+
+    The engine that runs is always the canonical copy, so drift is not fatal and
+    must not block work. The launcher, the skill and its docs are the installed
+    copy though, and a launcher that predates a fix does not carry it. That is
+    how the canonical-checkout repair sat inert in a consumer repo: the old
+    launcher checked only that preparation.py existed and delegated in silence.
+
+    Only a real difference in the bundle is reported. Harness commits that touch
+    nothing here are not drift, and a consumer that went red every time Harness
+    moved would be muted within a week.
+
+    Returns None when the installed bundle is current, otherwise a message.
+    """
+    stamp = root / "scripts/hype-pr/HARNESS_VERSION"
+    if not stamp.is_file():
+        return None
+    installed = stamp.read_text().strip()
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(canonical), *args], text=True, capture_output=True)
+
+    if not installed or git("cat-file", "-e", installed + "^{commit}").returncode:
+        return f"installed revision {installed or '(empty)'} is unknown to the canonical checkout"
+    if git("diff", "--quiet", installed, "HEAD", "--", *BUNDLE_PATHS).returncode == 0:
+        return None
+    return f"installed bundle is from {installed[:7]} and the canonical bundle has changed since"
+
+
 ROOT = Path(__file__).resolve().parents[2]
 # Consumer copies delegate to the canonical checkout; policy/engine are never vendored.
 if not (ROOT / "policy/repos.yaml").is_file():
@@ -87,6 +120,9 @@ if not (ROOT / "policy/repos.yaml").is_file():
                          + (f" (automatic update stopped: {unresolved})" if unresolved else ""))
     if unresolved:
         raise SystemExit(f"hype-pr: canonical Harness checkout at {canonical} needs attention: {unresolved}")
+    drift = bundle_drift(canonical, ROOT)
+    if drift:
+        print(f"hype-pr: {drift}; reinstall with: python3 {canonical}/scripts/hype-pr/install.py {ROOT}", file=sys.stderr)
     if __name__ == "__main__":
         os.execv(sys.executable, [sys.executable, str(target), *sys.argv[1:]])
     raise RuntimeError("import hype-pr from the canonical Harness checkout")

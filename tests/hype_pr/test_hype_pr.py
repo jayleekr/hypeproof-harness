@@ -362,3 +362,66 @@ def test_refresh_canonical_is_skipped_when_pinned(tmp_path, monkeypatch):
 
     assert load_module().refresh_canonical(clone) is None
     assert _head(clone) == behind
+
+
+def _stamp(consumer, sha):
+    (consumer / "scripts/hype-pr").mkdir(parents=True, exist_ok=True)
+    (consumer / "scripts/hype-pr/HARNESS_VERSION").write_text(sha + "\n")
+
+
+def test_bundle_drift_is_silent_when_the_installed_revision_is_current(tmp_path):
+    module = load_module()
+    consumer = tmp_path / "consumer"
+    _stamp(consumer, _head(ROOT))
+
+    assert module.bundle_drift(ROOT, consumer) is None
+
+
+def _commit(repo, path, text, message):
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text(text)
+    subprocess.run(["git", "-C", str(repo), "add", path], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "--quiet", "-m", message], check=True)
+    return _head(repo)
+
+
+def test_bundle_drift_ignores_harness_commits_that_miss_the_bundle(tmp_path):
+    """A consumer that went red every time Harness moved would be muted in a week."""
+    module = load_module()
+    canonical, consumer = tmp_path / "canonical", tmp_path / "consumer"
+    subprocess.run(["git", "init", "--quiet", "--initial-branch", "main", str(canonical)], check=True)
+    installed = _commit(canonical, "scripts/hype-pr/pr.py", "bundle v1\n", "bundle")
+    _commit(canonical, "policy/repos.yaml", "unrelated\n", "policy only")
+    _stamp(consumer, installed)
+
+    assert module.bundle_drift(canonical, consumer) is None
+
+    _commit(canonical, "scripts/hype-pr/pr.py", "bundle v2\n", "bundle moves")
+    assert "has changed since" in (module.bundle_drift(canonical, consumer) or "")
+
+
+def test_bundle_drift_reports_a_revision_whose_bundle_differs(tmp_path):
+    module = load_module()
+    consumer = tmp_path / "consumer"
+    changed = subprocess.run(["git", "-C", str(ROOT), "log", "-2", "--format=%H", "--",
+                              "scripts/hype-pr/pr.py"], text=True, capture_output=True).stdout.split()
+    if len(changed) < 2:
+        import pytest
+        pytest.skip("bundle has too little history to compare")
+    _stamp(consumer, changed[1])
+
+    assert "has changed since" in (module.bundle_drift(ROOT, consumer) or "")
+
+
+def test_bundle_drift_names_an_unknown_revision_instead_of_passing(tmp_path):
+    module = load_module()
+    consumer = tmp_path / "consumer"
+    _stamp(consumer, "0" * 40)
+
+    assert "unknown to the canonical checkout" in (module.bundle_drift(ROOT, consumer) or "")
+
+
+def test_bundle_drift_is_silent_without_a_stamp(tmp_path):
+    # The Harness checkout itself carries no stamp and must not warn about itself.
+    assert load_module().bundle_drift(ROOT, tmp_path / "consumer") is None
