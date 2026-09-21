@@ -1,0 +1,63 @@
+name: consumer-drift
+
+# The `gate` job in test.yml vendors into freshly created mock repos: it proves
+# sync.sh works, but by construction it cannot see the real consumers. That
+# blind spot let skill-creator and notify sit four months stale in every
+# consumer while CI stayed green (#208). This job looks at the real ones.
+#
+# It never blocks a PR — drift is a state of the world, not a defect in the
+# change under review. It runs on a schedule and on demand.
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Mondays 09:00 KST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: real consumers vs canonical
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check real consumer checkouts
+        id: check
+        env:
+          # Public consumers clone anonymously. A private one (hypeprooflab)
+          # needs a token that can read it; the repository GITHUB_TOKEN cannot.
+          # Without the secret the job reports incomplete coverage instead of
+          # silently passing.
+          GH_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
+        run: |
+          set +e
+          bash scripts/consumer-drift/check.sh 2>&1 | tee /tmp/drift.txt
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## Consumer drift"
+            echo ""
+            case "${{ steps.check.outputs.status }}" in
+              0) echo "✅ Every consumer reachable and current." ;;
+              1) echo "❌ **Drift detected in a real consumer.** Re-vendor with \`scripts/sync.sh --commit\` and open a PR in each consumer." ;;
+              2) echo "⚠️ **Coverage incomplete** — at least one consumer could not be read, so this run does not prove they are current. Add a \`CONSUMER_READ_TOKEN\` secret with read access to close the gap." ;;
+              *) echo "❌ The check could not run." ;;
+            esac
+            echo ""
+            echo '```'
+            grep -E '^(CLONED|UNREACHABLE|DRIFT|EXTRA|OK|checked:|NOT checked:)' /tmp/drift.txt | head -60
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Flag incomplete coverage
+        if: steps.check.outputs.status == '2'
+        run: echo "::warning::Consumer drift coverage is incomplete — some consumers could not be read. See the job summary."
+
+      - name: Fail on drift
+        if: steps.check.outputs.status == '1' || steps.check.outputs.status == '3'
+        run: exit 1
