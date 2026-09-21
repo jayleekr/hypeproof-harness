@@ -48,6 +48,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
 | `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
 | `scripts/hype-pr/` | PR 생성 시 active 멤버 reviewer 요청 + auto-merge eligibility 판정 | 3 consumers `scripts/hype-pr/` |
+| `scripts/security/check-secrets.sh` | high-confidence 시크릿 스캐너 | 3 consumers `scripts/security/check-secrets.sh` (**파일 단위** — 디렉토리는 consumer 소유) |
 | `scripts/weekly-harness/` | weekly cycle 이슈 Owner/ETA 검증 + 번다운 리포트 | 3 consumers `scripts/weekly-harness/` |
 | `docs/studio-quality-dashboard.html` | 강의별 HypeProof Studio 사용 가능 여부를 보는 quality dashboard | (harness-local) |
 | `scripts/studio-quality-dashboard/` | 강의별 단일 JSON 생성 + G1/G2/G3 GitHub 이슈 발행 CLI | (harness-local) |
