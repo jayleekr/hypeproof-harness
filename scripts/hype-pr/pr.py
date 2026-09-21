@@ -34,8 +34,13 @@ def refresh_canonical(canonical):
     recreated once overwritten. Being left on a feature branch is repaired:
     the branch keeps its commits and only the checkout moves to main.
 
-    Returns None when the checkout is usable, otherwise a reason a human must
-    resolve. Set HYPEPROOF_HARNESS_PIN to stay on a chosen revision.
+    Returns None when the checkout is current, otherwise a reason it was left
+    alone. That reason is reported, not fatal: refusing to run because the
+    canonical checkout has local edits punishes exactly the person developing
+    Harness, whose tree is dirty by definition. Only a checkout that cannot
+    serve the engine at all stops the run.
+
+    Set HYPEPROOF_HARNESS_PIN to stay on a chosen revision.
     """
     if os.environ.get("HYPEPROOF_HARNESS_PIN"):
         return None
@@ -53,15 +58,18 @@ def refresh_canonical(canonical):
     if out("rev-parse", "HEAD") == out("rev-parse", "origin/main"):
         return None
 
-    dirty = [line[3:] for line in out("status", "--porcelain").splitlines() if line]
+    # Not out(): porcelain pads the status to two columns, so stripping the
+    # output eats the leading space of the first line and its path loses a
+    # character. Naming a file wrongly is worse than not naming it.
+    dirty = sorted(line[3:] for line in git("status", "--porcelain").stdout.splitlines() if line.strip())
     if dirty:
-        return "uncommitted changes would be overwritten: " + ", ".join(sorted(dirty)[:5])
+        return "left alone, uncommitted changes: " + ", ".join(dirty[:5])
     branch = out("rev-parse", "--abbrev-ref", "HEAD")
     if branch != "main" and git("checkout", "main").returncode:
         return f"cannot leave branch {branch} for main"
     ahead = [line for line in out("log", "--oneline", "origin/main..HEAD").splitlines() if line]
     if ahead:
-        return "local commits are not on origin/main: " + ", ".join(ahead[:3])
+        return "left alone, local commits not on origin/main: " + ", ".join(ahead[:3])
     if git("merge", "--ff-only", "origin/main").returncode:
         return "fast-forward to origin/main failed"
     return None
@@ -119,7 +127,10 @@ if not (ROOT / "policy/repos.yaml").is_file():
         raise SystemExit("hype-pr: canonical Harness checkout is outdated; update it to current main or set HYPEPROOF_HARNESS to an updated checkout"
                          + (f" (automatic update stopped: {unresolved})" if unresolved else ""))
     if unresolved:
-        raise SystemExit(f"hype-pr: canonical Harness checkout at {canonical} needs attention: {unresolved}")
+        # Reported, not fatal. The checkout can serve the engine; it just was
+        # not brought to main, and the reason is something only a human can
+        # decide about.
+        print(f"hype-pr: canonical Harness checkout at {canonical} was not updated: {unresolved}", file=sys.stderr)
     drift = bundle_drift(canonical, ROOT)
     if drift:
         print(f"hype-pr: {drift}; reinstall with: python3 {canonical}/scripts/hype-pr/install.py {ROOT}", file=sys.stderr)

@@ -102,8 +102,16 @@ def source_representation(path, raw):
 
 
 class Reader:
-    def __init__(self, roots=None):
+    def __init__(self, roots=None, content_roots=None):
         self.roots = roots or {}
+        # Blob reads ONLY, never ref resolution. A stale checkout must not be
+        # allowed to say what `main` is -- that is the hazard `resolve` keeps
+        # remote. A blob addressed by the commit SHA it lives in is a different
+        # thing: either the object is present and its bytes are exactly the
+        # remote's, or it is absent and we fall back to the API. There is no
+        # third outcome, so this cannot bless a receipt with stale content.
+        self.content_roots = content_roots or {}
+        self.fetched = set()
         self.cache = {}
 
     def git(self, repo, *args):
@@ -136,12 +144,47 @@ class Reader:
             if repo in self.roots:
                 raw = self.git(repo, "show", f"{sha}:{path}")
             else:
+                raw = self.local_content(repo, sha, path)
+            if raw is None:
                 data = gh(f"repos/{repo}/contents/{path}?ref={sha}")
                 if data.get("encoding") != "base64":
                     raise ValueError("unsupported/oversized source; split into smaller files")
                 raw = base64.b64decode(data["content"])
             self.cache[key] = source_representation(path, raw)
         return self.cache[key]
+
+    def local_content(self, repo, sha, path):
+        """A source blob from a local checkout, or None to use the API.
+
+        A snapshot reads every registered source of every registered
+        repository, twice, and each of those was one `contents` request. With
+        three repositories that is enough calls in a burst to trip GitHub's
+        secondary rate limit, which is what made `hype-pr inspect` expensive.
+
+        The checkout may simply not have the commit yet, so one fetch per
+        repository per run is attempted before giving up on it. Anything that
+        goes wrong here is answered with None: this is an optimisation, and it
+        must never be the reason a run fails.
+        """
+        root = self.content_roots.get(repo)
+        if not root:
+            return None
+        for attempt in range(2):
+            try:
+                return subprocess.check_output(["git", "-C", root, "show", f"{sha}:{path}"],
+                                               timeout=60, stderr=subprocess.DEVNULL)
+            except (subprocess.SubprocessError, OSError):
+                if attempt or repo in self.fetched:
+                    self.content_roots.pop(repo, None)
+                    return None
+                self.fetched.add(repo)
+                try:
+                    subprocess.run(["git", "-C", root, "fetch", "--quiet", "origin"],
+                                   timeout=180, capture_output=True)
+                except (subprocess.SubprocessError, OSError):
+                    self.content_roots.pop(repo, None)
+                    return None
+        return None
 
     def changed(self, repo, base, head):
         if base == head:

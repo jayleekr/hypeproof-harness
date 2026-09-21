@@ -425,3 +425,29 @@ def test_bundle_drift_names_an_unknown_revision_instead_of_passing(tmp_path):
 def test_bundle_drift_is_silent_without_a_stamp(tmp_path):
     # The Harness checkout itself carries no stamp and must not warn about itself.
     assert load_module().bundle_drift(ROOT, tmp_path / "consumer") is None
+
+import os
+import shutil
+
+def test_a_dirty_canonical_checkout_reports_but_still_serves(tmp_path):
+    """Refusing here would punish whoever is developing Harness."""
+    origin, clone = _canonical_pair(tmp_path)
+    _advance(origin, "2\n")
+    (clone / "work-in-progress.txt").write_text("mine\n")
+    (clone / "scripts/hype-pr").mkdir(parents=True)
+    (clone / "scripts/hype-pr/pr.py").write_text("")
+    (clone / "scripts/hype-pr/preparation.py").write_text("")
+    (clone / "policy").mkdir()
+    (clone / "policy/repos.yaml").write_text("{}")
+
+    consumer = tmp_path / "consumer/scripts/hype-pr"
+    consumer.mkdir(parents=True)
+    shutil.copyfile(ROOT / "scripts/hype-pr/pr.py", consumer / "pr.py")
+    proc = subprocess.run([sys.executable, str(consumer / "pr.py"), "--help"],
+                          env={**os.environ, "HYPEPROOF_HARNESS": str(clone)},
+                          capture_output=True, text=True)
+
+    assert proc.returncode == 0, proc.stderr
+    assert "was not updated" in proc.stderr
+    assert "work-in-progress.txt" in proc.stderr
+    assert (clone / "work-in-progress.txt").read_text() == "mine\n"
