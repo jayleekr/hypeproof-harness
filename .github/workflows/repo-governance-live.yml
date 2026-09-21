@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install policy deps
-        run: python -m pip install --quiet pyyaml
+        run: python -m pip install --quiet -r requirements.txt
 
       - name: Resolve policy repos
         run: |

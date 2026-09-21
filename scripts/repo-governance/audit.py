@@ -23,7 +23,14 @@ from typing import Any
 try:
     import yaml
 except ImportError as exc:  # pragma: no cover - exercised in user env, not tests
-    raise SystemExit("PyYAML is required: python3 -m pip install pyyaml") from exc
+    # Name the interpreter that is actually running: harness tooling is reached
+    # through several entrypoints (and pr.py re-execs into the canonical
+    # checkout), so "python3" alone sends people to the wrong environment.
+    raise SystemExit(
+        f"PyYAML is required, and {sys.executable} does not have it.\n"
+        f"  {sys.executable} -m pip install -r <harness>/requirements.txt\n"
+        "Harness tooling is tested on Python 3.11+; see docs/HYPE-PR.ko.md."
+    ) from exc
 
 
 ROOT = Path(__file__).resolve().parents[2]
