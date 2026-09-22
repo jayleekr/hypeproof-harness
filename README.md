@@ -100,6 +100,8 @@ git commit && git push origin main
 
 # 2. 모든 consumer로 동기
 bash scripts/sync.sh --check          # drift 미리보기 (read-only)
+bash scripts/sync.sh --check --preserve-extra # canonical drift 검사 + consumer-only 파일 보고/허용
+bash scripts/sync.sh --preserve-extra # canonical overlay, consumer-only 파일 보존
 bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
 
 # 3. 각 consumer push (또는 PR — harness 변경은 피어리뷰 권장)
@@ -120,6 +122,8 @@ git config core.hooksPath .githooks   # (선택) 커밋 전 자동 검사 훅 �
 - `--commit`은 `main` 위 + skill 외 변경 없을 때만 실행 (`ALLOW_ANY_BRANCH=1`로 우회)
 - Git 신원은 각 consumer의 ambient config 그대로 — 스크립트가 override하지 않는다
 - `rsync --delete`가 consumer-only 파일을 지우려 하면 abort — `--force-delete`로 명시 우회
+- consumer-only 파일을 의도적으로 유지해야 하면 `--preserve-extra`를 사용한다. 이 모드는
+  extra를 출력하되 canonical 파일의 누락·변경은 계속 실패시키며 파일을 삭제하지 않는다.
 
 ### 🔎 리뷰어 — 내게 온 PR 확인
 

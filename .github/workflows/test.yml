@@ -86,6 +86,9 @@ jobs:
           sudo apt-get install -y shellcheck
           shellcheck -S warning scripts/sync.sh scripts/security/check-secrets.sh scripts/register-skills.sh tests/run.sh || true
 
+      - name: Preserve consumer-only files during canonical overlay
+        run: bash tests/test_preserve_extra.sh
+
       - name: Secret scan changed files
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
