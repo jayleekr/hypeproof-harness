@@ -181,6 +181,56 @@ def parse_repo(value: str) -> str:
     return f"{DEFAULT_OWNER}/{value}"
 
 
+def closing_issue_targets(body: str, repo: str) -> list[tuple[str, int]]:
+    """Return closing-keyword targets, resolving bare #numbers to this repo."""
+    pattern = re.compile(
+        r"(?i)\b(?:closes|fixes|resolves)\s+(?:(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#(?P<number>[0-9]+)"
+    )
+    return [(match.group("repo") or repo, int(match.group("number"))) for match in pattern.finditer(body)]
+
+
+def validate_scoped_issue(issue: dict[str, Any], repo: str, number: int, body: str) -> dict[str, Any]:
+    """Validate objective issue properties; semantic fit remains an agent judgment."""
+    if issue.get("number") != number:
+        raise ValueError(f"scoped issue response does not match #{number}")
+    if issue.get("pull_request") is not None:
+        raise ValueError(f"scoped issue #{number} is a pull request, not an issue")
+    if issue.get("state") != "open":
+        raise ValueError(f"scoped issue #{number} must be open")
+    labels = {
+        str(label.get("name") if isinstance(label, dict) else label).strip().lower()
+        for label in issue.get("labels", [])
+    }
+    issue_type = issue.get("type") or issue.get("issue_type") or {}
+    type_name = issue_type.get("name", "") if isinstance(issue_type, dict) else str(issue_type)
+    title = str(issue.get("title") or "").strip()
+    if "epic" in labels or type_name.strip().lower() == "epic" or re.match(r"(?i)^\[?epic\]?(?:\s|:)", title):
+        raise ValueError(f"scoped issue #{number} is an Epic; use a PR-sized child work issue")
+    if not issue.get("created_at"):
+        raise ValueError(f"scoped issue #{number} has no creation timestamp")
+    targets = closing_issue_targets(body, repo)
+    if not targets:
+        raise ValueError(f"PR body must close scoped issue #{number}")
+    expected = (repo, number)
+    if any(target != expected for target in targets):
+        raise ValueError(f"PR body closing targets must contain only scoped issue {repo}#{number}")
+    return {"repo": repo, "number": number, "url": issue.get("html_url"), "created_at": issue["created_at"]}
+
+
+def fetch_scoped_issue(repo: str, number: int) -> dict[str, Any]:
+    path = f"repos/{repo}/issues/{number}"
+    if os.environ.get("HYPE_PR_WORK_DIR"):
+        from work_transport import exchange
+        return exchange("read", {"path": path})
+    response = run(["gh", "api", "--method", "GET", path])
+    if response.returncode != 0:
+        raise ValueError(f"cannot read scoped issue {repo}#{number}: {response.stderr.strip() or 'GitHub API failed'}")
+    try:
+        return json.loads(response.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"scoped issue {repo}#{number} returned invalid JSON") from exc
+
+
 def active_members(policy: dict[str, Any]) -> list[str]:
     members = policy.get("members", {}).get("members", {})
     return uniq(list(members.get("admins", [])) + list(members.get("writers", [])))
@@ -489,6 +539,10 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
         body = Path(args.body_file).read_text(encoding="utf-8")
     if report:
         body += preparation_module().summary(report)
+    scoped_issue = None
+    if args.apply:
+        repo = parse_repo(args.repo)
+        scoped_issue = validate_scoped_issue(fetch_scoped_issue(repo, args.issue), repo, args.issue, body)
     cmd = [
         "gh",
         "pr",
@@ -512,6 +566,7 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
     result: dict[str, Any] = {
         "plan": planned,
         "preparation": {"required_for_apply": preparation_required, "verified": report is not None},
+        "scoped_issue": scoped_issue or {"repo": parse_repo(args.repo), "number": args.issue, "verified": False},
         "create_command": cmd,
         "reviewer_commands": reviewer_commands(args.repo, "<created-pr>", planned["reviewers"]),
         "reviewer_cleanup_commands": reviewer_cleanup_commands(
@@ -604,6 +659,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--body", default="")
     create_parser.add_argument("--body-file")
     create_parser.add_argument("--author", required=True)
+    create_parser.add_argument("--issue", required=True, type=int, help="Open PR-sized work issue in the target repository")
     create_parser.add_argument("--path", action="append", default=[])
     create_parser.add_argument("--label", action="append", default=[])
     create_parser.add_argument("--draft", action="store_true")

@@ -20,6 +20,11 @@ into consumers. Keep operations scoped to the requested HypeProof repository.
 ## At development start
 
 Read the repository instructions and relevant canon, then its `config/traceability.json`.
+Before creating the task branch, reuse or create an open issue in the target repository
+whose scope and acceptance result match this PR-sized vertical change. An Epic is a
+parent product outcome, not the PR close target. Record the Epic as context or parent
+and close the scoped work issue. The guard verifies objective GitHub properties; you
+and the coordinator remain responsible for judging semantic scope fit.
 Find the existing Intent, REQ and test nodes for the requested change. Inspect the
 actual documents before choosing parents. New criteria need a stable ID, correct
 stage, an agreed domain owner and parent links; the PR author is not automatically
@@ -81,10 +86,12 @@ uncommitted text. Read working changes directly when developing.
    ```bash
    python3 scripts/hype-pr/pr.py create --repo OWNER/REPO --head BRANCH \
      --title 'feat(scope): 한글 요약' --body-file /tmp/pr-body.md --author LOGIN \
-     --preparation RECEIPT_PATH --apply
+     --issue ISSUE_NUMBER --preparation RECEIPT_PATH --apply
    ```
 
-   Omit `--apply` for a command preview. The apply path recomputes source checks,
+   The PR body must close that issue and no other issue. Omit `--apply` for a command
+   preview. The apply path verifies that the target is an existing open same-repository
+   issue rather than a PR or Epic, then recomputes source checks,
    verifies the remote head, derives risk from the actual diff and adds a fixed
    preparation summary to the PR body. Assessment prose is not published. Reviewer
    requests are disabled by default, and any catch-all CODEOWNERS requests created
