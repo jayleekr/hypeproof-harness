@@ -302,6 +302,39 @@ def test_scoped_issue_accepts_same_repo_open_issue() -> None:
     assert result["number"] == 7
 
 
+def test_closing_issue_targets_cover_github_keywords_and_urls() -> None:
+    module = load_module()
+    from issue_guard import closing_issue_targets
+    body = "\n".join([
+        "Close #7", "Closes #7", "Closed #7", "Fix #7", "Fixes #7", "Fixed #7",
+        "Resolve #7", "Resolves #7", "Resolved #7",
+        "Fixes https://github.com/jayleekr/hypeproof-studio/issues/7",
+    ])
+    assert closing_issue_targets(body, "jayleekr/hypeproof-studio") == [
+        ("jayleekr/hypeproof-studio", 7)
+    ] * 10
+
+
+def test_scoped_issue_rejects_hidden_full_url_closing_target() -> None:
+    module = load_module()
+    issue = {"number": 7, "state": "open", "title": "fix: scoped", "labels": [],
+             "pull_request": None, "created_at": "2026-09-22T00:00:00Z"}
+    import pytest
+    body = "Closes #7\nFixes https://github.com/jayleekr/hypeproof-studio/issues/751"
+    with pytest.raises(ValueError, match="only scoped issue"):
+        module.validate_scoped_issue(issue, "jayleekr/hypeproof-studio", 7, body)
+
+
+def test_create_parser_rejects_non_positive_issue_number() -> None:
+    module = load_module()
+    import pytest
+    with pytest.raises(SystemExit):
+        module.build_parser().parse_args([
+            "create", "--repo", "hypeproof-studio", "--head", "fix/x", "--title", "x",
+            "--author", "TJ-kr", "--issue", "0",
+        ])
+
+
 def test_create_apply_does_not_merge_high_risk_pr(monkeypatch) -> None:
     module = load_module()
     policy = module.load_policy()

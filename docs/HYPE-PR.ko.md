@@ -13,7 +13,8 @@
 
 - reviewer 요청은 기본으로 하지 않는다. 사용자가 특정 PR의 peer review를 명시한
   경우에만 작성자를 제외한 active 멤버 전원을 요청한다. CODEOWNERS의 catch-all이
-  PR 생성과 함께 자동 요청한 reviewer도 기본 경로에서는 즉시 제거한다.
+  PR 생성 또는 draft의 ready 전환과 함께 자동 요청한 reviewer도 기본 경로에서는
+  즉시 제거한다.
 - auto-merge는 켜도 되는 PR인지 먼저 판정한다.
 - 보안, 배포, 데이터, dependency, governance 변경은 auto-merge 대상에서 제외한다.
 - 실제 merge는 여전히 branch protection, CODEOWNERS, required checks가 통과해야 한다.

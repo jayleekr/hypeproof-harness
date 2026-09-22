@@ -95,7 +95,9 @@ uncommitted text. Read working changes directly when developing.
    verifies the remote head, derives risk from the actual diff and adds a fixed
    preparation summary to the PR body. Assessment prose is not published. Reviewer
    requests are disabled by default, and any catch-all CODEOWNERS requests created
-   with the PR are removed before the command succeeds. Add `--request-reviewers`
+   with the PR are removed before the command succeeds. If a draft is later marked
+   ready, inspect and remove any catch-all request GitHub creates at that transition
+   unless the user explicitly requested peer review. Add `--request-reviewers`
    only when the user explicitly asks for peer review on that PR. On stale preparation,
    repeat inspection/assessment; do not use direct `gh pr create` as a workaround.
 
