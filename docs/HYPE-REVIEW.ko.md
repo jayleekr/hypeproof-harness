@@ -1,5 +1,7 @@
 # hype-review
 
+> 작성일 2026-09-22 · 상태: 활성
+
 > 이 문서는 `hypeproof-harness:docs/HYPE-REVIEW.ko.md`가 원천이다.
 > 제품 repo에 vendoring된 사본은 직접 고치지 말고 harness에서 PR로 바꾼다.
 
