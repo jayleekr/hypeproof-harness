@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 
 CLOSING_TARGET = re.compile(
-    r"(?i)\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?)\s+"
+    r"(?i)\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+"
     r"(?:https://github\.com/(?P<url_repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/issues/(?P<url_number>[0-9]+)"
     r"|(?:(?P<short_repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#(?P<short_number>[0-9]+))"
 )
@@ -47,7 +47,7 @@ def validate_scoped_issue(issue: dict[str, Any], repo: str, number: int, body: s
     issue_type = issue.get("type") or issue.get("issue_type") or {}
     type_name = issue_type.get("name", "") if isinstance(issue_type, dict) else str(issue_type)
     title = str(issue.get("title") or "").strip()
-    if "epic" in labels or type_name.strip().lower() == "epic" or re.match(r"(?i)^\[?epic\]?(?:\s|:)", title):
+    if "epic" in labels or type_name.strip().lower() == "epic" or re.match(r"(?i)^(?:\[[^\]]+\]\s*)*\[?epic\]?(?:\s|:)", title):
         raise ValueError(f"scoped issue #{number} is an Epic; use a PR-sized child work issue")
     if not issue.get("created_at"):
         raise ValueError(f"scoped issue #{number} has no creation timestamp")

@@ -275,7 +275,7 @@ def test_scoped_issue_rejects_wrong_closing_target() -> None:
              "pull_request": None, "created_at": "2026-09-22T00:00:00Z"}
     import pytest
     with pytest.raises(ValueError, match="only scoped issue"):
-        module.validate_scoped_issue(issue, "jayleekr/hypeproof-studio", 7, "Closes #7\nCloses #8")
+        module.validate_scoped_issue(issue, "jayleekr/hypeproof-studio", 7, "Closes #7\nCloses: #8")
 
 
 def test_scoped_issue_rejects_closed_pull_request_and_epic() -> None:
@@ -288,6 +288,7 @@ def test_scoped_issue_rejects_closed_pull_request_and_epic() -> None:
         ({"pull_request": {"url": "x"}}, "pull request"),
         ({"labels": [{"name": "Epic"}]}, "Epic"),
         ({"type": {"name": "Epic"}}, "Epic"),
+        ({"title": "[arch] EPIC: broad work"}, "Epic"),
     ]:
         with pytest.raises(ValueError, match=message):
             module.validate_scoped_issue({**base, **changed}, "jayleekr/hypeproof-studio", 7, "Closes #7")
@@ -307,12 +308,12 @@ def test_closing_issue_targets_cover_github_keywords_and_urls() -> None:
     from issue_guard import closing_issue_targets
     body = "\n".join([
         "Close #7", "Closes #7", "Closed #7", "Fix #7", "Fixes #7", "Fixed #7",
-        "Resolve #7", "Resolves #7", "Resolved #7",
+        "Resolve #7", "Resolves #7", "Resolved #7", "Closes: #7",
         "Fixes https://github.com/jayleekr/hypeproof-studio/issues/7",
     ])
     assert closing_issue_targets(body, "jayleekr/hypeproof-studio") == [
         ("jayleekr/hypeproof-studio", 7)
-    ] * 10
+    ] * 11
 
 
 def test_scoped_issue_rejects_hidden_full_url_closing_target() -> None:
