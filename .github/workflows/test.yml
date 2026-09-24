@@ -20,6 +20,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 jobs:
   operational-smoke:
@@ -124,6 +125,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Branch name
         env:
           BRANCH: ${{ github.head_ref }}
@@ -134,15 +136,12 @@ jobs:
             exit 1
           fi
 
-      - name: "Closes # in body"
+      - name: "Scoped closing issue"
         env:
           BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if ! printf '%s' "$BODY" | grep -qE '(Closes|Fixes|Resolves) #[0-9]+'; then
-            echo "PR body must include 'Closes #<n>', 'Fixes #<n>', or 'Resolves #<n>'" >&2
-            echo "See MEMBER-GUIDE.ko.md §4.4" >&2
-            exit 1
-          fi
+          python scripts/hype-pr/issue_guard.py --repo "$GITHUB_REPOSITORY" --body "$BODY"
 
   gate:
     name: gate (tests/run.sh against mock consumers)

@@ -13,7 +13,8 @@
 
 - reviewer 요청은 기본으로 하지 않는다. 사용자가 특정 PR의 peer review를 명시한
   경우에만 작성자를 제외한 active 멤버 전원을 요청한다. CODEOWNERS의 catch-all이
-  PR 생성과 함께 자동 요청한 reviewer도 기본 경로에서는 즉시 제거한다.
+  PR 생성 또는 draft의 ready 전환과 함께 자동 요청한 reviewer도 기본 경로에서는
+  즉시 제거한다.
 - auto-merge는 켜도 되는 PR인지 먼저 판정한다.
 - 보안, 배포, 데이터, dependency, governance 변경은 auto-merge 대상에서 제외한다.
 - 실제 merge는 여전히 branch protection, CODEOWNERS, required checks가 통과해야 한다.
@@ -29,6 +30,11 @@ Harness, Lab, Studio의 PR 생성은 `skills/hype-pr/SKILL.md` 정본을 따른�
 `.claude/skills/hype-pr/SKILL.md`로 배포되고 `.agents/skills/hype-pr/`도 같은 내용을 가리킨다.
 개발 시작에 기준 연결을 잡고, commit 후 `inspect`로 대상·상위·하위와 미등록 변경을 읽는다.
 Agent가 실제 문서를 읽고 assessment를 작성하며, 별도 모델 API key는 필요 없다.
+브랜치를 만들기 전 해당 PR 크기의 수직 결과와 인수 조건을 담은 같은 repo의 열린
+실행 이슈를 만들거나 재사용한다. Epic은 부모 제품 결과이며 PR의 close target이 아니다.
+`create --issue`는 이슈의 존재·열림·repo·PR/Epic 여부와 본문의 close target 일치를
+검사한다. 구현과 이슈가 의미상 같은 범위인지는 자동 판정하지 않으며 작성자와 조정
+에이전트가 확인한다.
 `prepare`는 repo/base/head/다른 정본 repo SHA/정책·도구 version에 묶인 receipt를 git metadata에
 저장한다. `create --apply`는 이 receipt를 재검사하고 remote head까지 일치해야 생성한다.
 새 owner/상위 단계 누락은 막고 기존 debt는 별도로 표시한다. 미등록 구현은 REQ와 test에 연결하며,
@@ -118,6 +124,7 @@ python3 scripts/hype-pr/pr.py request-reviewers \
 python3 scripts/hype-pr/pr.py create \
   --repo jayleekr/hypeproof-harness \
   --head feat/hype-pr-workflow-harness \
+  --issue 123 \
   --title "Add hype-pr workflow harness" \
   --body-file /tmp/pr-body.md \
   --author jayleekr \
@@ -127,7 +134,8 @@ python3 scripts/hype-pr/pr.py create \
 
 해당 PR에 peer review가 명시적으로 필요할 때만 `--request-reviewers`를 추가한다.
 
-`--preparation <prepare 출력 경로> --apply`를 붙이면 검토를 재확인한 뒤 `gh pr create`를 실행한다. `--auto-merge`를 같이 붙였고
+PR 본문은 `--issue`에 지정한 이슈만 `Closes`/`Fixes`/`Resolves`로 닫아야 한다.
+`--preparation <prepare 출력 경로> --apply`를 붙이면 이슈와 검토를 재확인한 뒤 `gh pr create`를 실행한다. `--auto-merge`를 같이 붙였고
 eligibility가 통과하면 생성 직후 `gh pr merge --auto --squash --delete-branch`도
 실행한다.
 

@@ -66,6 +66,13 @@ test('only immutable content is cached; live refs are never reused', async () =>
   await read('repos/x/one/commits/main'); await read('repos/x/one/commits/main');
   assert.equal(f.calls.length, 3);
 });
+test('registered-repo issue reads are allowed but issue subresources are not', async () => {
+  const f = fixture();
+  const read = path => serveWorkRequest(f.tools, {...f.request, operation: 'read', payload: {path}}, f.options);
+  await read('repos/x/one/issues/7');
+  assert.ok(f.calls.includes('https://api.github.com/repos/x/one/issues/7'));
+  await assert.rejects(read('repos/x/one/issues/7/comments'), /scope/);
+});
 test('uncertain create failure is not retried', async () => {
   const f = fixture(); f.tools.mcp__codex_apps__github_create_pull_request = async () => {throw new Error('network');};
   await assert.rejects(serveWorkRequest(f.tools, f.request, f.options), /network/);
