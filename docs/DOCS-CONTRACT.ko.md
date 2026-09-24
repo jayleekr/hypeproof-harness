@@ -1,5 +1,7 @@
 # HypeProof Dev Docs Contract
 
+> 작성일 2026-09-22 · 상태: 활성
+
 이 문서는 Studio, Sediment, Lab 계열 repo가 공통으로 따라야 하는 개발 문서
 계약이다. 원천 문서는 각 제품 repo에 둔다. `hypeprooflab`은 멤버용 포털,
 인증, 렌더링, 배포, 시각 검증을 담당하고 제품 지식의 canonical source가

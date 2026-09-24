@@ -58,7 +58,7 @@ version: 1
 
 channels:
   sediment: { transport: discord_webhook, secret_env: DISCORD_WEBHOOK_SEDIMENT }
-  email_jay: { transport: email_smtp, to: jay@hypeproof.io }
+  email_jay: { transport: email_smtp, to: jay@example.invalid }
 
 routes:
   "*":                                      # applies unless tenant override

@@ -6,6 +6,7 @@
 #   sync.sh --check          read-only diff; exits 1 if any consumer drifts
 #   sync.sh --commit         apply + git stage/commit in each consumer (no push)
 #   sync.sh --force-delete   in apply, accept rsync --delete of files only in consumer
+#   sync.sh --preserve-extra overlay canonical files and keep consumer-only files
 #
 # Consumers come from tests/consumers.txt (one path per line; ~ and ${VAR}
 # expanded; nonexistent paths are SKIPPED with a non-zero overall exit).
@@ -44,17 +45,21 @@ fi
 
 MODE="apply"
 FORCE_DELETE=0
-case "${1:-}" in
-  --check)         MODE="check" ;;
-  --commit)        MODE="commit" ;;
-  --force-delete)  FORCE_DELETE=1 ;;
-  --help|-h)
-    sed -n '/^# /{s/^# \{0,1\}//;p;}; /^[^#]/q' "$0"; exit 0 ;;
-  "") : ;;
-  *) echo "unknown arg: $1" >&2; exit 2 ;;
-esac
-# Second-arg form: sync.sh --commit --force-delete (allowed)
-[ "${2:-}" = "--force-delete" ] && FORCE_DELETE=1
+PRESERVE_EXTRA=0
+for arg in "$@"; do
+  case "$arg" in
+    --check)          MODE="check" ;;
+    --commit)         MODE="commit" ;;
+    --force-delete)   FORCE_DELETE=1 ;;
+    --preserve-extra) PRESERVE_EXTRA=1 ;;
+    --help|-h)
+      sed -n '/^# /{s/^# \{0,1\}//;p;}; /^[^#]/q' "$0"; exit 0 ;;
+    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+  esac
+done
+[ "$FORCE_DELETE" -eq 0 ] || [ "$PRESERVE_EXTRA" -eq 0 ] || {
+  echo "--force-delete and --preserve-extra are mutually exclusive" >&2; exit 2;
+}
 
 SKILLS=(skill-creator hype-review weekly-loop hype-pr hype-deliver hype-verify hype-intent hype-studio hype-chalk hype-coordinate hypeproof-operator) # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md HYPE-REVIEW.ko.md HYPE-PR.ko.md WEEKLY-LOOP.ko.md FIVE-SESSION-DELIVERY.ko.md WORK-DISCOVERY.ko.md) # vendored to consumer/docs/<file>
@@ -135,7 +140,14 @@ for C in "${CONSUMERS[@]}"; do
         while IFS= read -r -d '' f; do
           rel="${f#$DST/}"
           [ "$rel" = "HARNESS_VERSION" ] && continue
-          [ -f "$SRC/$rel" ] || { echo "EXTRA  $CNAME/$S/$rel"; d=1; overall_drift=1; }
+          if [ ! -f "$SRC/$rel" ]; then
+            if [ "$PRESERVE_EXTRA" -eq 1 ]; then
+              echo "EXTRA  $CNAME/$S/$rel (preserved)"
+            else
+              echo "EXTRA  $CNAME/$S/$rel"
+            fi
+            if [ "$PRESERVE_EXTRA" -ne 1 ]; then d=1; overall_drift=1; fi
+          fi
         done < <(find "$DST" -type f -print0)
       fi
       [ "$d" -eq 0 ] && echo "OK     $CNAME/$S"
@@ -152,7 +164,7 @@ for C in "${CONSUMERS[@]}"; do
         [ -f "$SRC/$rel" ] || will_delete+=("$rel")
       done < <(find "$DST" -type f -print0)
     fi
-    if [ "${#will_delete[@]}" -gt 0 ]; then
+    if [ "${#will_delete[@]}" -gt 0 ] && [ "$PRESERVE_EXTRA" -ne 1 ]; then
       echo "   ⚠ $CNAME/$S — rsync --delete will remove:"
       for w in "${will_delete[@]}"; do echo "     - $w"; done
       if [ "$FORCE_DELETE" -ne 1 ]; then
@@ -179,7 +191,11 @@ for C in "${CONSUMERS[@]}"; do
 
     # --- apply ---
     mkdir -p "$DST"
-    rsync -a --delete --exclude='HARNESS_VERSION' "$SRC/" "$DST/"
+    if [ "$PRESERVE_EXTRA" -eq 1 ]; then
+      rsync -a --exclude='HARNESS_VERSION' "$SRC/" "$DST/"
+    else
+      rsync -a --delete --exclude='HARNESS_VERSION' "$SRC/" "$DST/"
+    fi
     echo "$HARNESS_SHA" > "$DST/HARNESS_VERSION"
 
     if [ "$MODE" = "commit" ]; then
@@ -217,7 +233,14 @@ for C in "${CONSUMERS[@]}"; do
         while IFS= read -r -d '' f; do
           rel="${f#$SCDST/}"
           [ "$rel" = "HARNESS_VERSION" ] && continue
-          [ -f "$SCSRC/$rel" ] || { echo "EXTRA  $CNAME/scripts/$SC/$rel"; d=1; overall_drift=1; }
+          if [ ! -f "$SCSRC/$rel" ]; then
+            if [ "$PRESERVE_EXTRA" -eq 1 ]; then
+              echo "EXTRA  $CNAME/scripts/$SC/$rel (preserved)"
+            else
+              echo "EXTRA  $CNAME/scripts/$SC/$rel"
+            fi
+            if [ "$PRESERVE_EXTRA" -ne 1 ]; then d=1; overall_drift=1; fi
+          fi
         done < <(find "$SCDST" -type f -print0)
       fi
       [ "$d" -eq 0 ] && echo "OK     $CNAME/scripts/$SC"
@@ -233,7 +256,7 @@ for C in "${CONSUMERS[@]}"; do
         [ -f "$SCSRC/$rel" ] || will_delete+=("$rel")
       done < <(find "$SCDST" -type f -print0)
     fi
-    if [ "${#will_delete[@]}" -gt 0 ]; then
+    if [ "${#will_delete[@]}" -gt 0 ] && [ "$PRESERVE_EXTRA" -ne 1 ]; then
       echo "   ⚠ $CNAME/scripts/$SC — rsync --delete will remove:"
       for w in "${will_delete[@]}"; do echo "     - $w"; done
       if [ "$FORCE_DELETE" -ne 1 ]; then
@@ -257,7 +280,11 @@ for C in "${CONSUMERS[@]}"; do
     fi
 
     mkdir -p "$SCDST"
-    rsync -a --delete --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
+    if [ "$PRESERVE_EXTRA" -eq 1 ]; then
+      rsync -a --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
+    else
+      rsync -a --delete --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
+    fi
     echo "$HARNESS_SHA" > "$SCDST/HARNESS_VERSION"
 
     if [ "$MODE" = "commit" ]; then
