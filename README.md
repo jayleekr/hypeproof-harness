@@ -26,6 +26,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 |---|---|---|
 | `skills/skill-creator/` | Claude Code 스킬을 만들고 평가하는 generic 툴킷 | 3 consumers `.claude/skills/` |
 | `skills/hype-review/` | PR 리뷰 요청 확인 + 역할별 리뷰 워크시트 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-pr/` | criteria 링크 점검 + 에이전트 영향 평가를 묶어 PR을 생성하는 스킬 | 3 consumers `.claude/skills/` |
 | `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hype-deliver/` | 사용자 가시 수직 기능을 구현부터 머지·배포·실제품 확인까지 소유하는 Astra Captain 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hype-verify/` | 새 구현 SHA 또는 인수 revision만 독립 검증하는 스킬 | 3 consumers `.claude/skills/` |
@@ -34,6 +35,11 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/hype-chalk/` | 비중첩 Chalk 하위 작업용 선택적 specialist | 3 consumers `.claude/skills/` |
 | `skills/hype-coordinate/` | 폐기된 5세션 watcher와 queue의 복구 전용 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hypeproof-operator/` | HypeProof 범위의 PR·머지·배포 운영 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hypeproof-scout/` | 근거 조사와 고객 대화 분석 Researcher | (harness-local) |
+| `skills/hypeproof-compass/` | 제품 Intent·요구사항·로드맵 Planner | (harness-local) |
+| `skills/hypeproof-forge/` | 승인 범위의 개발 교육안 콘텐츠 Builder | (harness-local) |
+| `skills/hypeproof-lens/` | 요구사항 대비 독립 검증 Verifier | (harness-local) |
+| `skills/hypeproof-keeper/` | 컨텍스트 점검·갱신·인계 Context Steward | (harness-local) |
 | `skills/onboard-member/` | 신규 멤버 1회성 셋업 인터랙티브 스킬 | (harness-local) |
 | `skills/demo-video-harness/` | 웹 앱/페이지를 timeline YAML + Playwright + ffmpeg로 내레이션 있는 데모 mp4로 렌더링하는, 특정 회사/제품에 종속되지 않는 generic 스킬 | (harness-local) |
 | `docs/MEMBER-GUIDE.ko.md` | 한글 멤버 워크플로 가이드 — 5단계 lifecycle | 3 consumers `docs/` |
@@ -43,22 +49,56 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `docs/HYPE-PR.ko.md` | `hype-pr` PR 생성·reviewer 요청·auto-merge 판정 가이드 | 3 consumers `docs/` |
 | `docs/WEEKLY-LOOP.ko.md` | 주간 운영 루프 canonical 정의 — 회의 → 이슈 → 번다운 | 3 consumers `docs/` |
 | `docs/FIVE-SESSION-DELIVERY.ko.md` | Delivery Captain, revision-bound 검증, 무모델 watcher 계약(호환 파일명 유지) | 3 consumers `docs/` |
+| `docs/WORK-DISCOVERY.ko.md` | 요구사항에서 다음 실행 작업을 찾는 절차 | 3 consumers `docs/` |
 | `CLAUDE.md` · `AGENTS.md` · `OPENCLAW.md` | Claude Code · Codex · OpenClaw 루트 진입점 seed | 3 consumers repo root |
 | `scripts/notify/` | cross-product 알림 dispatcher | 3 consumers `scripts/notify/` |
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
 | `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
 | `scripts/hype-pr/` | PR 생성 시 active 멤버 reviewer 요청 + auto-merge eligibility 판정 | 3 consumers `scripts/hype-pr/` |
+| `scripts/security/` | high-confidence 시크릿 스캐너 (`check-secrets.sh`) | 3 consumers `scripts/security/` |
 | `scripts/weekly-harness/` | weekly cycle 이슈 Owner/ETA 검증 + 번다운 리포트 | 3 consumers `scripts/weekly-harness/` |
 | `docs/studio-quality-dashboard.html` | 강의별 HypeProof Studio 사용 가능 여부를 보는 quality dashboard | (harness-local) |
 | `scripts/studio-quality-dashboard/` | 강의별 단일 JSON 생성 + G1/G2/G3 GitHub 이슈 발행 CLI | (harness-local) |
 | `scripts/sync.sh` | 캐노니컬 → consumer 동기 (`--check` · apply · `--commit`) | (maintainer) |
+| `scripts/consumer-drift/` | 실제 consumer를 clone해 캐노니컬과 대조 (주간 CI + 수동 실행) | (maintainer) |
 | `scripts/register-skills.sh` | harness-local `.claude/skills/<name>` 심링크 생성/검증 (`--check`) | (harness-local) |
 | `tests/run.sh` + `REQUIREMENTS.md` | Vendor 정합성 검증 (T-V1..T-V13) | (maintainer) |
 | `docs/rollback-vendor.md` | submodule 모델로 5분 안에 돌아가는 7-step 런북 | (maintainer) |
 
+**`(harness-local)`의 뜻**: 현재 consumer로 벤더링하지 않는다는 뜻이며, 영구
+방침이 아니라 **현재 상태**다. 이 표가 배포 여부의 정본이다 — 산문 문서의 "이번
+변경은 ~하지 않는다" 같은 시점 한정 서술은 그 시점의 기록일 뿐 이 표를 대체하지
+않는다. AI Crew 5개의 미배포 경위는 `docs/AI-CREW.ko.md:27,57`에 있다. 배포로
+전환하려면 `scripts/sync.sh`의 `SKILLS`/`DOCS`/`SCRIPTS` 배열과 이 표를 같은
+PR에서 함께 고치고, 해당 자산의 도메인 오너가 판단한다.
+
+**실제 consumer의 드리프트는 어떻게 보나**: CI의 `gate` 잡은 갓 만든 mock
+repo에 벤더링하므로 sync.sh가 동작하는지만 검증한다. 실제 consumer가 얼마나
+벌어졌는지는 `consumer-drift` 워크플로가 본다 — 매주 월요일과 수동 실행.
+로컬에서는 `bash scripts/consumer-drift/check.sh`. 비공개 consumer는 읽기 권한이
+있는 `CONSUMER_READ_TOKEN` 시크릿이 있어야 검사 대상에 들어가며, 없으면 통과가
+아니라 **coverage 불완전**으로 보고한다.
+
 **Not shared here**: studio-only 규칙(`branding-swap`, `build-pipeline`,
 `extension-dev`), `e2e/`, `vscodium-base` 서브모듈, 각 repo의 `.github/` 템플릿
 (GitHub은 submodule 심링크 템플릿을 따라가지 않는다).
+
+---
+
+## 실행 전제
+
+harness의 Python 도구(`scripts/hype-pr`, `scripts/repo-governance`,
+`scripts/change-impact` 등)는 `policy/*.yaml`을 읽으므로 **PyYAML**이 필요하다.
+
+```bash
+python3 -m pip install -r requirements.txt       # 도구 실행
+python3 -m pip install -r requirements-dev.txt   # 테스트까지
+```
+
+CI가 검증하는 버전은 **Python 3.11+**이다. consumer 저장소가 아니라 **harness
+checkout의 인터프리터**에 설치해야 한다 — 자세한 이유는 `docs/HYPE-PR.ko.md`의
+"실행 전제"를 참고한다. `scripts/notify/`는 httpx·jinja2를 추가로 쓰며 자체
+요구사항을 `scripts/notify/README.md`에 선언한다.
 
 ---
 

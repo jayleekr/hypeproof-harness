@@ -128,6 +128,7 @@ if not (ROOT / "policy/repos.yaml").is_file():
     raise RuntimeError("import hype-pr from the canonical Harness checkout")
 sys.path.insert(0, str(ROOT / "scripts" / "repo-governance"))
 from audit import load_policy, repo_full_name, validate_policy  # noqa: E402
+sys.path.insert(0, str(ROOT / "scripts" / "hype-pr"))
 
 
 DEFAULT_OWNER = "jayleekr"
@@ -179,6 +180,23 @@ def parse_repo(value: str) -> str:
         if owner and name:
             return value
     return f"{DEFAULT_OWNER}/{value}"
+
+
+from issue_guard import positive_issue, validate_scoped_issue  # noqa: E402
+
+
+def fetch_scoped_issue(repo: str, number: int) -> dict[str, Any]:
+    path = f"repos/{repo}/issues/{number}"
+    if os.environ.get("HYPE_PR_WORK_DIR"):
+        from work_transport import exchange
+        return exchange("read", {"path": path})
+    response = run(["gh", "api", "--method", "GET", path])
+    if response.returncode != 0:
+        raise ValueError(f"cannot read scoped issue {repo}#{number}: {response.stderr.strip() or 'GitHub API failed'}")
+    try:
+        return json.loads(response.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"scoped issue {repo}#{number} returned invalid JSON") from exc
 
 
 def active_members(policy: dict[str, Any]) -> list[str]:
@@ -489,6 +507,10 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
         body = Path(args.body_file).read_text(encoding="utf-8")
     if report:
         body += preparation_module().summary(report)
+    scoped_issue = None
+    if args.apply:
+        repo = parse_repo(args.repo)
+        scoped_issue = validate_scoped_issue(fetch_scoped_issue(repo, args.issue), repo, args.issue, body)
     cmd = [
         "gh",
         "pr",
@@ -512,6 +534,7 @@ def command_create(args: argparse.Namespace, policy: dict[str, Any]) -> int:
     result: dict[str, Any] = {
         "plan": planned,
         "preparation": {"required_for_apply": preparation_required, "verified": report is not None},
+        "scoped_issue": scoped_issue or {"repo": parse_repo(args.repo), "number": args.issue, "verified": False},
         "create_command": cmd,
         "reviewer_commands": reviewer_commands(args.repo, "<created-pr>", planned["reviewers"]),
         "reviewer_cleanup_commands": reviewer_cleanup_commands(
@@ -604,6 +627,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--body", default="")
     create_parser.add_argument("--body-file")
     create_parser.add_argument("--author", required=True)
+    create_parser.add_argument("--issue", required=True, type=positive_issue, help="Open PR-sized work issue in the target repository")
     create_parser.add_argument("--path", action="append", default=[])
     create_parser.add_argument("--label", action="append", default=[])
     create_parser.add_argument("--draft", action="store_true")
