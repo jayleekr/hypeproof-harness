@@ -207,7 +207,10 @@ def test_consumer_install_is_repeatable_preserves_local_rules_and_delegates(worl
     assert (target / ".agents/skills/hype-pr/SKILL.md").read_bytes() == (ROOT / "skills/hype-pr/SKILL.md").read_bytes()
     assert not (target / ".agents/skills/hype-pr").is_symlink()
     assert (target / ".agents/skills/hype-pr/agents/openai.yaml").is_file()
-    proc = subprocess.run([sys.executable, str(target / "scripts/hype-pr/pr.py"), "plan", "--repo", "hypeproof-studio", "--author", "jayleekr"], cwd=target, env={**os.environ, "HYPEPROOF_HARNESS": str(ROOT)}, capture_output=True, text=True)
+    # PIN: ROOT is the checkout under test. Without it the launcher's repair
+    # (#225) checks ROOT out to main, and every later test in the session runs
+    # against main instead of the PR.
+    proc = subprocess.run([sys.executable, str(target / "scripts/hype-pr/pr.py"), "plan", "--repo", "hypeproof-studio", "--author", "jayleekr"], cwd=target, env={**os.environ, "HYPEPROOF_HARNESS": str(ROOT), "HYPEPROOF_HARNESS_PIN": "1"}, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["repo"] == "jayleekr/hypeproof-studio"
 
