@@ -166,6 +166,8 @@ def test_create_is_dry_run_by_default_without_reviewers() -> None:
         "Closes #1",
         "--author",
         "jayleekr",
+        "--issue",
+        "1",
         "--path",
         "docs/HYPE-PR.ko.md",
     )
@@ -193,6 +195,7 @@ def _create_args(module, **overrides):
         body="Closes #1",
         body_file=None,
         author="TJ-kr",
+        issue=1,
         path=["docs/dev/usage-notes.md"],
         label=[],
         draft=False,
@@ -213,6 +216,12 @@ class _FakeGh:
 
     def __call__(self, cmd, *, input_text=None):
         self.calls.append(cmd)
+        if cmd[:4] == ["gh", "api", "--method", "GET"]:
+            number = int(cmd[-1].rsplit("/", 1)[-1])
+            issue = {"number": number, "state": "open", "title": "fix: scoped work", "labels": [],
+                     "pull_request": None, "created_at": "2026-09-22T00:00:00Z",
+                     "html_url": f"https://github.com/x/y/issues/{number}"}
+            return self.module.CommandResult(0, json.dumps(issue), "")
         # `gh pr create` prints the created PR URL on the last line.
         if cmd[:3] == ["gh", "pr", "create"]:
             return self.module.CommandResult(0, "https://github.com/x/y/pull/99", "")
@@ -258,6 +267,73 @@ def test_create_apply_requests_reviewers_only_when_opted_in(monkeypatch) -> None
     assert reviewer_calls
     assert all("TJ-kr" not in c for c in reviewer_calls)
     assert not any("--remove-reviewer" in c for c in fake.calls)
+
+
+def test_scoped_issue_rejects_wrong_closing_target() -> None:
+    module = load_module()
+    issue = {"number": 7, "state": "open", "title": "fix: scoped", "labels": [],
+             "pull_request": None, "created_at": "2026-09-22T00:00:00Z"}
+    import pytest
+    with pytest.raises(ValueError, match="only scoped issue"):
+        module.validate_scoped_issue(issue, "jayleekr/hypeproof-studio", 7, "Closes #7\nCloses: #8")
+
+
+def test_scoped_issue_rejects_closed_pull_request_and_epic() -> None:
+    module = load_module()
+    base = {"number": 7, "state": "open", "title": "fix: scoped", "labels": [],
+            "pull_request": None, "created_at": "2026-09-22T00:00:00Z"}
+    import pytest
+    for changed, message in [
+        ({"state": "closed"}, "must be open"),
+        ({"pull_request": {"url": "x"}}, "pull request"),
+        ({"labels": [{"name": "Epic"}]}, "Epic"),
+        ({"type": {"name": "Epic"}}, "Epic"),
+        ({"title": "[arch] EPIC: broad work"}, "Epic"),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            module.validate_scoped_issue({**base, **changed}, "jayleekr/hypeproof-studio", 7, "Closes #7")
+
+
+def test_scoped_issue_accepts_same_repo_open_issue() -> None:
+    module = load_module()
+    issue = {"number": 7, "state": "open", "title": "fix: scoped", "labels": [],
+             "pull_request": None, "created_at": "2026-09-22T00:00:00Z", "html_url": "https://example/7"}
+    result = module.validate_scoped_issue(issue, "jayleekr/hypeproof-studio", 7,
+                                          "Fixes jayleekr/hypeproof-studio#7")
+    assert result["number"] == 7
+
+
+def test_closing_issue_targets_cover_github_keywords_and_urls() -> None:
+    module = load_module()
+    from issue_guard import closing_issue_targets
+    body = "\n".join([
+        "Close #7", "Closes #7", "Closed #7", "Fix #7", "Fixes #7", "Fixed #7",
+        "Resolve #7", "Resolves #7", "Resolved #7", "Closes: #7",
+        "Fixes https://github.com/jayleekr/hypeproof-studio/issues/7",
+    ])
+    assert closing_issue_targets(body, "jayleekr/hypeproof-studio") == [
+        ("jayleekr/hypeproof-studio", 7)
+    ] * 11
+
+
+def test_scoped_issue_rejects_hidden_full_url_closing_target() -> None:
+    module = load_module()
+    issue = {"number": 7, "state": "open", "title": "fix: scoped", "labels": [],
+             "pull_request": None, "created_at": "2026-09-22T00:00:00Z"}
+    import pytest
+    body = "Closes #7\nFixes https://github.com/jayleekr/hypeproof-studio/issues/751"
+    with pytest.raises(ValueError, match="only scoped issue"):
+        module.validate_scoped_issue(issue, "jayleekr/hypeproof-studio", 7, body)
+
+
+def test_create_parser_rejects_non_positive_issue_number() -> None:
+    module = load_module()
+    import pytest
+    with pytest.raises(SystemExit):
+        module.build_parser().parse_args([
+            "create", "--repo", "hypeproof-studio", "--head", "fix/x", "--title", "x",
+            "--author", "TJ-kr", "--issue", "0",
+        ])
 
 
 def test_create_apply_does_not_merge_high_risk_pr(monkeypatch) -> None:
