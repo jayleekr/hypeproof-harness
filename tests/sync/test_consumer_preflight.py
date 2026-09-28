@@ -59,6 +59,9 @@ def workspace(tmp_path, consumers) -> Path:
         bare = tmp_path / "origins" / f"{name}.git"
         subprocess.check_call(["git", "clone", "-q", "--bare", str(seed), str(bare)])
         subprocess.check_call(["git", "clone", "-q", str(bare), str(ws / name)])
+        # sync.sh --commit uses the consumer's own identity; CI has no global one.
+        git(ws / name, "config", "user.email", "t@example.invalid")
+        git(ws / name, "config", "user.name", "T")
     return ws
 
 
