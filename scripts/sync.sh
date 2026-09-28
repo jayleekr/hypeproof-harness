@@ -131,6 +131,10 @@ is_vendored_path() {
   local p="$1" x
   for x in "${SKILLS[@]}";           do case "$p" in ".claude/skills/$x"|".claude/skills/$x/"*) return 0 ;; esac; done
   for x in "${SCRIPTS[@]:-}";        do [ -n "$x" ] && case "$p" in "scripts/$x"|"scripts/$x/"*) return 0 ;; esac; done
+  for x in "${SCRIPT_FILES[@]:-}";   do
+    # the file itself, plus the tree-era stamp that sync removes beside it
+    [ -n "$x" ] && { [ "$p" = "scripts/$x" ] || [ "$p" = "$(dirname "scripts/$x")/HARNESS_VERSION" ]; } && return 0
+  done
   for x in "${DOCS[@]:-}";           do [ "$p" = "docs/$x" ] && return 0; done
   for x in "${ROOT_AGENT_FILES[@]:-}"; do [ "$p" = "$x" ] && return 0; done
   return 1
@@ -411,10 +415,12 @@ for C in "${CONSUMERS[@]}"; do
     fi
 
     if [ "$MODE" = "commit" ]; then
-      if git -C "$C" diff --quiet -- "$SFDIR"; then
+      # Stage only what sync owns here; the rest of $SFDIR belongs to the consumer.
+      git -C "$C" add -A -- "scripts/$SF"
+      git -C "$C" rm -q --cached --ignore-unmatch -- "$SFDIR/HARNESS_VERSION"
+      if git -C "$C" diff --cached --quiet -- "scripts/$SF" "$SFDIR/HARNESS_VERSION"; then
         echo "NOOP   $CNAME/scripts/$SF (already current)"
       else
-        git -C "$C" add -A "$SFDIR"
         git -C "$C" commit -q -m "chore(scripts): sync $SF from hypeproof-harness@${HARNESS_SHA:0:7}"
         echo "COMMIT $CNAME/scripts/$SF @ ${HARNESS_SHA:0:7}"
       fi

@@ -183,3 +183,22 @@ def test_local_only_repos_are_applied_in_place(tmp_path, consumers):
     for name in consumers:
         assert (ws / name / VENDORED).is_file()
         assert git(ws / name, "symbolic-ref", "--short", "HEAD") == "main"
+
+
+def test_file_vendored_script_commits_only_what_sync_owns(workspace, consumers):
+    """scripts/security/ is shared: sync owns check-secrets.sh, the consumer the rest."""
+    repo = workspace / consumers[0]
+    sec = repo / "scripts/security"
+    sec.mkdir(parents=True)
+    (sec / "own-scanner.sh").write_text("#!/bin/sh\n")
+    (sec / "HARNESS_VERSION").write_text("0" * 40 + "\n")  # tree-era stamp
+    git(repo, "add", "-A")
+    _commit(repo, "consumer scanner")
+    git(repo, "push", "-q", "origin", "main")
+
+    proc = run_sync(workspace, "--commit")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    changed = git(repo, "diff", "--name-status", f"origin/main..{SYNC_BRANCH}", "--", "scripts/security").splitlines()
+    assert sorted(changed) == ["A\tscripts/security/check-secrets.sh", "D\tscripts/security/HARNESS_VERSION"]
+    assert (sec / "own-scanner.sh").is_file()
+    assert git(repo, "status", "--porcelain") == ""
