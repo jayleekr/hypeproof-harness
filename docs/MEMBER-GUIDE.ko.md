@@ -28,6 +28,16 @@ CI 빌드된 `.exe`/`.dmg`만 받음 — DEV-GUIDE.md 참고.
 이 문서에서 `$WS`로 표기되는 자리는 자기 워크스페이스 베이스 경로다. 예:
 `$WS=~/CodeWorkspace`이면 `$WS/hypeproof-studio` = `~/CodeWorkspace/hypeproof-studio`.
 
+**Python 도구를 쓸 거라면**: `hype-pr`로 PR을 만들거나 harness의 policy 스크립트를
+돌리려면 PyYAML이 필요하다. harness checkout에서:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+CI가 검증하는 버전은 Python 3.11+다. consumer 저장소가 아니라 **harness
+checkout의 인터프리터**에 설치해야 한다(`docs/HYPE-PR.ko.md` → "실행 전제").
+
 ---
 
 ## 1. 너는 어느 repo의 멤버인가?
