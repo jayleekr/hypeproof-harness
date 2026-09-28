@@ -140,10 +140,23 @@ git commit && git push origin main
 
 # 2. 모든 consumer로 동기
 bash scripts/sync.sh --check          # drift 미리보기 (read-only)
-bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
+bash scripts/sync.sh --commit         # 각 consumer에 sync/harness-<sha7> 브랜치를 따서 커밋
 
-# 3. 각 consumer push (또는 PR — harness 변경은 피어리뷰 권장)
+# 3. 각 consumer에서 그 브랜치를 push하고 PR (main 직접 push 금지)
 ```
+
+apply·`--commit`은 **쓰기 전에 모든 consumer를 먼저 점검**한다. `origin`이 있는
+consumer는 fetch한 뒤 다음 중 하나라도 걸리면 아무 것도 쓰지 않고 중단하며, 이유와
+해결 명령을 출력한다.
+
+- `main`이 origin/main보다 뒤처졌거나 origin/main에 없는 로컬 커밋이 있다
+- `main`이 아닌 브랜치에 있다(이전 sync가 만든 `sync/harness-<sha7>`은 예외)
+- 벤더 경로 밖에 수정·미추적 파일이 있다(벤더 경로의 잔여물은 새 sync가 덮어쓴다)
+
+통과하면 origin/main에서 `sync/harness-<sha7>` 브랜치를 새로 따서 거기에 쓴다.
+`ALLOW_ANY_BRANCH=1`은 브랜치를 바꾸지 않고 현재 브랜치에 쓰지만, origin/main보다
+뒤처진 checkout은 여전히 거부한다. `origin`이 없는 로컬 repo(CI mock)는 예전처럼
+제자리에 쓴다.
 
 **새 스킬을 추가할 때** — `skills/<name>/`만 만들면 harness repo에서 `/<name>`이
 잡히지 않는다. `.claude/skills/<name>` 등록 심링크가 필요한데, 손으로 만들지 말고
