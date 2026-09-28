@@ -60,7 +60,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install deps
-        run: python -m pip install --quiet pyyaml
+        run: python -m pip install --quiet -r requirements.txt
 
       - name: Restore trusted (base-ref) checker and policy
         run: |
