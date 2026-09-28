@@ -11,9 +11,10 @@ async function serveWorkRequest(tools, request, options) {
     return value;
   };
   const get = async (path) => {
-    const match = /^repos\/([^/]+\/[^/]+)\/(commits|contents|compare)\/(.+)$/.exec(path);
+    const match = /^repos\/([^/]+\/[^/]+)\/(commits|contents|compare|issues)\/(.+)$/.exec(path);
     if (!match || !repositories.includes(match[1]) || /[\s#\\]/.test(path)
-        || path.includes("..") && match[2] !== "compare") {
+        || path.includes("..") && match[2] !== "compare"
+        || match[2] === "issues" && !/^[1-9][0-9]*$/.test(match[3])) {
       throw new Error("Read outside Work preparation scope");
     }
     // Cache only immutable content. Mutable refs are fetched on every verification.
