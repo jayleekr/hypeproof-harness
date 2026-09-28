@@ -11,8 +11,17 @@
 # expanded; nonexistent paths are SKIPPED with a non-zero overall exit).
 # A path is overridable per-machine by setting CONSUMER_<basename> in env.
 #
-# --commit mode requires the consumer's working tree to be on `main` and clean
-# (other than the skill path). Bypass with: ALLOW_ANY_BRANCH=1 sync.sh --commit
+# Apply and --commit check every consumer before writing to any of them. A
+# consumer with an `origin` remote is fetched and must be on `main` exactly at
+# origin/main (or already on its sync/harness-<sha7> branch built on it). There
+# must be no changes outside the vendored paths. Sync then switches it to a
+# fresh sync/harness-<sha7> branch cut from origin/main, and writes (and, with
+# --commit, commits) there, ready for a PR. Any failed check aborts the whole
+# run and prints the reason and the command that fixes it.
+# A git repo without `origin` (local mocks) is applied in place; one on a branch
+# other than main is refused for --commit.
+# ALLOW_ANY_BRANCH=1 applies in place on whatever branch is checked out (no
+# branch switch). A consumer behind origin/main is still refused.
 #
 # Identity used for --commit comes from the consumer repo's own git config;
 # this script never overrides user.name/user.email.
@@ -58,7 +67,12 @@ esac
 
 SKILLS=(skill-creator hype-review weekly-loop hype-pr hype-deliver hype-verify hype-intent hype-studio hype-chalk hype-coordinate hypeproof-operator) # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md HYPE-REVIEW.ko.md HYPE-PR.ko.md WEEKLY-LOOP.ko.md FIVE-SESSION-DELIVERY.ko.md WORK-DISCOVERY.ko.md) # vendored to consumer/docs/<file>
-SCRIPTS=(notify docs-harness hype-review hype-pr security weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+SCRIPTS=(notify docs-harness hype-review hype-pr weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+# Individual files vendored into consumer/scripts/<path>. Use this instead of
+# SCRIPTS when harness ships only a file or two into a directory the consumer
+# also keeps its own files in: SCRIPTS claims the whole tree with rsync
+# --delete, which aborts the sync for that consumer (#209).
+SCRIPT_FILES=(security/check-secrets.sh)
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root
 
 # --- consumer resolution ---
@@ -104,6 +118,128 @@ done < "$CONSUMERS_FILE"
 [ "${#CONSUMERS[@]}" -gt 0 ] || { echo "no consumers in $CONSUMERS_FILE" >&2; exit 2; }
 
 HARNESS_SHA="$(git rev-parse HEAD)"
+SYNC_BRANCH="sync/harness-${HARNESS_SHA:0:7}"
+
+# --- consumer pre-flight (apply / commit) ---
+# Sync writes into whatever the consumer has checked out. A checkout far behind
+# origin/main, or on a feature branch, turned into a working tree that was older
+# than its own origin/main and mixed into unrelated work (studio 54 behind,
+# sediment 8 behind, lab on a feature branch). So every consumer is checked
+# before any of them is written, and writes land on a branch cut from
+# origin/main rather than on whatever happens to be checked out.
+is_vendored_path() {
+  local p="$1" x
+  for x in "${SKILLS[@]}";           do case "$p" in ".claude/skills/$x"|".claude/skills/$x/"*) return 0 ;; esac; done
+  for x in "${SCRIPTS[@]:-}";        do [ -n "$x" ] && case "$p" in "scripts/$x"|"scripts/$x/"*) return 0 ;; esac; done
+  for x in "${SCRIPT_FILES[@]:-}";   do
+    # the file itself, plus the tree-era stamp that sync removes beside it
+    [ -n "$x" ] && { [ "$p" = "scripts/$x" ] || [ "$p" = "$(dirname "scripts/$x")/HARNESS_VERSION" ]; } && return 0
+  done
+  for x in "${DOCS[@]:-}";           do [ "$p" = "docs/$x" ] && return 0; done
+  for x in "${ROOT_AGENT_FILES[@]:-}"; do [ "$p" = "$x" ] && return 0; done
+  return 1
+}
+
+# Echoes the first changed path outside the vendored paths, if any.
+stray_change() {
+  local C="$1" rec st p
+  while IFS= read -r -d '' rec; do
+    st="${rec:0:2}"; p="${rec:3}"
+    is_vendored_path "$p" || { echo "$p"; return; }
+    case "$st" in
+      R*|C*) IFS= read -r -d '' p; is_vendored_path "$p" || { echo "$p"; return; } ;;
+    esac
+  done < <(git -C "$C" status --porcelain=v1 -z --untracked-files=all)
+}
+
+is_own_repo() {
+  local C="$1" top
+  top="$(git -C "$C" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ "$top" = "$(cd "$C" && pwd -P)" ]
+}
+
+preflight_abort() {
+  echo "ABORT  $1 — $2" >&2
+  echo "       fix: $3" >&2
+  echo "       nothing was written to any consumer." >&2
+  exit "$4"
+}
+
+# Per consumer: "inplace" or "branch" (switch to SYNC_BRANCH before writing).
+PLAN=()
+preflight_consumer() {
+  local C="$1" CNAME branch stray behind ahead
+  CNAME="$(basename "$C")"
+  if ! is_own_repo "$C"; then
+    # Not a git checkout of its own (a scratch directory): nothing to be
+    # behind, nothing to commit into.
+    [ "$MODE" = "commit" ] && preflight_abort "$CNAME" "not a git repository: $C" \
+      "clone the consumer there, or drop it from $CONSUMERS_FILE" 4
+    PLAN+=("inplace"); return
+  fi
+  # symbolic-ref also names an unborn branch; a detached HEAD reads as "HEAD".
+  branch="$(git -C "$C" symbolic-ref --short -q HEAD || echo HEAD)"
+  if git -C "$C" remote get-url origin >/dev/null 2>&1 || [ "$MODE" = "commit" ]; then
+    stray="$(stray_change "$C")"
+    [ -n "$stray" ] && preflight_abort "$CNAME" "has changes outside the vendored paths: $stray" \
+      "commit or stash them first (git -C $C status)" 5
+  fi
+
+  if ! git -C "$C" remote get-url origin >/dev/null 2>&1; then
+    # Local-only repo (CI and test mocks): no remote to fall behind, and apply
+    # writes in place without switching branches.
+    if [ "$MODE" = "commit" ] && [ "$branch" != "main" ] && [ "${ALLOW_ANY_BRANCH:-0}" != "1" ]; then
+      preflight_abort "$CNAME" "on branch '$branch' (not main)" \
+        "git -C $C switch main   (or ALLOW_ANY_BRANCH=1 to commit in place)" 4
+    fi
+    PLAN+=("inplace"); return
+  fi
+
+  git -C "$C" fetch -q origin main 2>/dev/null || preflight_abort "$CNAME" "cannot fetch origin/main" \
+    "check network/credentials: git -C $C fetch origin main" 6
+  behind="$(git -C "$C" rev-list --count HEAD..origin/main)"
+  if [ "$behind" -gt 0 ]; then
+    if [ "$branch" = "main" ]; then
+      preflight_abort "$CNAME" "main is $behind commit(s) behind origin/main" \
+        "git -C $C pull --ff-only" 4
+    fi
+    preflight_abort "$CNAME" "branch '$branch' is $behind commit(s) behind origin/main" \
+      "git -C $C switch main && git -C $C pull --ff-only" 4
+  fi
+
+  if [ "${ALLOW_ANY_BRANCH:-0}" = "1" ]; then
+    echo "WARN   $CNAME applying in place on '$branch' (ALLOW_ANY_BRANCH=1)" >&2
+    PLAN+=("inplace"); return
+  fi
+  if [ "$branch" = "$SYNC_BRANCH" ]; then
+    PLAN+=("inplace"); return    # re-run on the branch a previous sync created
+  fi
+  if [ "$branch" != "main" ]; then
+    preflight_abort "$CNAME" "on branch '$branch' (not main); sync would mix into that work" \
+      "git -C $C switch main && git -C $C pull --ff-only" 4
+  fi
+  ahead="$(git -C "$C" rev-list --count origin/main..HEAD)"
+  [ "$ahead" -gt 0 ] && preflight_abort "$CNAME" "main has $ahead local commit(s) not on origin/main" \
+    "move them to a branch, then: git -C $C reset --keep origin/main" 4
+  git -C "$C" show-ref --verify --quiet "refs/heads/$SYNC_BRANCH" && preflight_abort "$CNAME" \
+    "branch '$SYNC_BRANCH' already exists" \
+    "git -C $C switch $SYNC_BRANCH   (or delete it: git -C $C branch -D $SYNC_BRANCH)" 4
+  PLAN+=("branch")
+}
+
+if [ "$MODE" != "check" ]; then
+  for C in "${CONSUMERS[@]}"; do
+    if [ -d "$C" ]; then preflight_consumer "$C"; else PLAN+=("missing"); fi
+  done
+  i=0
+  for C in "${CONSUMERS[@]}"; do
+    if [ "${PLAN[$i]}" = "branch" ]; then
+      git -C "$C" switch -q -c "$SYNC_BRANCH" origin/main
+      echo "BRANCH $(basename "$C") → $SYNC_BRANCH (from origin/main)"
+    fi
+    i=$((i+1))
+  done
+fi
 
 # --- main loop ---
 overall_drift=0
@@ -162,20 +298,7 @@ for C in "${CONSUMERS[@]}"; do
       echo "   (proceeding because --force-delete given)"
     fi
 
-    # --- commit-mode pre-flight (CR-10) ---
-    if [ "$MODE" = "commit" ]; then
-      branch="$(git -C "$C" rev-parse --abbrev-ref HEAD)"
-      if [ "$branch" != "main" ] && [ "${ALLOW_ANY_BRANCH:-0}" != "1" ]; then
-        echo "ABORT  $CNAME on branch '$branch' (not main). Set ALLOW_ANY_BRANCH=1 to override." >&2
-        exit 4
-      fi
-      # any tracked changes outside the skill path?
-      stray="$(git -C "$C" status --porcelain | awk -v p=".claude/skills/$S" '$2!~ p {print}' | head -1)"
-      if [ -n "$stray" ]; then
-        echo "ABORT  $CNAME has unrelated changes staged/modified: $stray" >&2
-        exit 5
-      fi
-    fi
+    # (branch / cleanliness checks ran once per consumer in the pre-flight)
 
     # --- apply ---
     mkdir -p "$DST"
@@ -183,10 +306,11 @@ for C in "${CONSUMERS[@]}"; do
     echo "$HARNESS_SHA" > "$DST/HARNESS_VERSION"
 
     if [ "$MODE" = "commit" ]; then
-      if git -C "$C" diff --quiet -- ".claude/skills/$S"; then
+      # Stage first: a plain diff misses files that are new to the consumer.
+      git -C "$C" add -A -- ".claude/skills/$S"
+      if git -C "$C" diff --cached --quiet -- ".claude/skills/$S"; then
         echo "NOOP   $CNAME/$S (already current)"
       else
-        git -C "$C" add ".claude/skills/$S"
         git -C "$C" commit -q -m "chore(skills): sync $S from hypeproof-harness@${HARNESS_SHA:0:7}"
         echo "COMMIT $CNAME/$S @ ${HARNESS_SHA:0:7}"
       fi
@@ -242,34 +366,66 @@ for C in "${CONSUMERS[@]}"; do
       fi
     fi
 
-    # commit-mode pre-flight
-    if [ "$MODE" = "commit" ]; then
-      branch="$(git -C "$C" rev-parse --abbrev-ref HEAD)"
-      if [ "$branch" != "main" ] && [ "${ALLOW_ANY_BRANCH:-0}" != "1" ]; then
-        echo "ABORT  $CNAME on branch '$branch' (not main). Set ALLOW_ANY_BRANCH=1 to override." >&2
-        exit 4
-      fi
-      stray="$(git -C "$C" status --porcelain | awk -v p="scripts/$SC" '$2!~ p {print}' | head -1)"
-      if [ -n "$stray" ]; then
-        echo "ABORT  $CNAME has unrelated changes staged/modified: $stray" >&2
-        exit 5
-      fi
-    fi
-
     mkdir -p "$SCDST"
     rsync -a --delete --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
     echo "$HARNESS_SHA" > "$SCDST/HARNESS_VERSION"
 
     if [ "$MODE" = "commit" ]; then
-      if git -C "$C" diff --quiet -- "scripts/$SC"; then
+      # Stage first: a plain diff misses files that are new to the consumer.
+      git -C "$C" add -A -- "scripts/$SC"
+      if git -C "$C" diff --cached --quiet -- "scripts/$SC"; then
         echo "NOOP   $CNAME/scripts/$SC (already current)"
       else
-        git -C "$C" add "scripts/$SC"
         git -C "$C" commit -q -m "chore(scripts): sync $SC from hypeproof-harness@${HARNESS_SHA:0:7}"
         echo "COMMIT $CNAME/scripts/$SC @ ${HARNESS_SHA:0:7}"
       fi
     else
       echo "SYNC   $CNAME/scripts/$SC @ ${HARNESS_SHA:0:7}"
+    fi
+  done
+
+  # --- script file vendoring (single files; the consumer owns the directory) ---
+  # No --delete and no directory ownership: the consumer may keep its own files
+  # next to these. A stale HARNESS_VERSION from when the path was vendored as a
+  # tree is removed, because it no longer describes the directory.
+  for SF in "${SCRIPT_FILES[@]:-}"; do
+    [ -z "$SF" ] && continue
+    SFSRC="$HARNESS_ROOT/scripts/$SF"
+    SFDST="$C/scripts/$SF"
+    SFDIR="$(dirname "scripts/$SF")"
+    [ -f "$SFSRC" ] || { echo "[!] missing script file source: $SFSRC" >&2; continue; }
+
+    if [ "$MODE" = "check" ]; then
+      if [ ! -f "$SFDST" ] || ! cmp -s "$SFSRC" "$SFDST"; then
+        echo "DRIFT  $CNAME/scripts/$SF"; overall_drift=1
+      elif [ -f "$C/$SFDIR/HARNESS_VERSION" ]; then
+        echo "DRIFT  $CNAME/$SFDIR/HARNESS_VERSION stale (path is file-vendored, not a tree)"; overall_drift=1
+      else
+        echo "OK     $CNAME/scripts/$SF"
+      fi
+      continue
+    fi
+
+    mkdir -p "$(dirname "$SFDST")"
+    cp -p "$SFSRC" "$SFDST"
+    stale="$C/$SFDIR/HARNESS_VERSION"
+    if [ -f "$stale" ]; then
+      rm -f "$stale"
+      echo "   ↳ removed stale $CNAME/$SFDIR/HARNESS_VERSION (tree → file vendoring)"
+    fi
+
+    if [ "$MODE" = "commit" ]; then
+      # Stage only what sync owns here; the rest of $SFDIR belongs to the consumer.
+      git -C "$C" add -A -- "scripts/$SF"
+      git -C "$C" rm -q --cached --ignore-unmatch -- "$SFDIR/HARNESS_VERSION"
+      if git -C "$C" diff --cached --quiet -- "scripts/$SF" "$SFDIR/HARNESS_VERSION"; then
+        echo "NOOP   $CNAME/scripts/$SF (already current)"
+      else
+        git -C "$C" commit -q -m "chore(scripts): sync $SF from hypeproof-harness@${HARNESS_SHA:0:7}"
+        echo "COMMIT $CNAME/scripts/$SF @ ${HARNESS_SHA:0:7}"
+      fi
+    else
+      echo "SYNC   $CNAME/scripts/$SF @ ${HARNESS_SHA:0:7}"
     fi
   done
 
@@ -293,10 +449,11 @@ for C in "${CONSUMERS[@]}"; do
     cp -p "$DSRC" "$DDST"
 
     if [ "$MODE" = "commit" ]; then
-      if git -C "$C" diff --quiet -- "docs/$D"; then
+      # Stage first: a plain diff misses files that are new to the consumer.
+      git -C "$C" add -A -- "docs/$D"
+      if git -C "$C" diff --cached --quiet -- "docs/$D"; then
         echo "NOOP   $CNAME/docs/$D (already current)"
       else
-        git -C "$C" add "docs/$D"
         git -C "$C" commit -q -m "docs: sync $D from hypeproof-harness@${HARNESS_SHA:0:7}"
         echo "COMMIT $CNAME/docs/$D @ ${HARNESS_SHA:0:7}"
       fi
@@ -337,10 +494,11 @@ for C in "${CONSUMERS[@]}"; do
     cp -p "$FSRC" "$FDST"
 
     if [ "$MODE" = "commit" ]; then
-      if git -C "$C" diff --quiet -- "$F"; then
+      # Stage first: a plain diff misses files that are new to the consumer.
+      git -C "$C" add -A -- "$F"
+      if git -C "$C" diff --cached --quiet -- "$F"; then
         echo "NOOP   $CNAME/$F (already current)"
       else
-        git -C "$C" add "$F"
         git -C "$C" commit -q -m "docs(agents): sync $F from hypeproof-harness@${HARNESS_SHA:0:7}"
         echo "COMMIT $CNAME/$F @ ${HARNESS_SHA:0:7}"
       fi
