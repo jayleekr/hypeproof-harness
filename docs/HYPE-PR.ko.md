@@ -23,6 +23,27 @@ auto-merge는 필수 보호 조건이 모두 통과하면 GitHub가 순서대로
 
 ---
 
+## 실행 전제
+
+`scripts/hype-pr`와 그것이 불러오는 `scripts/repo-governance`는 `policy/*.yaml`을
+읽으므로 **PyYAML**이 필요하다. 선언은 harness 루트의 매니페스트에 있다.
+
+```bash
+python3 -m pip install -r requirements.txt       # 도구 실행
+python3 -m pip install -r requirements-dev.txt   # 테스트까지
+```
+
+CI가 검증하는 버전은 **Python 3.11+**이다(`.github/workflows/test.yml`).
+
+의존성은 **harness checkout의 인터프리터**에 있어야 한다. consumer 사본의
+`scripts/hype-pr/pr.py`는 `policy/repos.yaml`이 없으면 canonical harness로
+`os.execv` 위임하고, `yaml` import는 벤더 대상이 아닌 `scripts/repo-governance/`
+에서 일어나기 때문이다. consumer 저장소에 의존성을 추가해도 해결되지 않는다.
+
+PyYAML이 없으면 명령이 어느 인터프리터에 무엇을 설치해야 하는지 알려주며 중단한다.
+
+---
+
 ## Agent가 PR을 만드는 흐름
 
 Harness, Lab, Studio의 PR 생성은 `skills/hype-pr/SKILL.md` 정본을 따른다. consumer에서는
