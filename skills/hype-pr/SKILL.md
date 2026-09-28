@@ -1,6 +1,6 @@
 ---
 name: hype-pr
-description: Prepare and create PRs in hypeproof-harness, hypeprooflab, or hypeproof-studio. Use when asked to create/open a PR, send changes for review, or implement an issue through PR creation (PR 만들어줘, 이슈 구현하고 PR 생성). Inspect criteria links at development start and bind an agent assessment before creating the PR. Existing-PR reviews use hype-review instead.
+description: Prepare and create PRs in hypeproof-harness, hypeprooflab, hypeproof-studio, or sediment. Use when asked to create/open a PR, send changes for review, or implement an issue through PR creation (PR 만들어줘, 이슈 구현하고 PR 생성). Inspect criteria links at development start and bind an agent assessment before creating the PR. Existing-PR reviews use hype-review instead.
 ---
 
 # Agent PR preparation
