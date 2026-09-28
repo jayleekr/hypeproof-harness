@@ -58,7 +58,12 @@ esac
 
 SKILLS=(skill-creator hype-review weekly-loop hype-pr hype-deliver hype-verify hype-intent hype-studio hype-chalk hype-coordinate hypeproof-operator) # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md HYPE-REVIEW.ko.md HYPE-PR.ko.md WEEKLY-LOOP.ko.md FIVE-SESSION-DELIVERY.ko.md WORK-DISCOVERY.ko.md) # vendored to consumer/docs/<file>
-SCRIPTS=(notify docs-harness hype-review hype-pr security weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+SCRIPTS=(notify docs-harness hype-review hype-pr weekly-harness) # vendored to consumer/scripts/<name>/ — directory trees from harness/scripts/<name>/
+# Individual files vendored into consumer/scripts/<path>. Use this instead of
+# SCRIPTS when harness ships only a file or two into a directory the consumer
+# also keeps its own files in: SCRIPTS claims the whole tree with rsync
+# --delete, which aborts the sync for that consumer (#209).
+SCRIPT_FILES=(security/check-secrets.sh)
 ROOT_AGENT_FILES=(CLAUDE.md AGENTS.md OPENCLAW.md) # vendored to consumer repo root
 
 # --- consumer resolution ---
@@ -270,6 +275,49 @@ for C in "${CONSUMERS[@]}"; do
       fi
     else
       echo "SYNC   $CNAME/scripts/$SC @ ${HARNESS_SHA:0:7}"
+    fi
+  done
+
+  # --- script file vendoring (single files; the consumer owns the directory) ---
+  # No --delete and no directory ownership: the consumer may keep its own files
+  # next to these. A stale HARNESS_VERSION from when the path was vendored as a
+  # tree is removed, because it no longer describes the directory.
+  for SF in "${SCRIPT_FILES[@]:-}"; do
+    [ -z "$SF" ] && continue
+    SFSRC="$HARNESS_ROOT/scripts/$SF"
+    SFDST="$C/scripts/$SF"
+    SFDIR="$(dirname "scripts/$SF")"
+    [ -f "$SFSRC" ] || { echo "[!] missing script file source: $SFSRC" >&2; continue; }
+
+    if [ "$MODE" = "check" ]; then
+      if [ ! -f "$SFDST" ] || ! cmp -s "$SFSRC" "$SFDST"; then
+        echo "DRIFT  $CNAME/scripts/$SF"; overall_drift=1
+      elif [ -f "$C/$SFDIR/HARNESS_VERSION" ]; then
+        echo "DRIFT  $CNAME/$SFDIR/HARNESS_VERSION stale (path is file-vendored, not a tree)"; overall_drift=1
+      else
+        echo "OK     $CNAME/scripts/$SF"
+      fi
+      continue
+    fi
+
+    mkdir -p "$(dirname "$SFDST")"
+    cp -p "$SFSRC" "$SFDST"
+    stale="$C/$SFDIR/HARNESS_VERSION"
+    if [ -f "$stale" ]; then
+      rm -f "$stale"
+      echo "   ↳ removed stale $CNAME/$SFDIR/HARNESS_VERSION (tree → file vendoring)"
+    fi
+
+    if [ "$MODE" = "commit" ]; then
+      if git -C "$C" diff --quiet -- "$SFDIR"; then
+        echo "NOOP   $CNAME/scripts/$SF (already current)"
+      else
+        git -C "$C" add -A "$SFDIR"
+        git -C "$C" commit -q -m "chore(scripts): sync $SF from hypeproof-harness@${HARNESS_SHA:0:7}"
+        echo "COMMIT $CNAME/scripts/$SF @ ${HARNESS_SHA:0:7}"
+      fi
+    else
+      echo "SYNC   $CNAME/scripts/$SF @ ${HARNESS_SHA:0:7}"
     fi
   done
 
