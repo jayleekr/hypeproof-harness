@@ -54,4 +54,4 @@ Jay가 사업 전체·위험·실행 공백·주요 결정을 맡고, 멤버는 
 
 ## 스킬 발견 경로의 범위
 
-.claude/skills는 register-skills.sh가 전체 skills/를 관리한다. .agents/skills는 현재 hype-pr과 AI Crew 다섯 스킬만 명시적으로 등록하는 선택 목록이다. 전체 스킬 미러가 아니며, Crew 링크는 tests/test_ai_crew.py에서 검증한다. 다른 스킬의 자동 등록이나 consumer 배포를 보장하지 않는다.
+.claude/skills는 register-skills.sh가 전체 skills/를 관리한다. .agents/skills는 명시적으로 등록하는 선택 목록이다 — 2026-09-29 기준 hype-pr, AI Crew 다섯 스킬, 전달 체계 스킬(hype-deliver·hype-verify·hype-intent·hype-studio·hype-chalk·hype-coordinate), hypeproof-operator로 13개다. 전체 스킬 미러가 아니며, Crew 링크는 tests/test_ai_crew.py에서 검증한다. 다른 스킬의 자동 등록이나 consumer 배포를 보장하지 않는다.
