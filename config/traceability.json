@@ -439,7 +439,7 @@
       "stage": "intent",
       "owner": "jayleekr",
       "depends_on": [
-        "HAR-INT-WORK"
+        "LAB-MISSION"
       ],
       "sources": [
         {
