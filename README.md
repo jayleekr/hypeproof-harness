@@ -340,6 +340,10 @@ Vendor를 고른 이유는 [migration report][migration]에.
 | Jinyong Shin | [`@JinyongShin`](https://github.com/JinyongShin) | `write` | Onboarding + 기여 |
 | TJ Kang | [`@TJ-kr`](https://github.com/TJ-kr) | `write` | Onboarding + 기여 |
 | Jkim | [`@ico1036`](https://github.com/ico1036) | `write` | Onboarding + 기여 |
+| Nick | [`@rabqatab`](https://github.com/rabqatab) | `write` | Onboarding + 기여 |
+| Yoda | [`@J3llyBe4n`](https://github.com/J3llyBe4n) | `write` | Onboarding + 기여 |
+
+권한 정본은 [`policy/members.yaml`](policy/members.yaml)이다. 이 표와 다르면 정책 파일이 맞다.
 
 멤버는 온보딩 때 한 번 clone한다. 일상은 자기 consumer repo에서. shared
 콘텐츠 개선은 PR로.
