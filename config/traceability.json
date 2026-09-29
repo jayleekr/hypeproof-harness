@@ -433,6 +433,79 @@
           "path": ".github/workflows/test.yml"
         }
       ]
+    },
+    {
+      "id": "HAR-INT-ALIGN",
+      "stage": "intent",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-WORK"
+      ],
+      "sources": [
+        {
+          "path": "skills/hype-align/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-REQ-ALIGN",
+      "stage": "requirement",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-INT-ALIGN",
+        "HAR-REQ-WORK"
+      ],
+      "sources": [
+        {
+          "path": "skills/hype-align/references/ledger-contract.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-DES-ALIGN",
+      "stage": "design",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-ALIGN"
+      ],
+      "sources": [
+        {
+          "path": "skills/hype-align/SKILL.md"
+        },
+        {
+          "path": "skills/hype-align/references/ledger-contract.md"
+        }
+      ]
+    },
+    {
+      "id": "HAR-IMP-ALIGN",
+      "stage": "implementation",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-DES-ALIGN",
+        "HAR-IMP-WORK"
+      ],
+      "sources": [
+        {
+          "path": "skills/hype-align/scripts/align.py"
+        },
+        {
+          "path": "skills/hype-align/agents/openai.yaml"
+        }
+      ]
+    },
+    {
+      "id": "HAR-TEST-ALIGN",
+      "stage": "test",
+      "owner": "jayleekr",
+      "depends_on": [
+        "HAR-REQ-ALIGN"
+      ],
+      "sources": [
+        {
+          "path": "tests/work_discovery/test_align.py"
+        }
+      ]
     }
   ]
 }
