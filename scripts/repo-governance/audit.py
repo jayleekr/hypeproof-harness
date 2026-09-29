@@ -12,6 +12,7 @@ the same policy loader but live behind manual approval.
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
 import subprocess
@@ -322,6 +323,7 @@ def live_audit_repo(repo: dict[str, Any], profile: dict[str, Any], members: dict
     findings.extend(_audit_security(full, meta, profile))
     findings.extend(_audit_labels(full, profile))
     findings.extend(_audit_collaborators(full, repo, members, profile, gh_json))
+    findings.extend(_audit_codeowners(full, repo, members, profile, gh_json))
     findings.extend(_audit_actions(full, repo, profile))
     findings.extend(_audit_branch(full, repo, profile))
     return apply_waivers(full, repo, findings)
@@ -421,6 +423,128 @@ def desired_collaborators(members: dict[str, Any], profile: dict[str, Any], repo
     for login in writers - admins:
         desired[login] = writer_permission
     return desired
+
+
+def active_members(members: dict[str, Any]) -> list[str]:
+    """Every active member in members.yaml order: admins first, then writers."""
+    ordered: list[str] = []
+    for group in ("admins", "writers"):
+        for login in members.get("members", {}).get(group, []) or []:
+            if login not in ordered:
+                ordered.append(login)
+    return ordered
+
+
+# GitHub reads the first CODEOWNERS it finds in this order.
+CODEOWNERS_PATHS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
+# Harness-local files that must track members.yaml; checked by --offline (CI).
+LOCAL_CODEOWNERS_FILES = (".github/CODEOWNERS", "policy/templates/common/CODEOWNERS")
+
+
+def parse_codeowners(text: str) -> list[tuple[int, str, list[str]]]:
+    """(line number, pattern, owners) for every rule line; owners keep their spelling."""
+    rows: list[tuple[int, str, list[str]]] = []
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.split(" #", 1)[0].split("\t#", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        owners = [token[1:] for token in parts[1:] if token.startswith("@")]
+        rows.append((lineno, parts[0], owners))
+    return rows
+
+
+def codeowners_drift(text: str, members: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Drift between the all-member rows of a CODEOWNERS file and members.yaml.
+
+    An all-member row is the `*` catch-all or any row that names a non-admin
+    member. Maintainer-only rows (only admins, e.g. `/policy/ @jayleekr
+    @JeHyeong2`) are deliberate and left alone. Returns `{"<line> <pattern>":
+    {"missing": [...], "unknown": [...]}}` for rows that do not list exactly the
+    active members; team owners (`@org/team`) are ignored.
+    """
+    expected = active_members(members)
+    expected_lower = {login.lower() for login in expected}
+    admins_lower = {login.lower() for login in members.get("members", {}).get("admins", []) or []}
+    writers_lower = expected_lower - admins_lower
+
+    drift: dict[str, dict[str, Any]] = {}
+    for lineno, pattern, owners in parse_codeowners(text):
+        users = [owner for owner in owners if "/" not in owner]
+        users_lower = {owner.lower() for owner in users}
+        if pattern != "*" and not users_lower & writers_lower:
+            continue
+        missing = [login for login in expected if login.lower() not in users_lower]
+        unknown = [owner for owner in users if owner.lower() not in expected_lower]
+        if missing or unknown:
+            drift[f"{lineno} {pattern}"] = {"missing": missing, "unknown": unknown}
+    return drift
+
+
+def _codeowners_finding(repo: str, source: str, drift: dict[str, dict[str, Any]], members: dict[str, Any]) -> Finding:
+    expected = active_members(members)
+    return Finding(
+        repo=repo,
+        module="codeowners",
+        severity="high",
+        field="all_member_rows",
+        expected=expected,
+        actual=drift,
+        apply_supported=False,
+        message=(f"{source}: all-member rows must list every active member of policy/members.yaml — "
+                 "owners: " + " ".join(f"@{login}" for login in expected)),
+    )
+
+
+def audit_local_codeowners(members: dict[str, Any], root: Path = ROOT) -> list[Finding]:
+    """Offline check: the harness's own CODEOWNERS and the common template."""
+    findings: list[Finding] = []
+    for rel in LOCAL_CODEOWNERS_FILES:
+        path = root / rel
+        if not path.exists():
+            findings.append(Finding(f"local:{rel}", "codeowners", "high", "file", "present", None, False))
+            continue
+        drift = codeowners_drift(path.read_text(encoding="utf-8"), members)
+        if drift:
+            findings.append(_codeowners_finding(f"local:{rel}", rel, drift, members))
+    return findings
+
+
+def _is_not_found(data: Any) -> bool:
+    if isinstance(data, dict):
+        return str(data.get("status")) == "404" or data.get("message") == "Not Found"
+    return "Not Found" in str(data) or "HTTP 404" in str(data)
+
+
+def _audit_codeowners(
+    full: str,
+    repo: dict[str, Any],
+    members: dict[str, Any],
+    profile: dict[str, Any],
+    gh=gh_json,
+) -> list[Finding]:
+    """Live check of the default-branch CODEOWNERS against members.yaml.
+
+    Only repos whose profile manages all members as collaborators route reviews
+    to every member; admin-only repos (release artifacts) are skipped. A repo
+    without any CODEOWNERS file has no rows to drift and yields no finding.
+    """
+    if profile.get("collaborators", {}).get("manage", "members") != "members":
+        return []
+    branch = repo.get("default_branch", "main")
+    for rel in CODEOWNERS_PATHS:
+        code, data = gh(f"repos/{full}/contents/{rel}?ref={branch}")
+        if code != 0:
+            if _is_not_found(data):
+                continue
+            return [Finding(full, "codeowners", "medium", "all_member_rows", "readable", data, False)]
+        try:
+            text = base64.b64decode((data or {}).get("content", "")).decode("utf-8")
+        except (AttributeError, ValueError) as exc:
+            return [Finding(full, "codeowners", "medium", "all_member_rows", "decodable", str(exc), False)]
+        drift = codeowners_drift(text, members)
+        return [_codeowners_finding(full, rel, drift, members)] if drift else []
+    return []
 
 
 def _permission_from_collaborator(item: dict[str, Any]) -> str:
@@ -654,6 +778,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(render_text(findings))
         return 4
+
+    # Harness-local CODEOWNERS files must track members.yaml in every mode, so the
+    # offline CI step fails in the same PR that adds or removes a member.
+    findings.extend(audit_local_codeowners(policy["members"]))
 
     if not args.offline:
         repos = policy["repos"].get("repositories", [])

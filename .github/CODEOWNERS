@@ -1,7 +1,9 @@
 # Default — all active HypeProof members are code owners, auto-requested on every PR.
 # Honors MEMBER-GUIDE §4.3 "harness 변경은 항상 피어리뷰" and AGENT-GUIDE "리뷰와 배포 권한"
 # — any member's review satisfies the gate.
-*                       @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr
+# The member list must equal policy/members.yaml (admins, then writers);
+# `scripts/repo-governance/audit.py --offline` fails CI on drift.
+*                       @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr @rabqatab @J3llyBe4n
 
 # Control-plane paths (see policy/control-plane.yaml) — MAINTAINERS ONLY.
 # Last match wins in CODEOWNERS, so these override the `*` rule above: a

@@ -1,3 +1,5 @@
 # HypeProof default ownership.
 # Repo-specific files may add narrower ownership above this catch-all.
-* @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr
+# All-member rows must list every active member of policy/members.yaml
+# (admins, then writers); scripts/repo-governance/audit.py reports drift.
+* @jayleekr @JeHyeong2 @ico1036 @xoqhdgh1002 @JinyongShin @TJ-kr @rabqatab @J3llyBe4n
