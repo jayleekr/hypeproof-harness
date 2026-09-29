@@ -20,7 +20,7 @@
     {
       "id": "HAR-REQ-CHANGE",
       "stage": "requirement",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-INT-CHANGE"
       ],
@@ -34,7 +34,7 @@
     {
       "id": "HAR-DES-CHANGE",
       "stage": "design",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-REQ-CHANGE"
       ],
@@ -59,7 +59,7 @@
     {
       "id": "HAR-IMP-CHANGE",
       "stage": "implementation",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-DES-CHANGE"
       ],
@@ -87,7 +87,7 @@
     {
       "id": "HAR-TEST-CHANGE",
       "stage": "test",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-REQ-CHANGE"
       ],
@@ -123,7 +123,7 @@
     {
       "id": "HAR-REQ-CREW",
       "stage": "requirement",
-      "owner": "jayleekr",
+      "owner": "J3llyBe4n",
       "depends_on": [
         "HAR-INT-CREW"
       ],
@@ -137,7 +137,7 @@
     {
       "id": "HAR-DES-CREW",
       "stage": "design",
-      "owner": "jayleekr",
+      "owner": "J3llyBe4n",
       "depends_on": [
         "HAR-REQ-CREW"
       ],
@@ -151,7 +151,7 @@
     {
       "id": "HAR-IMP-CREW",
       "stage": "implementation",
-      "owner": "jayleekr",
+      "owner": "J3llyBe4n",
       "depends_on": [
         "HAR-DES-CREW"
       ],
@@ -179,7 +179,7 @@
     {
       "id": "HAR-TEST-CREW",
       "stage": "test",
-      "owner": "jayleekr",
+      "owner": "J3llyBe4n",
       "depends_on": [
         "HAR-REQ-CREW"
       ],
@@ -302,7 +302,7 @@
     {
       "id": "HAR-REQ-MERGE",
       "stage": "requirement",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-INT-MERGE"
       ],
@@ -316,7 +316,7 @@
     {
       "id": "HAR-DES-MERGE",
       "stage": "design",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-REQ-MERGE"
       ],
@@ -334,7 +334,7 @@
     {
       "id": "HAR-IMP-MERGE",
       "stage": "implementation",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-DES-MERGE"
       ],
@@ -350,7 +350,7 @@
     {
       "id": "HAR-TEST-MERGE",
       "stage": "test",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-REQ-MERGE"
       ],
@@ -376,7 +376,7 @@
     {
       "id": "HAR-REQ-WORK",
       "stage": "requirement",
-      "owner": "jayleekr",
+      "owner": "ico1036",
       "depends_on": [
         "HAR-INT-WORK"
       ],
@@ -389,7 +389,7 @@
     {
       "id": "HAR-DES-WORK",
       "stage": "design",
-      "owner": "jayleekr",
+      "owner": "ico1036",
       "depends_on": [
         "HAR-REQ-WORK"
       ],
@@ -402,7 +402,7 @@
     {
       "id": "HAR-IMP-WORK",
       "stage": "implementation",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-DES-WORK"
       ],
@@ -421,7 +421,7 @@
     {
       "id": "HAR-TEST-WORK",
       "stage": "test",
-      "owner": "jayleekr",
+      "owner": "JeHyeong2",
       "depends_on": [
         "HAR-REQ-WORK"
       ],
