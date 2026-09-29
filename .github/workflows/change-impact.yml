@@ -46,6 +46,46 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --quiet -r requirements.txt
+      # Local clones serve blob reads at pinned SHAs only (impact.py --content-root).
+      # `main` still resolves through the API, no source code is executed, and a
+      # missing clone or object falls back to the contents API. Reading every
+      # source through the API took ~12 minutes per step and ran `status` into
+      # the job timeout. The private Lab clone uses the caller's read-only token;
+      # it is expected to fail (and is skipped) when this runs outside that caller.
+      - name: Clone Harness sources for local blob reads
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: jayleekr/hypeproof-harness
+          path: .sources/hypeproof-harness
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Clone Studio sources for local blob reads
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: jayleekr/hypeproof-studio
+          path: .sources/hypeproof-studio
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Clone Lab sources for local blob reads
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: jayleekr/hypeprooflab
+          path: .sources/hypeprooflab
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Register local source clones
+        run: |
+          args=""
+          for dir in .sources/*/; do
+            name="$(basename "$dir")"
+            if git -C "$dir" rev-parse --verify -q HEAD >/dev/null; then
+              args="$args --content-root jayleekr/$name=$PWD/.sources/$name"
+            fi
+          done
+          echo "CONTENT_ROOT_ARGS=$args" >> "$GITHUB_ENV"
       - name: Verify deployed credentials and API behavior
         if: inputs.operational_smoke
         env:
@@ -53,7 +93,10 @@ jobs:
           CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
           CHANGE_IMPACT_SOURCE_TOKEN: ${{ github.token }}
         run: python scripts/change-impact/ops_smoke.py
+      # Step budgets keep the adoption-status summary inside the 25-minute job:
+      # an overrun in scan or the advisory previews fails that step, not the job.
       - name: Review adopted changes using trusted main code
+        timeout-minutes: 11
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -67,9 +110,11 @@ jobs:
           if [ "$APPLY" = true ]; then
             scan_args+=(--apply)
           fi
-          python scripts/change-impact/impact.py scan --reason "${scan_args[@]}" --output impact-report.json
+          # shellcheck disable=SC2086 # CONTENT_ROOT_ARGS is a word list of flag=path pairs
+          python scripts/change-impact/impact.py scan --reason "${scan_args[@]}" ${CONTENT_ROOT_ARGS:-} --output impact-report.json
       - name: Advisory PR reports
         if: always()
+        timeout-minutes: 6
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
           CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
@@ -79,16 +124,19 @@ jobs:
           set -euo pipefail
           args=()
           if [ "$APPLY" = true ]; then args+=(--publish-reports); fi
-          python scripts/change-impact/impact.py prs "${args[@]}" --output impact-prs.json
+          # shellcheck disable=SC2086
+          python scripts/change-impact/impact.py prs "${args[@]}" ${CONTENT_ROOT_ARGS:-} --output impact-prs.json
       - name: Report adoption status separately from successful processing
         if: always()
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ secrets.HYPEPROOF_GOVERNANCE_TOKEN }}
           CHANGE_IMPACT_SOURCE_REPO: ${{ github.repository }}
           CHANGE_IMPACT_SOURCE_TOKEN: ${{ github.token }}
         run: |
           set +e
-          python scripts/change-impact/impact.py status --output impact-status.json
+          # shellcheck disable=SC2086
+          python scripts/change-impact/impact.py status ${CONTENT_ROOT_ARGS:-} --output impact-status.json
           result=$?
           if [ "$result" -gt 1 ]; then exit "$result"; fi
           python - <<'PY'

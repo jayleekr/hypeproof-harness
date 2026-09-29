@@ -33,7 +33,7 @@ UNASSIGNED로 표시하고 이슈를 강제 배정하지 않는다. owner 지정
 
 | ID | 요구사항 | 실행 테스트 |
 |---|---|---|
-| CI-01 | Intent 등 임의 단계에서 시작하고 하위 영향·상위 정합성을 연결한다 | intent/diamond/removed edge tests |
+| CI-01 | Intent 등 임의 단계에서 시작하고 직접 하위 영향·상위 정합성을 연결한다. 한 검토 라운드는 변경 노드와 직접 자식만 담는다 | intent/diamond/removed edge/fan-out tests |
 | CI-02 | 정본을 immutable SHA에서 읽고 dirty checkout을 읽지 않는다 | real git snapshot test |
 | CI-03 | 모델의 영향 없음은 제안이며, 실패·미설정·예산 초과는 pending이다 | AI authority/budget/context tests |
 | CI-04 | 반복 실행과 중간 실패에서 중복 이슈를 만들지 않는다 | sync replay test |
@@ -44,6 +44,11 @@ UNASSIGNED로 표시하고 이슈를 강제 배정하지 않는다. owner 지정
 | CI-09 | 기준 채택과 전체 반영 완료를 구분한다 | status reports + version-bound resolution |
 | CI-11 | 명시된 PDF·이미지 바이너리는 원시 바이트 해시로 추적하고 절 선택은 거부한다. 텍스트의 잘못된 UTF-8은 계속 실패한다 | binary Git/GitHub parity and revision tests |
 | CI-10 | Work에서도 동일한 PR 준비 검증과 live SHA 확인을 거치고 연결 오류·무응답에 실패한다 | Work transport / stale source / host contract tests |
+| CI-12 | AI 추론 공백(예산 소진·실패·미설정·context 초과)이 있어도 이슈 저장 후 checkpoint가 전진하고 공백 개수를 기록한다 | checkpoint gap tests |
+| CI-13 | repo마다 adoption Epic은 하나이며 제자리에서 갱신한다. 이전 wave별 Epic은 댓글과 함께 닫는다 | single Epic test |
+| CI-14 | 사람이 닫은 이슈를 다시 열거나 재배정하지 않는다. 새 revision이면 댓글 한 번으로 알린다 | no-reopen tests |
+| CI-15 | `status`는 해결 가능성이 있는 이슈의 댓글만 병렬로 읽고, checkpoint가 main과 같으면 두 번째 snapshot을 생략한다 | status fetch/snapshot tests |
+| CI-16 | PR이 merge/close되면 PR 미리보기 이슈를 댓글과 함께 닫는다. 열린 PR의 미리보기는 유지한다 | preview lifecycle tests |
 
 `python -m pytest tests/change_impact -q`로 실행한다. 완료 증거 URL은 책임자의
 attestation이며 엔진이 URL의 사용자·학습효과를 판정하지 않는다. 이슈 close 이벤트는
@@ -61,16 +66,27 @@ attestation이며 엔진이 URL의 사용자·학습효과를 판정하지 않�
    되돌린 경로도 보수적으로 검토에 포함하며, 노드 내용의 revision은 양 끝 commit으로 계산한다.
    최대 63회 비교로 제한한다. 단일 commit의 한도 초과·분기된 구간·누락 응답은 실패하며
    이 경우 기존 `--root` 로컬 git 경로가 필요하다. 잘린 목록을 완료로 취급하지 않는다.
-4. 변경 노드에는 상위 정합성 질문, 하위 노드에는 단계별 영향 질문을 배정한다.
+4. 변경 노드에는 상위 정합성 질문, **직접** 하위 노드에는 단계별 영향 질문을 배정한다.
+   손자 이하 노드는 같은 라운드에 넣지 않는다. 직접 자식이 실제로 바뀌면(검토 결과
+   change-required로 원문을 고치면) 그 자식이 다음 라운드의 변경 노드가 되어 아래로 이어진다.
+   전체 하위 closure를 한 번에 넣던 방식은 표 한 줄 수정으로 239개 검토를 다시 열었다(#255).
 5. AI는 변경 전후와 연결된 문서만 읽고 bounded JSON 제안을 반환한다. 전체 원문이
    예산에 맞지 않으면 조용히 자르지 않고 context-too-large로 남긴다.
-6. 채택된 변경은 repo별 adoption Epic과 노드별 검토 이슈로 upsert한다. 작업용 이슈는
-   제품 담당자가 검토 이슈에 연결한다. 엔진은 불확실한 설계를 곧바로 개발 지시로 바꾸지 않는다.
+6. 채택된 변경은 repo별 adoption Epic 하나(`<!-- impact-adoption:v1 -->`, 제목
+   `change-impact: adoption`)와 노드별 검토 이슈로 upsert한다. Epic은 제자리에서 갱신하며
+   최신 라운드의 검토 이슈를 나열한다. 이전 버전이 wave마다 만든 Epic은 새 Epic 링크를
+   댓글로 남기고 닫는다(not planned). 사람이 닫은 이슈는 다시 열거나 재배정하지 않는다.
+   관리 영역 본문은 최신으로 갱신하고, 새 검토 revision일 때만 댓글 한 번으로 알린다.
+   작업용 이슈는 제품 담당자가 검토 이슈에 연결한다. 엔진은 불확실한 설계를 곧바로
+   개발 지시로 바꾸지 않는다.
 7. 모든 이슈 발행 성공 후에만 checkpoint를 갱신한다. 중간 실패는 같은 source SHA로
-   다시 실행할 수 있다. workflow concurrency는 하나의 writer만 허용한다.
-8. `status`가 미해결 검토와 아직 발행하지 않은 변경을 확인한다. 자동 close/merge는 없다.
+   다시 실행할 수 있다. workflow concurrency는 하나의 writer만 허용한다. AI 추론 공백은
+   checkpoint를 붙잡지 않는다. 각 이슈 본문에 추론 상태가 남고 checkpoint에는 상태별 개수만 기록한다.
+8. `status`가 미해결 검토와 아직 발행하지 않은 변경을 확인한다. 댓글이 없거나 본문
+   revision이 main과 다른 이슈는 댓글을 읽지 않고 pending이며, 나머지는 병렬로 읽는다.
+   검토 이슈의 자동 close/merge는 없다(PR 미리보기와 이전 wave Epic의 정리만 한다).
 
-공유 checkpoint에는 repo SHA만 둔다. 보고서와 public 이슈에는 ID·단계·hash·고정
+공유 checkpoint에는 repo SHA와 추론 공백 개수만 둔다. 보고서와 public 이슈에는 ID·단계·hash·고정
 질문만 둔다. 자세한 원문과 AI explanation은 출력하지 않는다. 다른 접근 경계를 가진
 저장소 사이의 내용을 한 public Epic에 복제하지 않고 repo별 Epic으로 연결한다.
 
@@ -140,10 +156,18 @@ Lab caller의 수동 입력 `operational_smoke=true`는 실제 운영 token으�
 실행되지 않는다. 시험 이슈는 별도 marker를 쓰고 finally에서 닫으며 실제 review/checkpoint로
 세지 않는다. 2026-09-08 실행 34250669924에서 세 저장소 모두 통과했다.
 
-스케줄은 채택 변경 처리를 PR 미리보기보다 먼저 실행한다. 모델 장애·키 미설정이면
-미검토 이슈는 남기고 checkpoint를 전진시키지 않아 다음 실행에서 재시도한다. 예산 소진도
-checkpoint를 보존하되 이미 제안한 revision을 재사용한다. 소스/정책/권한 오류는 실패다.
-GitHub API와 git 호출은 60초 제한을 둔다.
+스케줄은 채택 변경 처리를 PR 미리보기보다 먼저 실행한다. 모델 장애·키 미설정·예산 소진·
+context 초과여도 이슈를 저장한 뒤 checkpoint를 전진시키고 `reasoning_gaps`에 상태별 개수를
+기록한다. 해당 이슈의 AI 권고는 pending으로 남는다(AI 권고는 참고용이며 사람 검토가 기준이다).
+모델 장애·키 미설정은 진행을 저장한 뒤에도 exit 2로 실행을 실패로 표시한다. 이전에는
+checkpoint를 붙잡아 매시간 커지는 라운드를 다시 계획하고 같은 이슈를 다시 썼다(#255).
+소스/정책/권한 오류는 실패다. GitHub API와 git 호출은 60초 제한을 둔다.
+
+workflow는 세 저장소를 `.sources/`에 clone하고 `--content-root`로 넘긴다. 이 clone은
+고정 SHA의 blob 읽기에만 쓰며 `main` 해석은 계속 API로 하고, 코드를 실행하지 않는다.
+clone 실패나 없는 object는 contents API로 대체한다. API만으로는 snapshot 하나에 약 4.5분이
+걸려 `status`가 25분 job 제한에 걸렸다. scan·PR 미리보기·status에는 각각 step 제한
+(11·6·5분)을 두어 앞 단계가 늦어도 status 요약이 실행된다.
 
 매 실행의 step summary와 `impact-status.json`은 pending review URL, 빠진 검토 기록,
 구조적 누락을 표시한다. 미해결 사람 검토(exit 1)는 정상적인 backlog이며 시스템 오류
@@ -152,10 +176,11 @@ GitHub API와 git 호출은 60초 제한을 둔다.
 이전 수용 결정을 철회한다. 운영상 이슈 close만으로 완료되지 않는다.
 
 현재 한계: PR 미리보기는 graph 기반이며 main에서 semantic review한다. 의미 검토는
-예산 내 첫 항목부터 실행하고 나머지는 명시적 pending이다. 예산이 소진되면 checkpoint를
-유지하고 다음 실행에서 같은 revision의 제안을 재사용하여 나머지 항목을 이어서 검토한다. 기준 변경 시 이미 열린
-노드 이슈를 최신 version으로 갱신하며 GitHub 본문 이력과 사람의 댓글은 보존한다.
-독립 변경 wave의 Epic은 자동으로 닫지 않는다. URL 진위·배포 성공·실사용 효과는 기존
+예산 내 첫 항목부터 실행하고 나머지는 명시적 pending이다. 예산이 소진된 항목은 다음
+라운드로 이월하지 않으며 해당 이슈에 `budget-exhausted`로 남는다. 같은 revision이 다시
+계획되면 이미 받은 제안은 재사용한다. 기준 변경 시 노드 이슈를 최신 version으로 갱신하며
+GitHub 본문 이력과 사람의 댓글은 보존한다. 닫힌 이슈는 닫힌 채로 갱신한다.
+URL 진위·배포 성공·실사용 효과는 기존
 검증과 책임자가 확인한다. 브랜치 보호의 필수 check 추가는 별도 정책 결정이다.
 
 ## 비공개 소스의 실행 경계
@@ -186,3 +211,6 @@ checkpoint는 고정 SHA를 유지하여 새 변경을 다음 스캔에서 검�
 PR 댓글 POST에서 403을 받았으므로, 이미 검증한 Issues write 경로를 명시적으로 선택했다.
 오류를 숨기는 자동 fallback은 없다. `comment` 모드는 해당 권한이 별도로 준비된 경우에만
 정책으로 선택한다. PR 미리보기 이슈는 채택 검토나 승인 기록으로 세지 않는다.
+`prs --publish-reports`는 열린 PR 전체 목록(`max_prs_per_repo`로 자르기 전)에 없는 PR의
+미리보기 이슈를 "merge 또는 close됨" 댓글과 함께 닫는다. 이미 닫힌 미리보기는 건드리지 않고,
+게시하지 않는 dry run은 아무것도 닫지 않는다.
