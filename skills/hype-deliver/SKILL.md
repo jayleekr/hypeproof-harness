@@ -40,9 +40,13 @@ protected-branch rules.
    next vertical slice.
    For a work item in a product's `config/requirement-work.json`, record the completion before
    the next slice with the hype-align skill, from a worktree cut from the new `origin/main`:
-   `python3 .claude/skills/hype-align/scripts/align.py record <item> --studio <checkout>
-   --commit <merge SHA on main> --tests <IDs> --evidence <report file> --reviewed-by <verifier>`
-   (details in that skill's SKILL.md). It edits only the ledger and never commits: ship the
+   `HYPEPROOF_HARNESS=<Harness checkout at current main> python3 <that worktree>/.claude/skills/hype-align/scripts/align.py
+   record <item> --studio <that worktree> --commit <merge SHA on main> --tests <IDs>
+   --evidence docs/evidence/<item>.md --reviewed-by <verifier>` (details in that skill's
+   SKILL.md). Until the product's vendored copy is synced it exits 2; run the Harness checkout's
+   `skills/hype-align/scripts/align.py` instead. Stage the report first. A report under a
+   criteria path such as `docs/testing/` also needs a validation node in `config/traceability.json`
+   in the same PR, or hype-pr blocks it. `record` edits only the ledger and never commits: ship the
    ledger and the report through `hype-pr`. Then `align.py check --doc <epic> --lab <Lab
    checkout>` must exit 0; re-record any earlier item it reports as no longer holding. For
    Studio the feature map is hypeprooflab `web/src/content/private/studio-prd/`: `features.ts`

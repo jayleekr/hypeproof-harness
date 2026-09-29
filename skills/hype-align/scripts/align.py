@@ -114,6 +114,17 @@ def weeks(text, pattern):
     return [int(a or b) for a, b in pattern.findall(text)]
 
 
+def week_number(name, value):
+    """One `curriculum_week` value: a non-negative integer, or a week tag such as "W2"."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    found = re.fullmatch(r'\s*' + WEEK + r'\s*', value) if isinstance(value, str) else None
+    if found:
+        return int(found.group(1) or found.group(2))
+    raise ValueError(f'work item {name}: curriculum_week {value!r} is not a week; use an integer, '
+                     '"W<n>", "Week <n>" or "<n>주차", or a list of them')
+
+
 def table_rows(text):
     rows = {}
     for rid, rest in ROW.findall(text):
@@ -175,18 +186,23 @@ class Ledger:
         """(defined test IDs, {test: IDs named on a line beside it}) over the registered test documents.
 
         Only a registered test document defines a test: any `-T<n>` token, or the first cell of a
-        table row (some documents key tests by the requirement ID). `record` refuses a registered
-        test document as evidence, so a report never defines the test IDs it attests. A test document
+        table row (some documents key tests by the requirement ID, others by their own IDs such as
+        `AT-01`). In a document that also has `-T<n>` tokens, a first cell that is a registered
+        requirement ID is a traceability row (`| CR-01 | CR-T01 |`), not a test. A test document
         that is itself a requirement document (tests hosted next to the rows) contributes only
-        `-T<n>` tokens, so a requirement ID never defines itself as a test.
+        `-T<n>` tokens, so a requirement ID never defines itself as a test. `record` refuses a
+        registered test document as evidence, so a report never defines the test IDs it attests.
         """
+        requirement_ids = {rid for doc in self.manifest['documents'] for rid in doc['ids']}
         defined, beside = set(), {}
         for rel in self.test_documents:
+            text = self.text(rel) or ''
             hosted = rel in self.docs
-            for line in (self.text(rel) or '').splitlines():
+            keyed_by_requirement = not tokens(text, tests_only=True)
+            for line in text.splitlines():
                 tests = tokens(line, tests_only=True)
                 row = ROW.match(line)
-                if row and not hosted:
+                if row and not hosted and (keyed_by_requirement or row.group(1) not in requirement_ids):
                     tests.add(row.group(1))
                 defined |= tests
                 for test in tests:
@@ -214,11 +230,15 @@ class Ledger:
         return any(test == rid or rid in beside or test in self.facts(ref['path'], rid)[2]
                    for ref in item.get('requirements', []) if ref['path'] in self.docs for rid in ref['ids'])
 
+    def changed_pins(self, item):
+        """The files a completion pins that are missing or no longer match their recorded hash."""
+        completion = item.get('completion') or {}
+        return sorted(rel for rel, sha in completion.get('inputs', {}).items()
+                      if not self.is_file(rel) or self.d.digest(self.root / rel) != sha)
+
     def reopened(self, item):
         """Why discover.fulfilled no longer accepts a completion: the pinned files that changed, if any."""
-        completion = item['completion']
-        changed = sorted(rel for rel, sha in completion.get('inputs', {}).items()
-                         if not self.is_file(rel) or self.d.digest(self.root / rel) != sha)
+        changed = self.changed_pins(item)
         if changed:
             return 'changed since recorded: ' + ', '.join(changed)
         return 'packet scope, pinned input set or attestation changed'
@@ -292,7 +312,7 @@ class Ledger:
                 cited |= set(tests)
         explicit = item.get('curriculum_week')
         if explicit is not None:
-            tagged = [int(w) for w in (explicit if isinstance(explicit, list) else [explicit])]
+            tagged = [week_number(item['id'], w) for w in (explicit if isinstance(explicit, list) else [explicit])]
         return (min(priorities) if priorities else None, min(tagged) if tagged else None, sorted(cited))
 
     def dependents(self):
@@ -378,11 +398,17 @@ def cmd_next(args):
         if row['state'] != 'ready':
             continue
         priority, week, _ = ledger.item_facts(row)
+        # A ready item that carries a completion was complete once: a pinned file or its scope changed
+        # since. The work is re-verifying that verdict, not redoing the packet's next_action.
+        reopened = (row.get('completion') or {}).get('verdict') == 'PASS'
+        reason = (f"completion no longer holds ({ledger.reopened(row)}); re-verify {row['id']} against the "
+                  f"current content and re-record it with record --replace" if reopened else row['reason'])
         ranked.append({'id': row['id'], 'issue': row['issue'], 'title': row['title'], 'kind': row['kind'],
                        'priority': priority, 'week': week, 'unblocks': len(downstream[row['id']] - complete),
                        'ledger_index': ledger.index[row['id']], 'next_action': row['next_action'],
                        'requirements': row['requirements'], 'depends_on': row.get('depends_on', []),
-                       'reason': row['reason']})
+                       'reopened': reopened, 'changed': ledger.changed_pins(row) if reopened else [],
+                       'reason': reason})
     # Every dependency of a ready item is complete, so dependency order no longer constrains the
     # choice; it only breaks ties, toward the item that opens up the most unfinished work.
     ranked.sort(key=lambda r: (UNRANKED if r['priority'] is None else r['priority'],
@@ -394,7 +420,8 @@ def cmd_next(args):
     if gaps:
         verdict = f'reconcile the requirement ledger first ({len(gaps)} gaps); the ranking below is advisory'
     elif chosen:
-        verdict = f"next is {chosen['id']} (#{chosen['issue']})"
+        verdict = f"next is {chosen['id']} (#{chosen['issue']})" + (
+            ': re-verify its reopened completion' if chosen['reopened'] else '')
     else:
         verdict = 'no ready item in scope; this is not evidence that the scope is complete'
     payload = {'repository': ledger.manifest['repository'], 'checkout': str(ledger.root),
@@ -407,14 +434,18 @@ def cmd_next(args):
     lines += [f'GAP: {gap}' for gap in gaps]
     if chosen:
         lines += [f"NEXT: {chosen['id']} #{chosen['issue']} [{chosen['kind']}] {chosen['title']}",
-                  f"  {label(chosen['priority'], chosen['week'])} · unblocks {chosen['unblocks']}",
-                  f"  next_action: {chosen['next_action']}"]
+                  f"  {label(chosen['priority'], chosen['week'])} · unblocks {chosen['unblocks']}"]
+        if chosen['reopened']:
+            lines += [f"  REOPENED {chosen['id']}: {chosen['reason']}",
+                      '  (its packet next_action describes the original work, not this re-verification)']
+        else:
+            lines.append(f"  next_action: {chosen['next_action']}")
     else:
         lines.append('NEXT: none')
     if ranked:
         lines.append('Ranked ready items (priority, week, unfinished items it unblocks, ledger order):')
-        lines += [f"  {r['rank']:>2}. {r['id']} #{r['issue']} · {label(r['priority'], r['week'])} · unblocks {r['unblocks']} · {r['title']}"
-                  for r in ranked]
+        lines += [f"  {r['rank']:>2}. {r['id']} #{r['issue']} · {label(r['priority'], r['week'])} · unblocks {r['unblocks']}"
+                  + (' · REOPENED' if r['reopened'] else '') + f" · {r['title']}" for r in ranked]
     lines.append(f'Verdict: {verdict}')
     emit(args, payload, lines)
     return 1 if gaps else 0
@@ -604,7 +635,8 @@ def merged_commit(root, value):
 
 
 def require_committed(root, pinned, report):
-    """Every pinned file is tracked, and all but a new evidence report match HEAD."""
+    """Every pinned file is tracked and matches HEAD, except the report, which may be new or edited
+    as long as the edit is staged. Returns (report in HEAD, report identical to HEAD)."""
     tracked = set(git(root, 'ls-files', '-z', '--', *pinned).stdout.split('\0'))
     untracked = [rel for rel in pinned if rel not in tracked]
     if untracked:
@@ -613,7 +645,33 @@ def require_committed(root, pinned, report):
     changed = git(root, 'diff', '--name-only', 'HEAD', '--', *[rel for rel in pinned if rel != report]).stdout.splitlines()
     if changed:
         raise Refusal('uncommitted changes in pinned files: ' + ', '.join(changed) + '; a completion pins the merged content')
-    return git(root, 'cat-file', '-e', f'HEAD:{report}').returncode == 0
+    if git(root, 'diff', '--name-only', '--', report).stdout.strip():
+        raise Refusal(f'{report} has unstaged changes; stage the report (git add) so the hash pinned is the '
+                      'content that ships with the ledger edit')
+    in_head = git(root, 'cat-file', '-e', f'HEAD:{report}').returncode == 0
+    return in_head, in_head and not git(root, 'diff', '--name-only', 'HEAD', '--', report).stdout.strip()
+
+
+def require_delivered(root, commit, name, pinned, report):
+    """The commit registers the work item and holds exactly the pinned content (the report aside)."""
+    shown = git(root, 'show', f'{commit}:{MANIFEST}')
+    try:
+        registered = shown.returncode == 0 and any(w.get('id') == name for w in json.loads(shown.stdout).get('work_items', []))
+    except ValueError:
+        registered = False
+    if not registered:
+        raise Refusal(f'commit {commit[:12]} predates the registration of {name}: its {MANIFEST} has no such work '
+                      'item; record the main commit that delivered it')
+    differs = git(root, 'diff', '--name-only', commit, 'HEAD', '--', *[rel for rel in pinned if rel != report]).stdout.splitlines()
+    if differs:
+        raise Refusal(f'pinned files differ between commit {commit[:12]} and HEAD: ' + ', '.join(differs)
+                      + '; --commit must be a main commit that contains the verified content (the slice\'s squash '
+                      'commit, or a later main commit when these files changed after it)')
+
+
+# hype-pr refuses a PR that adds an unregistered Markdown file on a path like this one
+# (scripts/hype-pr/preparation.py, "register new criteria"); an evidence report there needs a node.
+NEW_CRITERIA = re.compile(r'(?i)(?:^|/)(?:intent|requirements?|designs?|testing|validation)(?:/|[-_.])')
 
 
 def cmd_record(args):
@@ -634,6 +692,8 @@ def cmd_record(args):
     if report in ledger.test_documents:
         raise Refusal(f'--evidence {report} is a registered test document; write the run record to its own file '
                       'so the report cannot define the tests it attests')
+    if report in ledger.docs:
+        raise Refusal(f'--evidence {report} is a registered requirement document; write the run record to its own file')
     if not (args.reviewed_by or '').strip():
         raise Refusal('--reviewed-by is required: the independent reviewer of this verdict')
     commit = merged_commit(root, args.commit)
@@ -659,10 +719,19 @@ def cmd_record(args):
             raise Refusal('the ledger cannot be a verification input: record rewrites it, so the pin would break at once')
         if not ledger.is_file(rel):
             raise Refusal(f'verification input {rel} is not a file in the checkout')
+    if report in inputs:
+        raise Refusal(f'--evidence {report} is also a verification input of {args.item}; write the run record to its '
+                      'own file, so the implementation and tests it verified are pinned as merged')
     candidate['verification_inputs'] = inputs
     requirement_docs = {ref['path'] for ref in candidate['requirements']}
     pinned = sorted(requirement_docs | set(inputs) | {report})
-    report_in_head = require_committed(root, pinned, report)
+    report_in_head, report_matches_head = require_committed(root, pinned, report)
+    require_delivered(root, commit, args.item, pinned, report)
+    previous = item.get('completion')
+    if (previous and previous.get('commit') == commit and previous.get('report') == report
+            and previous.get('inputs', {}).get(report) == d.digest(root / report)):
+        raise Refusal(f'nothing new to attest: the same commit and an unchanged {report} as the completion this would '
+                      'supersede; re-verify against the current content and write that run into the report')
     stray = [t for t in tests if not ledger.tied(candidate, t)]
     if stray:
         raise Refusal(f'tests not tied to a requirement {args.item} cites: ' + ', '.join(stray)
@@ -692,15 +761,25 @@ def cmd_record(args):
         (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     verdict = (f"{args.item} would be recorded complete (dry run)" if args.dry_run
                else f"{args.item} recorded complete in {MANIFEST}; not committed")
+    base = 'origin/main' if git(root, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main').returncode == 0 else 'HEAD'
+    new_criteria = (report.endswith('.md') and bool(NEW_CRITERIA.search(report))
+                    and git(root, 'cat-file', '-e', f'{base}:{report}').returncode != 0)
     payload = {'item': args.item, 'checkout': str(root), 'written': not args.dry_run,
                'completion': completion, 'verification_inputs': inputs, 'report_in_head': report_in_head,
-               'shared_inputs': shared, 'verdict': verdict}
+               'report_matches_head': report_matches_head, 'shared_inputs': shared,
+               'report_needs_trace_node': new_criteria, 'verdict': verdict}
     lines = [f'hype-align record · {args.item} #{item.get("issue")} · {item.get("title")}',
              f"  commit {commit} · PR {('#' + str(number)) if number else '(none)'} · reviewed by {completion['reviewed_by']}",
              f"  tests {', '.join(tests)} · evidence {report}",
              f"  pinned inputs: {len(completion['inputs'])} · scope {completion['scope_sha256'][:12]}"]
     if not report_in_head:
         lines.append(f'note: {report} is not in HEAD yet; commit it together with the ledger edit')
+    elif not report_matches_head:
+        lines.append(f'note: {report} differs from HEAD (staged edit); commit it together with the ledger edit')
+    if new_criteria:
+        lines.append(f'warning: hype-pr treats a new {report} as a new criteria document and blocks the PR until '
+                     'config/traceability.json registers it (a validation node); register it in the same PR, '
+                     'or put the report under docs/evidence/')
     lines += [f"warning: {path} is also pinned by {', '.join(owners)}; an edit to it for any of them reopens this "
               'completion, so run check over the whole epic after each slice' for path, owners in shared.items()]
     lines.append(f'Verdict: {verdict}')
@@ -947,8 +1026,9 @@ def build_parser():
     p = sub.add_parser('record', help='write a completion record for one work item (never commits)')
     common(p, scope=False)
     p.add_argument('item', help='work item id')
-    p.add_argument('--commit', required=True, help='merge commit on main that delivered the item; HEAD (and origin/main, '
-                                                   'when present) must contain it; stored as the full SHA')
+    p.add_argument('--commit', required=True, help='main commit that delivered the item and holds the pinned content '
+                                                   '(the squash commit, or a later main commit when pinned files changed '
+                                                   'after it); HEAD and origin/main must contain it; stored as the full SHA')
     p.add_argument('--tests', action='append', help='test IDs verified, comma separated or repeated')
     p.add_argument('--evidence', help='repo-relative evidence report committed in the product checkout')
     p.add_argument('--reviewed-by', help='independent reviewer of the verdict')

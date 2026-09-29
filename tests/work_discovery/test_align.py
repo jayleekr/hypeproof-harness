@@ -214,6 +214,32 @@ def test_next_completed_prerequisites_do_not_demote_an_item(capsys, studio):
     assert [(r['id'], r['unblocks']) for r in out['ranked']] == [('zeta', 1), ('gamma', 0), ('eta', 0), ('alpha', 0)]
 
 
+def test_next_names_a_reopened_completion_instead_of_the_packet(capsys, studio):
+    assert record_beta(capsys, studio)[0] == 0
+    git(studio, 'commit', '-q', '-am', 'record beta')
+    write(studio, 'test/note.test.mjs', 'import "../src/note.js"; // the next slice edits the shared test\n')
+    code, out, _ = run_json(capsys, 'next', '--studio', studio)
+    assert code == 0 and out['next']['id'] == 'beta' and out['next']['reopened'] is True
+    assert out['next']['changed'] == ['test/note.test.mjs'] and 'record --replace' in out['next']['reason']
+    assert not any(r['reopened'] for r in out['ranked'][1:])
+    code, text, _ = run(capsys, 'next', '--studio', studio)
+    assert 'REOPENED beta: completion no longer holds (changed since recorded: test/note.test.mjs)' in text
+    assert 'next_action: Build beta' not in text
+    assert text.rstrip().endswith('Verdict: next is beta (#2): re-verify its reopened completion')
+
+
+def test_next_reads_week_tags_and_names_a_bad_curriculum_week(capsys, studio):
+    manifest = load(studio)
+    manifest['work_items'][5]['curriculum_week'] = 'W1'
+    save(studio, manifest)
+    code, out, _ = run_json(capsys, 'next', '--studio', studio)
+    assert code == 0 and next(r['week'] for r in out['ranked'] if r['id'] == 'eta') == 1
+    manifest['work_items'][5]['curriculum_week'] = 'soon'
+    save(studio, manifest)
+    code, _, err = run(capsys, 'next', '--studio', studio)
+    assert code == 2 and "work item eta: curriculum_week 'soon' is not a week" in err
+
+
 def test_next_uses_the_github_snapshot_when_given(capsys, studio, tmp_path):
     snapshot = tmp_path / 'snapshot.json'
     snapshot.write_text(json.dumps({'repository': 'example/demo-product', 'complete': True,
@@ -248,6 +274,8 @@ BASE_FLAGS = [part for pair in BASE.items() for part in pair]
     ('beta', {'--evidence': 'docs/evidence/missing.md'}, 'is not a file'),
     ('beta', {'--evidence': '../outside.md'}, 'outside the checkout'),
     ('beta', {'--evidence': 'docs/testing/demo.md'}, 'is a registered test document'),
+    ('beta', {'--evidence': 'docs/requirements/demo.md'}, 'is a registered requirement document'),
+    ('beta', {'--evidence': 'src/note.js'}, 'is also a verification input of beta'),
     ('beta', {'--reviewed-by': None}, '--reviewed-by is required'),
     ('beta', {'--commit': 'abcdef1'}, 'not in this checkout'),
     ('beta', {'--commit': 'HEAD'}, 'hexadecimal'),
@@ -324,6 +352,27 @@ def test_record_evidence_cannot_define_the_tests_it_attests(capsys, studio):
     assert run(capsys, 'check', '--studio', studio, '--item', 'beta')[0] == 0
 
 
+def test_traceability_rows_beside_test_ids_are_not_tests(capsys, studio):
+    # `| DM-02 | DM-T02, DM-T03 |` says which tests verify DM-02; it does not make DM-02 a test.
+    coverage = '\n| Requirement | Verified by |\n|---|---|\n| DM-02 | DM-T02, DM-T03 |\n| AT-01 | manual walk-through |\n'
+    write(studio, 'docs/testing/demo.md', TESTING + coverage)
+    git(studio, 'commit', '-q', '-am', 'coverage table')
+    defined = align.Ledger(studio).test_ids
+    assert 'DM-02' not in defined and {'DM-T02', 'AT-01'} <= defined  # AT-01 is not a requirement ID
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'),
+                       '--tests', 'DM-02', '--evidence', 'docs/evidence/beta.md', '--reviewed-by', 'verifier')
+    assert code == 1 and 'not defined in any registered test document: DM-02' in err
+    assert record_beta(capsys, studio)[0] == 0
+    manifest = load(studio)
+    manifest['work_items'][1]['completion']['test_ids'] = ['DM-02']
+    save(studio, manifest)
+    code, out, _ = run_json(capsys, 'check', '--studio', studio, '--item', 'beta')
+    assert code == 1 and 'recorded test DM-02 is not defined' in out['broken'][0]['detail']
+    # A test document with no -T IDs keys its tests by requirement ID, and those do count.
+    write(studio, 'docs/testing/demo.md', '| Requirement | Check |\n|---|---|\n| DM-01 | reopen |\n| DM-02 | restart |\n')
+    assert {'DM-01', 'DM-02'} <= align.Ledger(studio).test_ids
+
+
 def test_record_refuses_on_ledger_gaps(capsys, studio):
     write(studio, 'docs/requirements/demo.md', REQUIREMENTS + '| DM-05 | P0 | New row | DM-T05 |\n')
     git(studio, 'commit', '-q', '-am', 'new requirement row')
@@ -335,7 +384,47 @@ def test_record_refuses_to_overwrite_without_replace(capsys, studio):
     assert record_beta(capsys, studio)[0] == 0
     code, _, err = record_beta(capsys, studio)
     assert code == 1 and 'already has a completion record' in err
+    # Superseding needs something new: the same commit and an unchanged report attest nothing.
+    code, _, err = record_beta(capsys, studio, '--replace')
+    assert code == 1 and 'nothing new to attest' in err
+    write(studio, 'docs/evidence/beta.md', 'DM-T02 PASS, DM-T03 PASS (re-run)\n')
+    git(studio, 'add', 'docs/evidence/beta.md')
     assert record_beta(capsys, studio, '--replace')[0] == 0
+
+
+def test_record_commit_must_hold_the_pinned_content_and_the_item(capsys, studio):
+    old = git(studio, 'rev-parse', 'HEAD')
+    write(studio, 'src/note.js', 'export const save = () => "v2";\n')
+    git(studio, 'commit', '-q', '-am', 'later slice edits a pinned input')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', old, *BASE_FLAGS)
+    assert code == 1 and f'pinned files differ between commit {old[:12]} and HEAD: src/note.js' in err
+    assert run(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'), *BASE_FLAGS,
+               '--dry-run')[0] == 0
+    # Same pinned content, but the commit predates the work item's registration.
+    before = git(studio, 'rev-parse', 'HEAD')
+    manifest = load(studio)
+    manifest['work_items'].append(item('theta', 7, ['DM-02'], verification_inputs=['src/note.js']))
+    save(studio, manifest)
+    git(studio, 'commit', '-q', '-am', 'register theta')
+    code, _, err = run(capsys, 'record', 'theta', '--studio', studio, '--commit', before, *BASE_FLAGS)
+    assert code == 1 and f'commit {before[:12]} predates the registration of theta' in err
+
+
+def test_record_pins_a_staged_report_and_warns_where_hype_pr_needs_a_node(capsys, studio):
+    write(studio, 'docs/evidence/beta.md', 'DM-T02 FAIL, edited and not staged\n')
+    code, _, err = record_beta(capsys, studio)
+    assert code == 1 and 'docs/evidence/beta.md has unstaged changes' in err
+    git(studio, 'add', 'docs/evidence/beta.md')
+    code, out, _ = record_beta(capsys, studio, '--dry-run')
+    assert code == 0 and 'docs/evidence/beta.md differs from HEAD (staged edit)' in out
+    # A new report on a path hype-pr reads as new criteria needs a trace node in the same PR.
+    write(studio, 'docs/testing/demo-2026-09-30-evidence.md', 'DM-T02 PASS, DM-T03 PASS\n')
+    git(studio, 'add', 'docs/testing/demo-2026-09-30-evidence.md')
+    code, out, _ = run_json(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'),
+                            '--tests', 'DM-T02,DM-T03', '--evidence', 'docs/testing/demo-2026-09-30-evidence.md',
+                            '--reviewed-by', 'verifier', '--dry-run')
+    assert code == 0 and out['report_needs_trace_node'] is True
+    assert align.NEW_CRITERIA.pattern in (ROOT / 'scripts/hype-pr/preparation.py').read_text(encoding='utf-8')
 
 
 def test_record_writes_a_completion_discover_accepts_and_never_commits(capsys, studio):
@@ -469,6 +558,12 @@ def test_parsers_read_the_lab_sources():
     assert align.parse_catalog(CATALOG) == (['docs/requirements/demo.md'], ['docs/requirements/retired.md'])
     with pytest.raises(ValueError):
         align.parse_catalog('export const other = [];')
+
+
+def test_skill_is_discoverable_by_codex_and_claude():
+    canonical = ROOT / 'skills/hype-align/SKILL.md'
+    for host in ('.agents', '.claude'):
+        assert (ROOT / host / 'skills/hype-align/SKILL.md').resolve() == canonical
 
 
 def test_cli_uses_the_environment_checkout_and_reports_failures(studio, tmp_path):

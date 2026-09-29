@@ -18,6 +18,10 @@ never pushes, and reads GitHub only with `next --live`.
   `hypeproof-harness` checkout, skipping any that predates this skill. Everything about
   ledger integrity, issue/PR states and when a completion counts comes from that file,
   not from this skill.
+- From a product repo, run the vendored copy with `HYPEPROOF_HARNESS` set to a Harness
+  checkout at current main. Until the vendored copy and a Harness checkout with this skill are
+  synced there, it exits 2 ("predates hype-align"); run the Harness checkout's own
+  `skills/hype-align/scripts/align.py` instead.
 - Product checkout: `--studio <path>` or `HYPEPROOF_STUDIO`. Point it at a worktree
   cut from current `origin/main`. A stale checkout gives a correct verdict about the
   wrong files.
@@ -28,12 +32,13 @@ never pushes, and reads GitHub only with `next --live`.
 | Command | Question | Exit 1 means |
 |---|---|---|
 | `next` | Which ready work item comes first? | the ledger itself has gaps to reconcile first |
-| `record <item>` | Write this item's completion into the ledger | refused: missing or unrelated tests, evidence, reviewer, an unmerged commit, open dependencies, uncommitted pins, ledger gaps or a broken link |
+| `record <item>` | Write this item's completion into the ledger | refused: missing or unrelated tests, evidence, reviewer, an unmerged commit or one that predates the item or lacks the pinned content, open dependencies, uncommitted pins or an unstaged report, ledger gaps or a broken link |
 | `check` | Is the ledger intact, and every item's intent → requirement → design → test → implementation (→ Lab) chain? | a ledger gap or at least one broken link, listed per item |
 | `drift` | Does the Lab catalog classify every Studio requirement document, and are its pinned sources current? | unclassified, removed, misclassified or stale sources |
 
 ```bash
 A=<this skill>/scripts/align.py      # consumer repos: .claude/skills/hype-align/scripts/align.py
+export HYPEPROOF_HARNESS=<Harness checkout at current main>     # needed for a vendored copy
 python3 $A next   --studio $S --doc curriculum-runtime          # add --json for machines
 python3 $A record cr-browser --studio $S --commit <merge sha on main> --pr 1402 \
   --tests CR-T04,CR-T05 --evidence docs/evidence/cr-browser.md --reviewed-by <verifier>
@@ -41,10 +46,12 @@ python3 $A check  --studio $S --doc curriculum-runtime --lab $L
 python3 $A drift  --studio $S --lab $L
 ```
 
-`record` takes the evidence report from its own file: a registered test document is refused,
-because only registered test documents define test IDs and a report must not define what it attests.
-Every `--tests` ID must test a requirement the item cites (its row cites the test, or one line of a
-test document names both).
+`record` takes the evidence report from its own file: a registered test or requirement document,
+or one of the item's verification inputs, is refused, because only registered test documents define
+test IDs and a report must not define what it attests. Every `--tests` ID must test a requirement the
+item cites (its row cites the test, or one line of a test document names both); a requirement ID in a
+coverage table (`| CR-01 | CR-T01 |`) is not a test ID. `--commit` must register the item and hold the
+pinned content that HEAD holds, so an old commit cannot vouch for new content.
 
 `--item`, `--doc` (path, file name or stem) and `--prefix` narrow `next` and `check` to
 one epic. Without them the whole ledger is ranked and checked.
@@ -52,21 +59,36 @@ one epic. Without them the whole ledger is ranked and checked.
 ## In the delivery loop
 
 1. **Slice start.** Run `next` scoped to the epic. Take the `NEXT` item and read its packet
-   (`next_action`, controls, `evidence_required`) before touching code. The default is
-   offline: open PRs and `wip` claims were not read, so confirm the issue is free, or run
-   with `--live` (spends GitHub API budget) or `--snapshot <discover.py snapshot>`.
+   (`next_action`, controls, `evidence_required`) before touching code. When `NEXT` is marked
+   `REOPENED` (JSON `reopened: true`, `changed: [...]`), the item was complete and a pinned file
+   changed since: re-verify it against the current content and re-record it (step 3) instead of
+   redoing its `next_action`. The default is offline: open PRs and `wip` claims were not read, so
+   confirm the issue is free, or run with `--live` (spends GitHub API budget) or
+   `--snapshot <discover.py snapshot>`.
 2. **Slice end**, after merge and independent verification, in a worktree cut from the new
-   `origin/main`: add the evidence report, run `record <item>` with `--commit` set to the squash
-   commit on main, then `check --doc <epic> --lab <Lab>` (the whole epic, not only `--item`). `record` edits
-   `config/requirement-work.json` and nothing else and never commits: commit the ledger and the
-   report together and ship them through `hype-pr` like any change.
+   `origin/main`: add the evidence report and stage it, run `record <item>` with `--commit` set to
+   the squash commit on main (or a later main commit when a pinned file changed after it), then
+   `check --doc <epic> --lab <Lab>` (the whole epic, not only `--item`). Write one report per item.
+   Put it at `docs/evidence/<item>.md`, which hype-pr does not treat as a criteria document. A new
+   report under a criteria path (`testing/`, `validation/`, `requirements/` and similar; Studio's
+   testing contracts name `docs/testing/<epic>-<date>-evidence.md`) blocks the hype-pr PR until
+   `config/traceability.json` registers it as a validation node in the same PR, and `record` warns
+   when that applies. `record` edits `config/requirement-work.json` and nothing else and never
+   commits: commit the ledger and the report together and ship them through `hype-pr` like any change.
 3. **Reopened completions.** A completion pins its requirement document, verification inputs and
    report by hash. When items share a pinned file (for example one epic testing document in every
    `verification_inputs`), the next slice's edit to it reopens every earlier completion that pins
-   it: `check` reports `completion no longer holds (changed since recorded: <file>)` and `next`
-   names the earlier item again. Verify those items against the new content and re-record them with
-   `--replace`. `record` warns when it pins a file other items pin; prefer per-slice
-   `verification_inputs` (the slice's implementation and test files) over a shared epic document.
+   it: `check` reports `completion no longer holds (changed since recorded: <file>)`, `next`
+   names the earlier item as `REOPENED`, and `record` refuses its dependents until it is complete
+   again. Verify those items against the new content and re-record them with `--replace`, a
+   `--commit` that holds the new content, and a report that records the new run (the same commit
+   and an unchanged report are refused). `record` warns when it pins a file other items pin.
+   Prevent the cascade with per-slice `verification_inputs` (the slice's implementation and test
+   files) instead of a shared epic document. `--input` only adds inputs: narrowing
+   `verification_inputs` is a hand edit to the ledger, made in the slice's PR before the item's
+   first `record` (on a completed item it changes the scope digest and reopens it). Requirement
+   documents stay pinned whatever the inputs say (discover.py), so a requirement edit reopens every
+   item that cites that document.
 4. **Catalog sync.** Run `drift` before a Lab studio-catalog sync and after one; every
    finding names the document and what to classify or refresh.
 
