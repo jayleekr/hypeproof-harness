@@ -49,9 +49,10 @@ python3 $A drift  --studio $S --lab $L
 `record` takes the evidence report from its own file: a registered test or requirement document,
 or one of the item's verification inputs, is refused, because only registered test documents define
 test IDs and a report must not define what it attests. Every `--tests` ID must test a requirement the
-item cites (its row cites the test, or one line of a test document names both); a requirement ID in a
-coverage table (`| CR-01 | CR-T01 |`) is not a test ID. `--commit` must register the item and hold the
-pinned content that HEAD holds, so an old commit cannot vouch for new content.
+item cites (its row cites the test, or a test document ties them: the test row's `Targets` /
+requirement column names it, or, in a table without such a column, the same line does); a requirement
+ID in a coverage table (`| CR-01 | CR-T01 |`) is not a test ID. `--commit` must register the item and
+hold the pinned content that HEAD holds, so an old commit cannot vouch for new content.
 
 `--item`, `--doc` (path, file name or stem) and `--prefix` narrow `next` and `check` to
 one epic. Without them the whole ledger is ranked and checked.
@@ -59,21 +60,25 @@ one epic. Without them the whole ledger is ranked and checked.
 ## In the delivery loop
 
 1. **Slice start.** Run `next` scoped to the epic. Take the `NEXT` item and read its packet
-   (`next_action`, controls, `evidence_required`) before touching code. When `NEXT` is marked
-   `REOPENED` (JSON `reopened: true`, `changed: [...]`), the item was complete and a pinned file
-   changed since: re-verify it against the current content and re-record it (step 3) instead of
-   redoing its `next_action`. The default is offline: open PRs and `wip` claims were not read, so
-   confirm the issue is free, or run with `--live` (spends GitHub API budget) or
+   (`next_action`, controls, `evidence_required`) before touching code. A `REOPENED` item (JSON
+   `reopened`, with `changed: [...]`) was complete and a pinned file changed since, whatever its
+   issue state: re-verify it against the current content and re-record it (step 3) instead of
+   redoing its `next_action`. Re-verifiable reopened items come before fresh ready work. `Not ready`
+   (JSON `items`) names every other item with its state and reason; a `reconcile` item whose issue
+   closed without a completion is merged work waiting for step 2, and the verdict names it. The
+   default is offline: closed issues, open PRs and `wip` claims were not read, so confirm the issue is
+   still open and free, or run with `--live` (spends GitHub API budget) or
    `--snapshot <discover.py snapshot>`.
 2. **Slice end**, after merge and independent verification, in a worktree cut from the new
    `origin/main`: add the evidence report and stage it, run `record <item>` with `--commit` set to
    the squash commit on main (or a later main commit when a pinned file changed after it), then
    `check --doc <epic> --lab <Lab>` (the whole epic, not only `--item`). Write one report per item.
-   Put it at `docs/evidence/<item>.md`, which hype-pr does not treat as a criteria document. A new
-   report under a criteria path (`testing/`, `validation/`, `requirements/` and similar; Studio's
-   testing contracts name `docs/testing/<epic>-<date>-evidence.md`) blocks the hype-pr PR until
-   `config/traceability.json` registers it as a validation node in the same PR, and `record` warns
-   when that applies. `record` edits `config/requirement-work.json` and nothing else and never
+   Put it at `docs/evidence/<item>.md`, which hype-pr does not treat as a criteria document, even
+   when a product testing contract names a shared dated file: one report shared by several items
+   reopens the others on every run. A new report under a criteria path (`testing/`, `validation/`,
+   `requirements/` and similar, such as `docs/testing/<epic>-<date>-evidence.md`) blocks the hype-pr
+   PR until `config/traceability.json` registers it as a validation node in the same PR, and
+   `record` warns when that applies. `record` edits `config/requirement-work.json` and nothing else and never
    commits: commit the ledger and the report together and ship them through `hype-pr` like any change.
 3. **Reopened completions.** A completion pins its requirement document, verification inputs and
    report by hash. When items share a pinned file (for example one epic testing document in every
@@ -81,8 +86,9 @@ one epic. Without them the whole ledger is ranked and checked.
    it: `check` reports `completion no longer holds (changed since recorded: <file>)`, `next`
    names the earlier item as `REOPENED`, and `record` refuses its dependents until it is complete
    again. Verify those items against the new content and re-record them with `--replace`, a
-   `--commit` that holds the new content, and a report that records the new run (the same commit
-   and an unchanged report are refused). `record` warns when it pins a file other items pin.
+   `--commit` that holds the new content, and a report that records the new run: `record` refuses a
+   report identical to the superseded one, whatever the commit, and one that does not name the new
+   commit. `record` warns when it pins a file other items pin.
    Prevent the cascade with per-slice `verification_inputs` (the slice's implementation and test
    files) instead of a shared epic document. `--input` only adds inputs: narrowing
    `verification_inputs` is a hand edit to the ledger, made in the slice's PR before the item's
@@ -97,8 +103,9 @@ one epic. Without them the whole ledger is ranked and checked.
 - `ready` means the ledger allows the item now. It is not acceptance, and zero ready items
   is not evidence the scope is complete: read the state counts.
 - Offline `next` (the default) treats every tracked issue as open: a closed issue without a
-  completion ranks as ready where `--live` would say reconcile. `--json` carries
-  `availability_checked: false` for this case, and `{"verdict", "error"}` on a refusal or exit 2.
+  completion ranks as ready where `--live` would say reconcile, and the `NEXT` block says so.
+  `--json` carries `availability_checked: false` for this case, and `{"verdict", "error"}` on a
+  refusal or exit 2.
 - `complete` is discover.py's rule: a PASS completion whose scope digest and pinned input
   hashes still match. Editing a pinned file or the packet's acceptance fields reopens it,
   and `check` reports it as `completion no longer holds`.

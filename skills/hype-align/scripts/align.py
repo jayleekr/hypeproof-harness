@@ -85,6 +85,9 @@ ROW = re.compile(r'^\|\s*`?(' + ID + r')`?\s*\|(.*)$', re.M)
 TOKEN = re.compile(r'(?<![A-Za-z0-9-])([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*)-(T?)(\d+)(?![A-Za-z0-9])'
                    r'((?:\s*(?:/|·|~|–|\.\.)\s*T?\d+(?![A-Za-z0-9]))*)')
 PART = re.compile(r'(/|·|~|–|\.\.)\s*T?(\d+)')
+SEPARATOR = re.compile(r'^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*(?::?-{3,}:?\s*)?$')
+# A test-document column that declares what a row tests: Targets, Requirement, 제품 REQ, 요구사항, 요구 ID, 대상 SX.
+TARGET_HEADER = re.compile(r'(?i)target|requirement|\bREQS?\b|요구|^\s*대상')
 PRIORITY = re.compile(r'^\s*P(\d)(?![\d-])')
 WEEK = r'(?:(?:[Ww]eek\s*|W)(\d+)|(\d+)\s*주차)(?!\d)'
 WEEK_TAG = re.compile(r'(?<![A-Za-z0-9-])' + WEEK)
@@ -108,6 +111,17 @@ def expand(match):
 def tokens(text, tests_only=False):
     return {token for match in TOKEN.finditer(text or '') if not tests_only or match.group(2) == 'T'
             for token in expand(match)}
+
+
+def cells(line):
+    return [cell.strip() for cell in line.strip().strip('|').split('|')]
+
+
+def ranges_both(line):
+    """The line expands a range of tests and a range of other IDs (`US-01~18 → US-T01~21`)."""
+    ranged = {match.group(2) == 'T' for match in TOKEN.finditer(line)
+              if any(sep in ('~', '–', '..') for sep, _ in PART.findall(match.group(4)))}
+    return ranged == {True, False}
 
 
 def weeks(text, pattern):
@@ -192,6 +206,10 @@ class Ledger:
         that is itself a requirement document (tests hosted next to the rows) contributes only
         `-T<n>` tokens, so a requirement ID never defines itself as a test. `record` refuses a
         registered test document as evidence, so a report never defines the test IDs it attests.
+
+        A test is tied to the IDs in its row's target columns (a header naming targets or
+        requirements) when its table has one; otherwise to every ID on its line, unless that line
+        expands a range of tests and a range of other IDs at once.
         """
         requirement_ids = {rid for doc in self.manifest['documents'] for rid in doc['ids']}
         defined, beside = set(), {}
@@ -199,14 +217,28 @@ class Ledger:
             text = self.text(rel) or ''
             hosted = rel in self.docs
             keyed_by_requirement = not tokens(text, tests_only=True)
-            for line in text.splitlines():
+            lines = text.splitlines()
+            targets = None  # target/requirement column indexes of the table being read
+            for n, line in enumerate(lines):
+                if not line.lstrip().startswith('|'):
+                    targets = None
+                elif n + 1 < len(lines) and SEPARATOR.match(lines[n + 1]):
+                    targets = [i for i, cell in enumerate(cells(line)) if TARGET_HEADER.search(cell)]
                 tests = tokens(line, tests_only=True)
                 row = ROW.match(line)
                 if row and not hosted and (keyed_by_requirement or row.group(1) not in requirement_ids):
                     tests.add(row.group(1))
                 defined |= tests
+                if targets and line.lstrip().startswith('|'):
+                    # The table declares what each row tests; an ID named in passing elsewhere is not a target.
+                    row_cells = cells(line)
+                    named = set().union(*(tokens(row_cells[i]) for i in targets if i < len(row_cells)))
+                elif ranges_both(line):
+                    named = set()  # `US-01~18 → US-T01~21` pairs every test with every requirement
+                else:
+                    named = tokens(line)
                 for test in tests:
-                    beside.setdefault(test, set()).update(tokens(line))
+                    beside.setdefault(test, set()).update(named)
         return defined, beside
 
     @property
@@ -225,7 +257,7 @@ class Ledger:
 
     def tied(self, item, test):
         """The test belongs to a requirement the item cites: the requirement's row cites it, the test
-        is keyed by that requirement ID, or one line of a registered test document names both."""
+        is keyed by that requirement ID, or a registered test document ties them (see test_index)."""
         beside = self.test_index[1].get(test, set())
         return any(test == rid or rid in beside or test in self.facts(ref['path'], rid)[2]
                    for ref in item.get('requirements', []) if ref['path'] in self.docs for rid in ref['ids'])
@@ -312,7 +344,11 @@ class Ledger:
                 cited |= set(tests)
         explicit = item.get('curriculum_week')
         if explicit is not None:
-            tagged = [week_number(item['id'], w) for w in (explicit if isinstance(explicit, list) else [explicit])]
+            values = explicit if isinstance(explicit, list) else [explicit]
+            if not values:
+                raise ValueError(f"work item {item['id']}: curriculum_week is an empty list; name a week, "
+                                 'or remove the field to use the requirement rows\' week tags')
+            tagged = [week_number(item['id'], w) for w in values]
         return (min(priorities) if priorities else None, min(tagged) if tagged else None, sorted(cited))
 
     def dependents(self):
@@ -379,55 +415,94 @@ def label(priority, week):
     return f"P{priority if priority is not None else '?'} week {week if week is not None else '-'}"
 
 
+# Order of the not-ready list: what the captain can settle first, then work others hold, then waits.
+NOT_READY = ('reconcile', 'in_review', 'claimed', 'blocked', 'dependency', 'complete')
+
+
+def rank_key(entry):
+    # Every dependency of a ready item is complete, so dependency order no longer constrains the
+    # choice; it only breaks ties, toward the item that opens up the most unfinished work.
+    return (UNRANKED if entry['priority'] is None else entry['priority'],
+            UNRANKED if entry['week'] is None else entry['week'], -entry['unblocks'], entry['ledger_index'])
+
+
 def cmd_next(args):
     ledger = Ledger(studio_root(args))
     d, now = ledger.d, datetime.now(timezone.utc)
     gaps = d.audit(ledger.root, ledger.manifest)
-    if args.live or args.snapshot:
+    checked = bool(args.live or args.snapshot)
+    if checked:
         snapshot = d.load_snapshot(ledger.manifest, now, args.snapshot)
         availability = f"checked at {snapshot['fetched_at']}"
     else:
         snapshot = offline_snapshot(ledger.manifest, now)
         availability = 'unchecked (ledger only; open PRs and claims not read)'
+    issues = {issue['number']: issue for issue in snapshot['issues']}
     classified = d.classify(ledger.root, ledger.manifest, snapshot, now)
     complete = {row['id'] for row in classified if row['state'] == 'complete'}
     rows = ledger.select(classified, args)
     downstream = ledger.dependents()
-    ranked = []
+    reopened, ranked, others = [], [], []
     for row in rows:
-        if row['state'] != 'ready':
-            continue
         priority, week, _ = ledger.item_facts(row)
-        # A ready item that carries a completion was complete once: a pinned file or its scope changed
-        # since. The work is re-verifying that verdict, not redoing the packet's next_action.
-        reopened = (row.get('completion') or {}).get('verdict') == 'PASS'
-        reason = (f"completion no longer holds ({ledger.reopened(row)}); re-verify {row['id']} against the "
-                  f"current content and re-record it with record --replace" if reopened else row['reason'])
-        ranked.append({'id': row['id'], 'issue': row['issue'], 'title': row['title'], 'kind': row['kind'],
-                       'priority': priority, 'week': week, 'unblocks': len(downstream[row['id']] - complete),
-                       'ledger_index': ledger.index[row['id']], 'next_action': row['next_action'],
-                       'requirements': row['requirements'], 'depends_on': row.get('depends_on', []),
-                       'reopened': reopened, 'changed': ledger.changed_pins(row) if reopened else [],
-                       'reason': reason})
-    # Every dependency of a ready item is complete, so dependency order no longer constrains the
-    # choice; it only breaks ties, toward the item that opens up the most unfinished work.
-    ranked.sort(key=lambda r: (UNRANKED if r['priority'] is None else r['priority'],
-                               UNRANKED if r['week'] is None else r['week'], -r['unblocks'], r['ledger_index']))
+        entry = {'id': row['id'], 'issue': row['issue'], 'title': row['title'], 'kind': row['kind'],
+                 'state': row['state'], 'priority': priority, 'week': week,
+                 'unblocks': len(downstream[row['id']] - complete), 'ledger_index': ledger.index[row['id']],
+                 'next_action': row['next_action'], 'requirements': row['requirements'],
+                 'depends_on': row.get('depends_on', []), 'reopened': False, 'changed': [], 'reason': row['reason']}
+        closed = str((issues.get(row['issue']) or {}).get('state', '')).upper() == 'CLOSED'
+        if (row.get('completion') or {}).get('verdict') == 'PASS' and row['state'] != 'complete':
+            # It was complete once: a pinned file, its scope or its attestation changed since. The work is
+            # re-verifying that verdict, whatever the issue says; a merged slice usually closed the issue,
+            # which discover.py classifies as reconcile.
+            waiting = [dep for dep in entry['depends_on'] if dep not in complete]
+            actionable = not waiting and row['state'] in ('ready', 'reconcile')
+            if actionable:
+                action = f"re-verify {row['id']} against the current content and re-record it with record --replace"
+            elif waiting:
+                action = f"re-verify it after {', '.join(waiting)} (record refuses it while a prerequisite is incomplete)"
+            else:
+                action = f"{row['state']}: {row['reason']}"
+            entry.update(reopened=True, changed=ledger.changed_pins(row), waiting_on=waiting, actionable=actionable,
+                         reason=f'completion no longer holds ({ledger.reopened(row)}); {action}')
+            reopened.append(entry)
+        elif row['state'] == 'ready':
+            ranked.append(entry)
+        else:
+            if row['state'] == 'reconcile' and closed and not row.get('completion'):
+                entry['reason'] = (f"issue #{row['issue']} is closed without a completion: if its PR merged, verify "
+                                   f"the delivered work and run record {row['id']}; otherwise reconcile the ledger")
+            others.append(entry)
+    # Re-verifiable reopened items come first: record refuses their dependents until they hold again.
+    reopened.sort(key=lambda e: (not e['actionable'], rank_key(e)))
+    ranked.sort(key=rank_key)
+    others.sort(key=lambda e: (NOT_READY.index(e['state']) if e['state'] in NOT_READY else len(NOT_READY), rank_key(e)))
     for position, entry in enumerate(ranked, 1):
         entry['rank'] = position
     counts = dict(sorted(Counter(row['state'] for row in rows).items()))
-    chosen = ranked[0] if ranked else None
+    actionable = [e for e in reopened if e['actionable']]
+    chosen = actionable[0] if actionable else (ranked[0] if ranked else None)
+    reconcile = [e for e in others if e['state'] == 'reconcile']
+    named = lambda entries: ', '.join(f"{e['id']} (#{e['issue']})" for e in entries)
     if gaps:
         verdict = f'reconcile the requirement ledger first ({len(gaps)} gaps); the ranking below is advisory'
     elif chosen:
         verdict = f"next is {chosen['id']} (#{chosen['issue']})" + (
             ': re-verify its reopened completion' if chosen['reopened'] else '')
+        if reconcile:
+            verdict += f'; also reconcile {named(reconcile)}'
+    elif reconcile:
+        first = reconcile[0]
+        verdict = f"no ready item in scope; reconcile {first['id']} (#{first['issue']}) first: {first['reason']}"
+    elif reopened:
+        first = reopened[0]
+        verdict = f"no ready item in scope; reopened {first['id']} (#{first['issue']}) cannot be re-verified yet: {first['reason']}"
     else:
         verdict = 'no ready item in scope; this is not evidence that the scope is complete'
     payload = {'repository': ledger.manifest['repository'], 'checkout': str(ledger.root),
-               'availability': availability, 'availability_checked': bool(args.live or args.snapshot),
-               'scope_items': len(rows), 'counts': counts,
-               'ledger_gaps': gaps, 'next': chosen, 'ranked': ranked, 'verdict': verdict}
+               'availability': availability, 'availability_checked': checked,
+               'scope_items': len(rows), 'counts': counts, 'ledger_gaps': gaps, 'next': chosen,
+               'reopened': reopened, 'ranked': ranked, 'items': others, 'verdict': verdict}
     lines = [f"hype-align next · {ledger.manifest['repository']} · {len(rows)} of {len(ledger.items)} items in scope",
              f'availability: {availability}',
              'states: ' + (', '.join(f'{k} {v}' for k, v in counts.items()) or 'none')]
@@ -440,12 +515,22 @@ def cmd_next(args):
                       '  (its packet next_action describes the original work, not this re-verification)']
         else:
             lines.append(f"  next_action: {chosen['next_action']}")
+            if not checked:
+                lines.append(f"  offline: if #{chosen['issue']} is closed or its PR merged, this item needs record, "
+                             'not new work; confirm with --live or --snapshot')
     else:
         lines.append('NEXT: none')
+    if reopened:
+        lines.append('Reopened completions (re-verify and re-record with --replace, prerequisites first):')
+        lines += [f"  REOPENED {e['id']} #{e['issue']} [{e['state']}]: {e['reason']}" for e in reopened]
     if ranked:
         lines.append('Ranked ready items (priority, week, unfinished items it unblocks, ledger order):')
         lines += [f"  {r['rank']:>2}. {r['id']} #{r['issue']} · {label(r['priority'], r['week'])} · unblocks {r['unblocks']}"
-                  + (' · REOPENED' if r['reopened'] else '') + f" · {r['title']}" for r in ranked]
+                  f" · {r['title']}" for r in ranked]
+    waiting = [e for e in others if e['state'] != 'complete']
+    if waiting:
+        lines.append('Not ready (state: reason):')
+        lines += [f"  [{e['state']}] {e['id']} #{e['issue']}: {e['reason']}" for e in waiting]
     lines.append(f'Verdict: {verdict}')
     emit(args, payload, lines)
     return 1 if gaps else 0
@@ -634,6 +719,12 @@ def merged_commit(root, value):
     return sha
 
 
+def names_commit(text, sha):
+    """The text names the commit: a 7-40 character hexadecimal token that is a prefix of its full SHA."""
+    return any(sha.startswith(token.lower())
+               for token in re.findall(r'(?<![0-9A-Fa-f])[0-9A-Fa-f]{7,40}(?![0-9A-Fa-f])', text or ''))
+
+
 def require_committed(root, pinned, report):
     """Every pinned file is tracked and matches HEAD, except the report, which may be new or edited
     as long as the edit is staged. Returns (report in HEAD, report identical to HEAD)."""
@@ -728,10 +819,15 @@ def cmd_record(args):
     report_in_head, report_matches_head = require_committed(root, pinned, report)
     require_delivered(root, commit, args.item, pinned, report)
     previous = item.get('completion')
-    if (previous and previous.get('commit') == commit and previous.get('report') == report
-            and previous.get('inputs', {}).get(report) == d.digest(root / report)):
-        raise Refusal(f'nothing new to attest: the same commit and an unchanged {report} as the completion this would '
-                      'supersede; re-verify against the current content and write that run into the report')
+    if previous:
+        # A replacing completion rests on a new run, so its report must differ from the one it supersedes
+        # (whatever the commit, whatever the path) and name the commit that run verified.
+        if (previous.get('inputs') or {}).get(previous.get('report')) == d.digest(root / report):
+            raise Refusal(f'nothing new to attest: {report} is the report the superseded completion pinned, unchanged; '
+                          're-verify against the current content and write that run into the report')
+        if not names_commit(ledger.text(report), commit):
+            raise Refusal(f'{report} does not name commit {commit[:12]}: a replacing report records the run against '
+                          'the commit it attests (a 7+ character prefix is enough)')
     stray = [t for t in tests if not ledger.tied(candidate, t)]
     if stray:
         raise Refusal(f'tests not tied to a requirement {args.item} cites: ' + ', '.join(stray)

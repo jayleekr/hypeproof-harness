@@ -36,7 +36,7 @@ Files are read from the working tree, not from a commit. Use a clean worktree.
    | Order | Key | Source |
    |---|---|---|
    | 1 | priority | best `P<n>` among the requirement rows the item cites; none sorts last |
-   | 2 | curriculum week | item field `curriculum_week` (an integer, a `W<n>` / `Week <n>` / `<n>주차` string, or a list of them; any other value is exit 2 naming the item), else the earliest row week tag; none sorts last |
+   | 2 | curriculum week | item field `curriculum_week` (an integer, a `W<n>` / `Week <n>` / `<n>주차` string, or a non-empty list of them; any other value, an empty list included, is exit 2 naming the item), else the earliest row week tag; none sorts last |
    | 3 | unblocks, descending | unfinished items anywhere in the ledger that depend on it, directly or transitively |
    | 4 | ledger order | position in `work_items` |
 
@@ -44,14 +44,25 @@ Files are read from the working tree, not from a commit. Use a clean worktree.
    dependency of a ready item is complete, so depth would only rank an item whose prerequisites
    finished behind every root, whatever its priority. Dependencies act through `ready` itself and
    through the unblocks tie-break.
-5. A ready item that carries a `completion` is **reopened**: it was complete, and a pinned file,
-   its scope or its attestation changed since. Its entry has `reopened: true`, `changed` (the pinned
-   files that no longer match) and a `reason` that says to re-verify and re-record with `--replace`;
-   the text output prints `REOPENED` in place of the packet `next_action`, which describes the
-   original work. Other entries have `reopened: false` and `changed: []`. Reopening does not change
-   the ranking key.
-6. `--json` adds `availability_checked` (false offline, where a closed issue without a completion
-   still ranks as ready). A refusal or exit 2 prints `{"command", "verdict", "error", "exit_code"}`.
+5. An in-scope item that carries a PASS `completion` discover.py no longer accepts is **reopened**:
+   it was complete, and a pinned file, its scope or its attestation changed since. That holds in any
+   state; with `--live` or `--snapshot` it is usually `reconcile`, because the merged slice closed its
+   issue. Reopened items are listed in `reopened`, not `ranked`, with `reopened: true`, `changed` (the
+   pinned files that no longer match), `waiting_on` (its dependencies that are not complete),
+   `actionable` (state `ready` or `reconcile` and nothing to wait on) and a `reason` that says what to
+   do. They sort actionable first, then by the ranking key. `next` is the first actionable reopened
+   item, else the first ranked ready item, because `record` refuses the dependents of a reopened item.
+   The text output prints `REOPENED` in place of the packet `next_action`, which describes the
+   original work. Ranked entries have `reopened: false` and `changed: []`.
+6. Every other in-scope item is in `items` with its `state` and discover.py's `reason`, ordered
+   reconcile, in_review, claimed, blocked, dependency, complete; the text output lists all but the
+   complete ones under `Not ready`. A `reconcile` item whose issue the snapshot shows closed and that
+   has no completion gets the reason "closed without a completion: if its PR merged, verify the
+   delivered work and run record". With no `next`, the verdict names the first reconcile item, else
+   the first reopened one; with a `next`, it appends `also reconcile <items>`.
+7. `--json` adds `availability_checked` (false offline, where a closed issue without a completion
+   still ranks as ready; the text `NEXT` block then says to confirm the issue). A refusal or exit 2
+   prints `{"command", "verdict", "error", "exit_code"}`.
 
 ## 3. Requirement rows
 
@@ -83,7 +94,13 @@ document defines only `-T<n>` tokens. Nothing else defines a test: an evidence r
 under `docs/testing/`, cannot define the test IDs it attests.
 
 A test **belongs to** a requirement when the requirement's row cites it, when the test is keyed by
-that requirement ID, or when one line of a registered test document names both.
+that requirement ID, or when a registered test document ties them:
+- in a table whose header has a target column (a cell matching `target`, `requirement`, `REQ`,
+  `요구`, or starting with `대상`: `Targets`, `제품 REQ`, `연결 요구사항`, `대상 SX`), the test's row
+  names the requirement in such a column; an ID named in passing in another cell does not count;
+- elsewhere (prose, or a table without a target column), one line names both, unless that line
+  expands a test range and another ID range at once (`US-01~18 → US-T01~21`), which would pair every
+  test with every requirement.
 
 A requirement has a **test link** when its row cites a test, or:
 - its registered test document (when it is a different file) names the requirement, or
@@ -136,7 +153,7 @@ Refusals (exit 1, nothing written):
 | `--commit` not 7–40 hex, the checkout not a git work tree, the commit unknown, or not an ancestor of HEAD and (when the ref exists) `origin/main` | the record must point at the merged revision, not a PR branch head; it is stored as the full SHA |
 | `--commit` whose ledger has no such work item, or where a pinned file other than the report differs from HEAD | a commit from before the item, or one that lacks the content the hashes pin, is not the delivery |
 | item already complete without `--replace` | a verdict is superseded deliberately, not by accident |
-| `--replace` with the same commit and an unchanged report (same path and hash) as the superseded completion | nothing new was verified |
+| `--replace` with a report whose hash equals the superseded completion's report, whatever the commit or path, or a report that names no 7+ character prefix of the new `--commit` | nothing new was verified: a replacing completion rests on a new run against that commit |
 | item has a `gate`, or a `depends_on` item that is not complete | a completion must not jump a human gate or an open prerequisite |
 | no `verification_inputs` after `--input`, or the ledger among them | discover.py never counts a requirement-only completion; `record` rewrites the ledger, so pinning it breaks at once |
 | a pinned file not tracked by git, one other than the report differing from HEAD, or a report with unstaged changes | the pins must describe committed content every checkout has; a new or edited report may differ from HEAD only when staged, and ships with the ledger edit |

@@ -16,7 +16,9 @@ protected-branch rules.
 ## Delivery loop
 
 1. Define the smallest user-visible vertical result from the approved Epic or
-   active PR. Freeze only the acceptance conditions needed for that result.
+   active PR. Freeze only the acceptance conditions needed for that result. When the
+   product has `config/requirement-work.json`, take the slice from
+   `hype-align next --doc <epic>`, including an item it marks `REOPENED`.
 2. Within ten minutes, produce a code diff, a failing test, or a concrete
    reproduction. If no such output appears for twenty minutes without an external
    blocker, reset the bloated context or transfer the same branch to a capable
@@ -37,20 +39,9 @@ protected-branch rules.
 8. Verify the merge SHA, main CI, deployment, and the actual production URL,
    installed App, or instructor flow. Mark unobserved claims `NOT RUN`.
 9. Update the feature map and Epic to the observed release state, then take the
-   next vertical slice.
-   For a work item in a product's `config/requirement-work.json`, record the completion before
-   the next slice with the hype-align skill, from a worktree cut from the new `origin/main`:
-   `HYPEPROOF_HARNESS=<Harness checkout at current main> python3 <that worktree>/.claude/skills/hype-align/scripts/align.py
-   record <item> --studio <that worktree> --commit <merge SHA on main> --tests <IDs>
-   --evidence docs/evidence/<item>.md --reviewed-by <verifier>` (details in that skill's
-   SKILL.md). Until the product's vendored copy is synced it exits 2; run the Harness checkout's
-   `skills/hype-align/scripts/align.py` instead. Stage the report first. A report under a
-   criteria path such as `docs/testing/` also needs a validation node in `config/traceability.json`
-   in the same PR, or hype-pr blocks it. `record` edits only the ledger and never commits: ship the
-   ledger and the report through `hype-pr`. Then `align.py check --doc <epic> --lab <Lab
-   checkout>` must exit 0; re-record any earlier item it reports as no longer holding. For
-   Studio the feature map is hypeprooflab `web/src/content/private/studio-prd/`: `features.ts`
-   by hand, the JSON files by `npm run sync:studio-*` in `web/`.
+   next vertical slice. For a ledger work item, first run `hype-align record` and `check`
+   (that skill's "In the delivery loop", steps 2–3). Studio's feature map is hypeprooflab
+   `web/src/content/private/studio-prd/`.
 
 ## Keep the critical path short
 

@@ -214,6 +214,16 @@ def test_next_completed_prerequisites_do_not_demote_an_item(capsys, studio):
     assert [(r['id'], r['unblocks']) for r in out['ranked']] == [('zeta', 1), ('gamma', 0), ('eta', 0), ('alpha', 0)]
 
 
+def snapshot_file(tmp_path, studio, closed=(), pull_requests=()):
+    path = tmp_path / 'snapshot.json'
+    path.write_text(json.dumps({'repository': 'example/demo-product', 'complete': True,
+                                'fetched_at': datetime.now(timezone.utc).isoformat(),
+                                'issues': [{'number': w['issue'], 'state': 'CLOSED' if w['issue'] in closed else 'OPEN',
+                                            'labels': []} for w in load(studio)['work_items']],
+                                'pull_requests': list(pull_requests)}))
+    return path
+
+
 def test_next_names_a_reopened_completion_instead_of_the_packet(capsys, studio):
     assert record_beta(capsys, studio)[0] == 0
     git(studio, 'commit', '-q', '-am', 'record beta')
@@ -221,11 +231,45 @@ def test_next_names_a_reopened_completion_instead_of_the_packet(capsys, studio):
     code, out, _ = run_json(capsys, 'next', '--studio', studio)
     assert code == 0 and out['next']['id'] == 'beta' and out['next']['reopened'] is True
     assert out['next']['changed'] == ['test/note.test.mjs'] and 'record --replace' in out['next']['reason']
-    assert not any(r['reopened'] for r in out['ranked'][1:])
+    assert [r['id'] for r in out['reopened']] == ['beta'] and 'beta' not in [r['id'] for r in out['ranked']]
     code, text, _ = run(capsys, 'next', '--studio', studio)
     assert 'REOPENED beta: completion no longer holds (changed since recorded: test/note.test.mjs)' in text
     assert 'next_action: Build beta' not in text
     assert text.rstrip().endswith('Verdict: next is beta (#2): re-verify its reopened completion')
+
+
+def test_next_names_a_reopened_completion_whose_issue_is_closed(capsys, studio, tmp_path):
+    # The normal path: beta's merged PR closed #2, and a later slice edited a file beta pins.
+    assert record_beta(capsys, studio)[0] == 0
+    git(studio, 'commit', '-q', '-am', 'record beta')
+    write(studio, 'src/note.js', 'export const save = () => false;\n')
+    git(studio, 'commit', '-q', '-am', 'later slice')
+    snapshot = snapshot_file(tmp_path, studio, closed={2})
+    code, out, _ = run_json(capsys, 'next', '--studio', studio, '--snapshot', snapshot)
+    assert code == 0 and out['next']['id'] == 'beta' and out['next']['state'] == 'reconcile'
+    assert out['next']['changed'] == ['src/note.js'] and out['counts']['reconcile'] == 1
+    code, text, _ = run(capsys, 'next', '--studio', studio, '--snapshot', snapshot, '--item', 'beta', '--item', 'gamma')
+    assert 'REOPENED beta #2 [reconcile]: completion no longer holds (changed since recorded: src/note.js)' in text
+    assert '[dependency] gamma #3: Unfulfilled packets: beta' in text
+    assert text.rstrip().endswith('Verdict: next is beta (#2): re-verify its reopened completion')
+
+
+def test_next_names_merged_work_without_a_completion_and_what_blocks_the_rest(capsys, studio, tmp_path):
+    # beta's PR merged and closed #2, but nobody ran record: nothing is ready in beta's chain.
+    snapshot = snapshot_file(tmp_path, studio, closed={2})
+    code, out, _ = run_json(capsys, 'next', '--studio', studio, '--snapshot', snapshot, '--item', 'beta', '--item', 'gamma',
+                            '--item', 'delta')
+    assert code == 0 and out['next'] is None and out['ranked'] == []
+    assert [(e['id'], e['state']) for e in out['items']] == [('beta', 'reconcile'), ('delta', 'blocked'), ('gamma', 'dependency')]
+    assert 'run record beta' in out['items'][0]['reason']
+    assert out['items'][1]['reason'] == 'A person must approve the export format'
+    assert out['verdict'].startswith('no ready item in scope; reconcile beta (#2) first: issue #2 is closed without a completion')
+    # With ready work elsewhere, the merged item is still named.
+    code, out, _ = run_json(capsys, 'next', '--studio', studio, '--snapshot', snapshot)
+    assert out['next']['id'] == 'zeta' and out['verdict'] == 'next is zeta (#5); also reconcile beta (#2)'
+    # Offline, the closed issue is unknown: the NEXT line says what to confirm.
+    code, text, _ = run(capsys, 'next', '--studio', studio)
+    assert 'offline: if #2 is closed or its PR merged, this item needs record, not new work' in text
 
 
 def test_next_reads_week_tags_and_names_a_bad_curriculum_week(capsys, studio):
@@ -238,6 +282,10 @@ def test_next_reads_week_tags_and_names_a_bad_curriculum_week(capsys, studio):
     save(studio, manifest)
     code, _, err = run(capsys, 'next', '--studio', studio)
     assert code == 2 and "work item eta: curriculum_week 'soon' is not a week" in err
+    manifest['work_items'][5]['curriculum_week'] = []
+    save(studio, manifest)
+    code, _, err = run(capsys, 'next', '--studio', studio)
+    assert code == 2 and 'work item eta: curriculum_week is an empty list' in err
 
 
 def test_next_uses_the_github_snapshot_when_given(capsys, studio, tmp_path):
@@ -373,6 +421,23 @@ def test_traceability_rows_beside_test_ids_are_not_tests(capsys, studio):
     assert {'DM-01', 'DM-02'} <= align.Ledger(studio).test_ids
 
 
+def test_a_test_belongs_to_its_declared_targets_not_to_ids_named_in_passing(capsys, studio):
+    # DM-T06's Requirement column says DM-03; its pass condition only mentions DM-02. A prose line that
+    # expands a test range and a requirement range at once pairs everything with everything.
+    write(studio, 'docs/testing/demo.md', TESTING + '| DM-T06 | DM-03 | guest opens, unlike DM-02 restart |\n'
+                                                    '\nScope: DM-01~04 → DM-T01~06.\n')
+    ledger = align.Ledger(studio)
+    beta = ledger.items[ledger.index['beta']]
+    assert ledger.tied(ledger.items[ledger.index['zeta']], 'DM-T06')
+    assert not ledger.tied(beta, 'DM-T06') and not ledger.tied(beta, 'DM-T04')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'),
+                       '--tests', 'DM-T02,DM-T06', '--evidence', 'docs/evidence/beta.md', '--reviewed-by', 'verifier')
+    assert code == 1 and 'tests not tied to a requirement beta cites: DM-T06' in err
+    # Without a target column, one line naming both still ties them.
+    write(studio, 'docs/testing/demo.md', TESTING + '\nDM-T06 also exercises DM-02 after a restart.\n')
+    assert align.Ledger(studio).tied(beta, 'DM-T06')
+
+
 def test_record_refuses_on_ledger_gaps(capsys, studio):
     write(studio, 'docs/requirements/demo.md', REQUIREMENTS + '| DM-05 | P0 | New row | DM-T05 |\n')
     git(studio, 'commit', '-q', '-am', 'new requirement row')
@@ -388,6 +453,34 @@ def test_record_refuses_to_overwrite_without_replace(capsys, studio):
     code, _, err = record_beta(capsys, studio, '--replace')
     assert code == 1 and 'nothing new to attest' in err
     write(studio, 'docs/evidence/beta.md', 'DM-T02 PASS, DM-T03 PASS (re-run)\n')
+    git(studio, 'add', 'docs/evidence/beta.md')
+    code, _, err = record_beta(capsys, studio, '--replace')
+    assert code == 1 and f"does not name commit {git(studio, 'rev-parse', 'HEAD')[:12]}" in err
+    write(studio, 'docs/evidence/beta.md', f"DM-T02 PASS, DM-T03 PASS on {git(studio, 'rev-parse', '--short', 'HEAD')}\n")
+    git(studio, 'add', 'docs/evidence/beta.md')
+    assert record_beta(capsys, studio, '--replace')[0] == 0
+
+
+def test_record_replace_needs_a_new_report_whatever_the_commit(capsys, studio):
+    # A later slice edits a pinned file and reopens beta. Passing the new main commit alone must not
+    # re-stamp the old report: it still names the old run.
+    old = git(studio, 'rev-parse', 'HEAD')
+    write(studio, 'docs/evidence/beta.md', f'DM-T02 PASS, DM-T03 PASS on {old}\n')
+    git(studio, 'commit', '-q', '-am', 'beta report')
+    assert record_beta(capsys, studio)[0] == 0
+    git(studio, 'commit', '-q', '-am', 'record beta')
+    write(studio, 'src/note.js', 'export const save = () => "v2";\n')
+    git(studio, 'commit', '-q', '-am', 'later slice edits a pinned input')
+    new = git(studio, 'rev-parse', 'HEAD')
+    code, _, err = record_beta(capsys, studio, '--replace')
+    assert code == 1 and 'nothing new to attest: docs/evidence/beta.md is the report the superseded completion pinned' in err
+    # The same bytes under another path are the same report.
+    write(studio, 'docs/evidence/beta-copy.md', f'DM-T02 PASS, DM-T03 PASS on {old}\n')
+    git(studio, 'add', 'docs/evidence/beta-copy.md')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', new, '--tests', 'DM-T02,DM-T03',
+                       '--evidence', 'docs/evidence/beta-copy.md', '--reviewed-by', 'verifier', '--replace')
+    assert code == 1 and 'nothing new to attest' in err
+    write(studio, 'docs/evidence/beta.md', f'DM-T02 PASS, DM-T03 PASS on {new[:9]} after the src/note.js change\n')
     git(studio, 'add', 'docs/evidence/beta.md')
     assert record_beta(capsys, studio, '--replace')[0] == 0
 
