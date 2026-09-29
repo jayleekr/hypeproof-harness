@@ -29,6 +29,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/hype-pr/` | criteria 링크 점검 + 에이전트 영향 평가를 묶어 PR을 생성하는 스킬 | 3 consumers `.claude/skills/` |
 | `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hype-deliver/` | 사용자 가시 수직 기능을 구현부터 머지·배포·실제품 확인까지 소유하는 Astra Captain 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-align/` | Next / record / check / drift verdicts over a product requirement ledger, built on `scripts/work-discovery/discover.py` | 3 consumers `.claude/skills/` |
 | `skills/hype-verify/` | 새 구현 SHA 또는 인수 revision만 독립 검증하는 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hype-intent/` | 실제 제품 모호성만 해결하는 선택적 Intent specialist | 3 consumers `.claude/skills/` |
 | `skills/hype-studio/` | 비중첩 Studio 하위 작업용 선택적 specialist | 3 consumers `.claude/skills/` |

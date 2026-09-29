@@ -38,6 +38,7 @@ protected-branch rules.
    installed App, or instructor flow. Mark unobserved claims `NOT RUN`.
 9. Update the feature map and Epic to the observed release state, then take the
    next vertical slice.
+   For a ledger work item, run `hype-align record <item>` before the next slice; `hype-align check --item <item> --lab <Lab checkout>` must then exit 0.
 
 ## Keep the critical path short
 

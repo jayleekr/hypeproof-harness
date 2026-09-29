@@ -88,6 +88,7 @@ ready, 다른 세션 작업, 리뷰 대기, 의존성, 사람/환경 대기, 재
 - `.claude/skills/skill-creator/`
 - `.claude/skills/hype-pr/` (`.agents/skills/hype-pr/`에서도 발견 가능)
 - `.claude/skills/hype-deliver/`
+- `.claude/skills/hype-align/`
 - `.claude/skills/hype-verify/`
 - `.claude/skills/hype-coordinate/`
 - `.claude/skills/hype-intent/`

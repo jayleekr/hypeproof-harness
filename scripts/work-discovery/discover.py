@@ -177,6 +177,20 @@ def prs_text(numbers):
     return ', '.join(f'#{n}' for n in numbers)
 
 
+def load_manifest(root, manifest='config/requirement-work.json'):
+    return json.loads((Path(root) / manifest).read_text(encoding='utf-8'))
+
+
+def load_snapshot(manifest, now, path=None):
+    """A complete GitHub snapshot of the ledger's repository: recorded (max age 1h), or fetched when no path."""
+    snapshot = (json.loads(path.read_text(encoding='utf-8')) if path else
+                live_snapshot(manifest['repository'], {w['issue'] for w in manifest['work_items']}))
+    age = now - datetime.fromisoformat(snapshot['fetched_at'].replace('Z', '+00:00'))
+    if snapshot.get('repository') != manifest['repository'] or snapshot.get('complete') is not True or age > timedelta(hours=1) or age < -timedelta(minutes=5):
+        raise ValueError('Wrong, incomplete or stale GitHub snapshot; availability is unknown')
+    return snapshot
+
+
 def gh(*args):
     return json.loads(subprocess.check_output(['gh', *args], text=True))
 
@@ -253,7 +267,7 @@ def main():
     parser.add_argument('--scope-digest', metavar='WORK_ITEM', help='Print the scope_sha256 to record in that item\'s completion')
     args = parser.parse_args()
     root = args.checkout.resolve()
-    manifest = json.loads((root / args.manifest).read_text(encoding='utf-8'))
+    manifest = load_manifest(root, args.manifest)
     if args.scope_digest:
         item = next((w for w in manifest['work_items'] if w['id'] == args.scope_digest), None)
         if item is None:
@@ -264,11 +278,7 @@ def main():
     now = datetime.now(timezone.utc)
     result = {'repository': manifest['repository'], 'errors': errors, 'integrity_only': args.check}
     if not args.check:
-        snapshot = (json.loads(args.snapshot.read_text(encoding='utf-8')) if args.snapshot else
-                    live_snapshot(manifest['repository'], {w['issue'] for w in manifest['work_items']}))
-        age = now - datetime.fromisoformat(snapshot['fetched_at'].replace('Z', '+00:00'))
-        if snapshot.get('repository') != manifest['repository'] or snapshot.get('complete') is not True or age > timedelta(hours=1) or age < -timedelta(minutes=5):
-            raise ValueError('Wrong, incomplete or stale GitHub snapshot; availability is unknown')
+        snapshot = load_snapshot(manifest, now, args.snapshot)
         if args.save_snapshot:
             args.save_snapshot.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         result['fetched_at'] = snapshot['fetched_at']
