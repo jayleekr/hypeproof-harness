@@ -13,7 +13,8 @@ Contents: 1 Inputs · 2 next · 3 Requirement rows · 4 record · 5 check · 6 d
 | Integrity | `discover.audit` | missing/changed documents, unassigned IDs, cycles |
 | States | `discover.classify` | ready, claimed, in_review, dependency, blocked, reconcile, complete |
 | Completion | `discover.fulfilled`, `discover.scope_digest` | the only definition of complete |
-| Testing documents | `<studio>/docs/testing/**/*.md` | plus each document's registered `test` path |
+| Test documents | each document's registered `test` path | the only files that define test IDs (§3) |
+| Testing mentions | `<studio>/docs/testing/**/*.md` | minus every completion `report` and the report being recorded |
 | Lab catalog | `<lab>/web/scripts/lib/studio_catalog.mjs` | `catalogSources`, `excludedSources` |
 | Lab features | `<lab>/web/src/content/private/studio-prd/{features.ts,work.json,catalog.json}` | |
 
@@ -34,12 +35,17 @@ Files are read from the working tree, not from a commit. Use a clean worktree.
 
    | Order | Key | Source |
    |---|---|---|
-   | 1 | depth | longest `depends_on` chain above the item in the whole ledger (0 = root) |
-   | 2 | priority | best `P<n>` among the requirement rows the item cites; none sorts last |
-   | 3 | curriculum week | item field `curriculum_week` (int or list), else the earliest row week tag; none sorts last |
+   | 1 | priority | best `P<n>` among the requirement rows the item cites; none sorts last |
+   | 2 | curriculum week | item field `curriculum_week` (int or list), else the earliest row week tag; none sorts last |
+   | 3 | unblocks, descending | unfinished items anywhere in the ledger that depend on it, directly or transitively |
    | 4 | ledger order | position in `work_items` |
 
-   The first item is `next`; the whole list is `ranked`.
+   The first item is `next`; the whole list is `ranked`. Dependency depth is not a key: every
+   dependency of a ready item is complete, so depth would only rank an item whose prerequisites
+   finished behind every root, whatever its priority. Dependencies act through `ready` itself and
+   through the unblocks tie-break.
+5. `--json` adds `availability_checked` (false offline, where a closed issue without a completion
+   still ranks as ready). A refusal or exit 2 prints `{"command", "verdict", "error", "exit_code"}`.
 
 ## 3. Requirement rows
 
@@ -61,15 +67,23 @@ A requirement row is a Markdown table line whose first cell is the ID, the same 
 Commas do not continue a list. A token must not be preceded by a letter, digit or hyphen,
 so `INT-ACCESS-01` is not `SS-01`. Requirement-ID mentions expand the same way (`AE-01/02`).
 
-A test ID is **defined** when a testing document under `docs/testing/` contains it as a
+A test ID is **defined** when a registered test document (`documents[].test`) contains it as a
 `-T<n>` token or as the first cell of a table row (some documents key tests by the
-requirement ID). A registered test document outside `docs/testing/` defines only `-T<n>` tokens.
+requirement ID). A registered test document that is itself a requirement document defines only
+`-T<n>` tokens. Nothing else defines a test: an evidence report, even one under `docs/testing/`,
+cannot define the test IDs it attests.
+
+A test **belongs to** a requirement when the requirement's row cites it, when the test is keyed by
+that requirement ID, or when one line of a registered test document names both.
 
 A requirement has a **test link** when its row cites a test, or:
 - its registered test document (when it is a different file) names the requirement, or
-- any `docs/testing/` document names it and the ID's prefix belongs to one registered document, or
+- a `docs/testing/` document that is not an evidence report names it and the ID's prefix belongs to
+  one registered document, or
 - its tests live in the requirement document itself and a line other than its own row names
   both the requirement and a `-T<n>` test.
+
+An evidence report is any completion's `report` plus the report `record` is writing.
 
 ## 4. record
 
@@ -81,11 +95,11 @@ A requirement has a **test link** when its row cites a test, or:
 "completion": {
   "verdict": "PASS",
   "reviewed_by": "independent verifier",
-  "report": "docs/testing/evidence/cr-browser.md",
+  "report": "docs/evidence/cr-browser.md",
   "scope_sha256": "<discover.scope_digest of the packet as recorded>",
   "inputs": {"<requirement doc>": "<sha256>", "<verification input>": "<sha256>", "<report>": "<sha256>"},
-  "commit": "<merge commit SHA>",
-  "test_ids": ["CR-T01", "CR-T02"],
+  "commit": "<full 40-character SHA of the merge commit on main>",
+  "test_ids": ["CR-T04", "CR-T05"],
   "recorded_at": "2026-09-29T08:00:00Z",
   "pr": 1402
 }
@@ -100,15 +114,27 @@ Refusals (exit 1, nothing written):
 | Condition | Why |
 |---|---|
 | `--tests` empty, or a test ID not defined (§3) | no test result, no completion |
-| `--evidence` missing, not a file, outside the checkout, or the ledger itself | the report must be pinned and travel with the repo |
+| a test that belongs to none of the item's cited requirements (§3) | the completion must rest on this packet's tests |
+| `--evidence` missing, not a file, outside the checkout, the ledger itself, or a registered test document | the report must be pinned, travel with the repo, and not define its own tests |
 | `--reviewed-by` empty | discover.py requires an attesting reviewer |
-| `--commit` not 7–40 hex, or unknown to a git checkout | the record must point at a real delivered revision |
+| `--commit` not 7–40 hex, the checkout not a git work tree, the commit unknown, or not an ancestor of HEAD and (when the ref exists) `origin/main` | the record must point at the merged revision, not a PR branch head; it is stored as the full SHA |
 | item already complete without `--replace` | a verdict is superseded deliberately, not by accident |
-| no `verification_inputs` after `--input` | discover.py never counts a requirement-only completion |
+| item has a `gate`, or a `depends_on` item that is not complete | a completion must not jump a human gate or an open prerequisite |
+| no `verification_inputs` after `--input`, or the ledger among them | discover.py never counts a requirement-only completion; `record` rewrites the ledger, so pinning it breaks at once |
+| a pinned file not tracked by git, or one other than the report differing from HEAD | the pins must describe committed content every checkout has; a new report may be staged and ships with the ledger edit |
+| any `discover.audit` gap | a completion on a ledger that fails the product's own gate is not a verdict |
 | discover.py would not classify the result complete | the record would be dead on arrival |
 | any broken link from §5 for this item (Lab excluded) | `record` never writes what `check` rejects |
 
+Warning (still written): a verification input or the report that another work item also pins
+(its `verification_inputs` or completion inputs, requirement documents aside). An edit to that
+file for the other item reopens this completion; see SKILL.md, "Reopened completions".
+
 ## 5. check
+
+`discover.audit` runs first. Any gap is printed as `GAP:` and fails the check whatever the
+scope, as it fails the product's `next-work.py --check` gate; the verdict starts with
+"reconcile the requirement ledger first".
 
 Broken links (exit 1):
 
@@ -119,9 +145,9 @@ Broken links (exit 1):
 | `intent` / `design` / `test-doc` | the document's registered intent, design or test file is missing |
 | `test-id` | a row cites a test ID that no testing document defines |
 | `test-link` | none of the item's requirements has a test link, and no completion test IDs |
-| `completion` | a completion lacks test IDs, cites an undefined test, lost its evidence, or no longer holds under `discover.fulfilled` |
+| `completion` | a completion lacks test IDs, cites an undefined test or one that belongs to none of the item's requirements, lost its evidence, or no longer holds under `discover.fulfilled` (the detail names the pinned files that changed) |
 | `implementation` | an item with a completion has no `implementation_paths`, or one does not exist |
-| `lab` | with `--lab`: neither `work.json` (item id or issue) nor `features.ts` (document slug plus one of its IDs, or the whole document) links the item |
+| `lab` | with `--lab`: neither `work.json` (the item id, or its issue number when no other ledger item shares it) nor `features.ts` (document slug plus one of its IDs, or the whole document) links the item |
 | `lab-feature` | with `--lab`: an item `feature_ids` entry is not a feature in `features.ts` |
 
 Warnings (exit unaffected): `untested-requirement` for each cited requirement without a

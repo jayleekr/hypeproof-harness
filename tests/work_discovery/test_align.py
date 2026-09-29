@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -188,26 +189,29 @@ def test_tokens_expand_shorthand_without_reading_inside_longer_ids():
     assert align.tokens('see CA-T16/17 and MC-21', tests_only=True) == {'CA-T16', 'CA-T17'}
 
 
-def test_next_ranks_depth_then_priority_then_week_then_ledger_order(capsys, studio):
+def test_next_ranks_priority_then_week_then_unblocked_work_then_ledger_order(capsys, studio):
     code, out, _ = run_json(capsys, 'next', '--studio', studio)
     assert code == 0
     assert [r['id'] for r in out['ranked']] == ['beta', 'zeta', 'alpha', 'eta']
     assert out['next']['id'] == 'beta' and out['next']['priority'] == 0 and out['next']['week'] == 1
+    assert out['next']['unblocks'] == 1  # gamma waits on beta
     assert out['counts'] == {'blocked': 1, 'dependency': 1, 'ready': 4}
-    assert out['availability'].startswith('unchecked')
+    assert out['availability'].startswith('unchecked') and out['availability_checked'] is False
     # Prose "3주차" in DM-04's acceptance cell is not a week tag.
     assert align.Ledger(studio).facts('docs/requirements/demo.md', 'DM-04') == (2, None, ['DM-T04'])
 
 
-def test_next_depth_and_explicit_curriculum_week(capsys, studio):
+def test_next_completed_prerequisites_do_not_demote_an_item(capsys, studio):
     assert record_beta(capsys, studio)[0] == 0
     manifest = load(studio)
     manifest['work_items'][5]['curriculum_week'] = [1, 4]  # eta: explicit week beats alpha's row tag W2
+    manifest['work_items'].append(item('iota', 7, ['DM-03'], depends_on=['zeta']))
     save(studio, manifest)
     code, out, _ = run_json(capsys, 'next', '--studio', studio)
     assert code == 0
-    # gamma is ready now that beta is complete, but it sits one level deeper than every root.
-    assert [(r['id'], r['depth']) for r in out['ranked']] == [('zeta', 0), ('eta', 0), ('alpha', 0), ('gamma', 1)]
+    # gamma (P0) became ready when beta completed; its finished prerequisite does not rank it behind
+    # P1 roots. zeta ties with it on priority and week and goes first because it unblocks iota.
+    assert [(r['id'], r['unblocks']) for r in out['ranked']] == [('zeta', 1), ('gamma', 0), ('eta', 0), ('alpha', 0)]
 
 
 def test_next_uses_the_github_snapshot_when_given(capsys, studio, tmp_path):
@@ -218,7 +222,7 @@ def test_next_uses_the_github_snapshot_when_given(capsys, studio, tmp_path):
                                     'pull_requests': [{'number': 40, 'issues': [2], 'closing': [2], 'mentions': []}]}))
     code, out, _ = run_json(capsys, 'next', '--studio', studio, '--snapshot', snapshot)
     assert code == 0 and out['next']['id'] == 'zeta'
-    assert out['counts']['in_review'] == 1 and out['availability'].startswith('checked at')
+    assert out['counts']['in_review'] == 1 and out['availability'].startswith('checked at') and out['availability_checked']
 
 
 def test_next_scope_filters_and_ledger_gap(capsys, studio):
@@ -232,29 +236,99 @@ def test_next_scope_filters_and_ledger_gap(capsys, studio):
 
 
 BASE = {'--tests': 'DM-T02,DM-T03', '--evidence': 'docs/evidence/beta.md', '--reviewed-by': 'verifier'}
+BASE_FLAGS = [part for pair in BASE.items() for part in pair]
 
 
 @pytest.mark.parametrize('name, override, message', [
     ('beta', {'--tests': None}, '--tests is required'),
-    ('beta', {'--tests': 'DM-T02,DM-T99'}, 'not defined in any testing document: DM-T99'),
-    ('beta', {'--tests': 'DM-02'}, 'not defined in any testing document: DM-02'),
+    ('beta', {'--tests': 'DM-T02,DM-T99'}, 'not defined in any registered test document: DM-T99'),
+    ('beta', {'--tests': 'DM-02'}, 'not defined in any registered test document: DM-02'),
+    ('beta', {'--tests': 'DM-T02,DM-T04'}, 'tests not tied to a requirement beta cites: DM-T04'),
     ('beta', {'--evidence': None}, '--evidence is required'),
     ('beta', {'--evidence': 'docs/evidence/missing.md'}, 'is not a file'),
     ('beta', {'--evidence': '../outside.md'}, 'outside the checkout'),
+    ('beta', {'--evidence': 'docs/testing/demo.md'}, 'is a registered test document'),
     ('beta', {'--reviewed-by': None}, '--reviewed-by is required'),
     ('beta', {'--commit': 'abcdef1'}, 'not in this checkout'),
     ('beta', {'--commit': 'HEAD'}, 'hexadecimal'),
+    ('beta', {'--input': 'config/requirement-work.json'}, 'ledger cannot be a verification input'),
     ('alpha', {}, 'has no verification_inputs'),
+    ('gamma', {}, 'depends on work that is not complete: beta'),
+    ('delta', {}, 'is gated: A person must approve the export format'),
     ('nope', {}, 'unknown work item: nope'),
 ])
 def test_record_refuses_without_test_ids_or_evidence(capsys, studio, tmp_path, name, override, message):
     (tmp_path / 'outside.md').write_text('evidence outside the product repo\n')
     flags = {'--commit': git(studio, 'rev-parse', 'HEAD'), **BASE, **override}
     before = ledger_path(studio).read_bytes()
-    code, _, err = run(capsys, 'record', name, '--studio', studio,
-                       *[part for flag, value in flags.items() if value is not None for part in (flag, value)])
+    code, out, err = run_json(capsys, 'record', name, '--studio', studio,
+                              *[part for flag, value in flags.items() if value is not None for part in (flag, value)])
     assert code == 1 and message in err
+    assert out['verdict'] == 'refused' and message in out['error']
     assert ledger_path(studio).read_bytes() == before
+
+
+def test_record_needs_a_merged_commit_and_stores_its_full_sha(capsys, studio, tmp_path, monkeypatch):
+    head = git(studio, 'rev-parse', 'HEAD')
+    # A PR branch head that never reached main: the branch is deleted, the object stays.
+    git(studio, 'checkout', '-q', '-b', 'side')
+    write(studio, 'docs/side.md', 'side work\n')
+    git(studio, 'add', '-A')
+    git(studio, 'commit', '-q', '-m', 'side')
+    side = git(studio, 'rev-parse', 'HEAD')
+    git(studio, 'checkout', '-q', 'main')
+    git(studio, 'branch', '-q', '-D', 'side')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', side, *BASE_FLAGS)
+    assert code == 1 and 'is not an ancestor of HEAD' in err
+    # origin/main, when the checkout has it, must contain the commit as well.
+    write(studio, 'docs/plan/later.md', '# Later\n')
+    git(studio, 'add', '-A')
+    git(studio, 'commit', '-q', '-m', 'later')
+    git(studio, 'update-ref', 'refs/remotes/origin/main', head)
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'), *BASE_FLAGS)
+    assert code == 1 and 'is not an ancestor of origin/main' in err
+    # A short SHA on main is stored as the full SHA.
+    code, out, _ = run_json(capsys, 'record', 'beta', '--studio', studio, '--commit', head[:7], *BASE_FLAGS, '--dry-run')
+    assert code == 0 and out['completion']['commit'] == head
+    # Without git the commit cannot be confirmed, so nothing is recorded.
+    monkeypatch.setenv('GIT_CEILING_DIRECTORIES', str(tmp_path))
+    shutil.rmtree(studio / '.git')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', head, *BASE_FLAGS)
+    assert code == 1 and 'is not a git work tree' in err
+
+
+def test_record_pins_only_committed_files(capsys, studio):
+    head = git(studio, 'rev-parse', 'HEAD')
+    write(studio, 'docs/evidence/new.md', 'DM-T02 PASS, DM-T03 PASS\n')
+    flags = ['--commit', head, '--tests', 'DM-T02,DM-T03', '--reviewed-by', 'verifier']
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--evidence', 'docs/evidence/new.md', *flags)
+    assert code == 1 and 'not tracked by git: docs/evidence/new.md' in err
+    # A staged new report is allowed; it ships with the ledger edit.
+    git(studio, 'add', 'docs/evidence/new.md')
+    code, out, _ = run(capsys, 'record', 'beta', '--studio', studio, '--evidence', 'docs/evidence/new.md', *flags, '--dry-run')
+    assert code == 0 and 'docs/evidence/new.md is not in HEAD yet' in out
+    write(studio, 'src/note.js', 'export const save = () => "edited";\n')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--evidence', 'docs/evidence/new.md', *flags)
+    assert code == 1 and 'uncommitted changes in pinned files: src/note.js' in err
+
+
+def test_record_evidence_cannot_define_the_tests_it_attests(capsys, studio):
+    # The report lives under docs/testing but is not a registered test document.
+    write(studio, 'docs/testing/evidence/beta.md', 'DM-T02 PASS · DM-T09 DM-02 PASS\n')
+    git(studio, 'add', '-A')
+    git(studio, 'commit', '-q', '-m', 'evidence')
+    flags = ['--commit', git(studio, 'rev-parse', 'HEAD'), '--evidence', 'docs/testing/evidence/beta.md', '--reviewed-by', 'verifier']
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--tests', 'DM-T02,DM-T09', *flags)
+    assert code == 1 and 'not defined in any registered test document: DM-T09' in err
+    assert run(capsys, 'record', 'beta', '--studio', studio, '--tests', 'DM-T02,DM-T03', *flags)[0] == 0
+    assert run(capsys, 'check', '--studio', studio, '--item', 'beta')[0] == 0
+
+
+def test_record_refuses_on_ledger_gaps(capsys, studio):
+    write(studio, 'docs/requirements/demo.md', REQUIREMENTS + '| DM-05 | P0 | New row | DM-T05 |\n')
+    git(studio, 'commit', '-q', '-am', 'new requirement row')
+    code, _, err = run(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'), *BASE_FLAGS)
+    assert code == 1 and 'the requirement ledger has 2 gaps' in err and 'requirement inventory changed' in err
 
 
 def test_record_refuses_to_overwrite_without_replace(capsys, studio):
@@ -287,14 +361,16 @@ def test_record_writes_a_completion_discover_accepts_and_never_commits(capsys, s
     # Changing a pinned implementation file reopens it (discover.py's rule, surfaced by check).
     write(studio, 'src/note.js', 'export const save = () => false;\n')
     code, out, _ = run(capsys, 'check', '--studio', studio, '--item', 'beta')
-    assert code == 1 and 'completion no longer holds' in out
+    assert code == 1 and 'completion no longer holds (changed since recorded: src/note.js)' in out
 
 
-def test_record_input_extends_the_packet(capsys, studio):
+def test_record_input_extends_the_packet_and_names_shared_pins(capsys, studio):
     code, out, _ = run_json(capsys, 'record', 'alpha', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'),
                             '--tests', 'DM-T01', '--evidence', 'docs/evidence/beta.md', '--reviewed-by', 'verifier',
                             '--input', 'src/note.js', '--dry-run')
     assert code == 0 and out['written'] is False and out['verification_inputs'] == ['src/note.js']
+    # beta also pins src/note.js: the next change to it reopens both packets.
+    assert out['shared_inputs'] == {'src/note.js': ['beta']}
     assert 'completion' not in load(studio)['work_items'][0]
 
 
@@ -314,6 +390,7 @@ def test_check_positive_control_and_broken_links(capsys, studio, lab):
     features.write_text(FEATURES.replace('"DM-01", "DM-02", "DM-04"', '"DM-01", "DM-02"'))
     code, out, _ = run_json(capsys, 'check', '--studio', studio, '--lab', lab)
     assert code == 1 and not out['ok']
+    assert 'requirement content changed: docs/requirements/demo.md' in out['ledger_gaps']
     kinds = {(b['item'], b['kind']) for b in out['broken']}
     assert {('delta', 'test-id'), ('beta', 'implementation'), ('alpha', 'lab-feature'), ('delta', 'lab'),
             ('alpha', 'design')} <= kinds
@@ -323,10 +400,39 @@ def test_check_positive_control_and_broken_links(capsys, studio, lab):
 
 
 def test_check_requires_a_test_link(capsys, studio):
+    # beta's evidence report sits under docs/testing and names DM-03. A report is a claim about a
+    # run, not a test for zeta, so it must not supply zeta's test link.
+    write(studio, 'docs/testing/evidence/beta.md', 'DM-T02 PASS, DM-T03 PASS; DM-03 sharing left untouched.\n')
+    git(studio, 'add', '-A')
+    git(studio, 'commit', '-q', '-m', 'evidence')
+    assert run(capsys, 'record', 'beta', '--studio', studio, '--commit', git(studio, 'rev-parse', 'HEAD'),
+               '--tests', 'DM-T02,DM-T03', '--evidence', 'docs/testing/evidence/beta.md', '--reviewed-by', 'verifier')[0] == 0
     write(studio, 'docs/testing/demo.md', TESTING.replace('| DM-T05 | DM-03 | guest opens the shared link |\n', ''))
     code, out, _ = run_json(capsys, 'check', '--studio', studio, '--item', 'zeta')
     assert code == 1 and [b['kind'] for b in out['broken']] == ['test-link']
     assert out['warnings'][0]['kind'] == 'untested-requirement'
+
+
+def test_check_fails_on_ledger_gaps(capsys, studio):
+    assert run(capsys, 'check', '--studio', studio, '--item', 'beta')[0] == 0
+    write(studio, 'docs/requirements/demo.md', REQUIREMENTS + '| DM-05 | P0 | New row | DM-T05 |\n')
+    code, out, _ = run(capsys, 'check', '--studio', studio, '--item', 'beta')
+    assert code == 1 and 'GAP: requirement inventory changed: docs/requirements/demo.md' in out
+    assert 'Verdict: reconcile the requirement ledger first (2 gaps); chain intact for 1 items' in out
+
+
+def test_check_lab_link_by_item_id_or_unique_issue(capsys, studio, lab):
+    (lab / align.LAB_DATA / 'features.ts').write_text(FEATURES.replace('ids: ["DM-03"]', 'ids: ["DM-04"]'))
+    work = lab / align.LAB_DATA / 'work.json'
+    data = json.loads(work.read_text())
+    data['features']['sharing'] = [{'title': 'renamed packet', 'issue': 5}]
+    work.write_text(json.dumps(data))
+    assert run(capsys, 'check', '--studio', studio, '--item', 'zeta', '--lab', lab)[0] == 0  # #5 is zeta's alone
+    manifest = load(studio)
+    manifest['work_items'][4]['issue'] = 1  # now shared with alpha, whose work.json entry must not stand in
+    save(studio, manifest)
+    code, out, _ = run_json(capsys, 'check', '--studio', studio, '--item', 'zeta', '--lab', lab)
+    assert code == 1 and [b['kind'] for b in out['broken']] == ['lab']
 
 
 def test_drift_in_sync_then_reports_each_finding(capsys, studio, lab):
@@ -373,3 +479,20 @@ def test_cli_uses_the_environment_checkout_and_reports_failures(studio, tmp_path
     result = subprocess.run([sys.executable, '-B', str(SCRIPT), 'next', '--studio', str(tmp_path / 'nowhere')],
                             capture_output=True, text=True, env=env)
     assert result.returncode == 2 and 'could not evaluate' in result.stderr
+
+
+def test_vendored_copy_skips_a_harness_checkout_that_predates_it(studio, tmp_path):
+    # A consumer repo vendors the skill; HYPEPROOF_HARNESS points at an old Harness, the sibling is current.
+    vendored = tmp_path / 'consumer/.claude/skills/hype-align/scripts/align.py'
+    vendored.parent.mkdir(parents=True)
+    shutil.copy(SCRIPT, vendored)
+    git(tmp_path / 'consumer', 'init', '-q')
+    stale = tmp_path / 'stale/scripts/work-discovery/discover.py'
+    write(tmp_path, 'stale/scripts/work-discovery/discover.py', 'def audit(root, manifest):\n    return []\n')
+    write(tmp_path, 'hypeproof-harness/scripts/work-discovery/discover.py', (ROOT / 'scripts/work-discovery/discover.py').read_text())
+    env = {'PATH': '/usr/bin:/bin', 'HYPEPROOF_HARNESS': str(tmp_path / 'stale'), 'HYPEPROOF_STUDIO': str(studio)}
+    result = subprocess.run([sys.executable, '-B', str(vendored), 'next'], capture_output=True, text=True, env=env)
+    assert result.returncode == 0 and 'Verdict: next is beta (#2)' in result.stdout, result.stderr
+    shutil.rmtree(tmp_path / 'hypeproof-harness')
+    result = subprocess.run([sys.executable, '-B', str(vendored), 'next'], capture_output=True, text=True, env=env)
+    assert result.returncode == 2 and f'every Harness discover.py found predates hype-align ({stale})' in result.stderr

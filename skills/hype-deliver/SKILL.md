@@ -38,7 +38,15 @@ protected-branch rules.
    installed App, or instructor flow. Mark unobserved claims `NOT RUN`.
 9. Update the feature map and Epic to the observed release state, then take the
    next vertical slice.
-   For a ledger work item, run `hype-align record <item>` before the next slice; `hype-align check --item <item> --lab <Lab checkout>` must then exit 0.
+   For a work item in a product's `config/requirement-work.json`, record the completion before
+   the next slice with the hype-align skill, from a worktree cut from the new `origin/main`:
+   `python3 .claude/skills/hype-align/scripts/align.py record <item> --studio <checkout>
+   --commit <merge SHA on main> --tests <IDs> --evidence <report file> --reviewed-by <verifier>`
+   (details in that skill's SKILL.md). It edits only the ledger and never commits: ship the
+   ledger and the report through `hype-pr`. Then `align.py check --doc <epic> --lab <Lab
+   checkout>` must exit 0; re-record any earlier item it reports as no longer holding. For
+   Studio the feature map is hypeprooflab `web/src/content/private/studio-prd/`: `features.ts`
+   by hand, the JSON files by `npm run sync:studio-*` in `web/`.
 
 ## Keep the critical path short
 

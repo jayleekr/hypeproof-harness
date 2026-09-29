@@ -60,15 +60,19 @@ def harness_candidates():
 
 @functools.lru_cache(maxsize=None)
 def discovery():
+    stale = []
     for root in harness_candidates():
         script = root / 'scripts/work-discovery/discover.py'
         if script.is_file():
             spec = importlib.util.spec_from_file_location('hype_align_discover', script)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            if not hasattr(module, 'load_snapshot'):
-                raise FileNotFoundError(f'{script} predates hype-align; update that Harness checkout to current main')
-            return module
+            if hasattr(module, 'load_snapshot'):
+                return module
+            stale.append(str(script))  # an older Harness checkout; a later candidate may be current
+    if stale:
+        raise FileNotFoundError('every Harness discover.py found predates hype-align (' + ', '.join(stale) + '); '
+                                'update one of those checkouts to current main or set HYPEPROOF_HARNESS')
     raise FileNotFoundError('canonical Harness scripts/work-discovery/discover.py not found; '
                             'set HYPEPROOF_HARNESS to a hypeproof-harness checkout')
 
@@ -138,6 +142,9 @@ class Ledger:
         self.docs = {doc['path']: doc for doc in self.manifest['documents']}
         self.items = self.manifest['work_items']
         self.index = {item['id']: n for n, item in enumerate(self.items)}
+        # Evidence reports pinned by completions; `record` adds the one it is writing. A report
+        # naming a requirement is a claim about a run, not a test for it.
+        self.reports = {item['completion'].get('report') for item in self.items if item.get('completion')} - {None}
 
     def exists(self, rel):
         return bool(rel) and (self.root / rel).exists()
@@ -155,28 +162,79 @@ class Ledger:
         return table_rows(self.text(rel) or '')
 
     @functools.cached_property
-    def testing_docs(self):
-        return sorted(str(p.relative_to(self.root)) for p in self.root.glob(TESTING_GLOB) if p.is_file())
+    def issue_counts(self):
+        return Counter(item.get('issue') for item in self.items)
 
     @functools.cached_property
-    def test_ids(self):
-        """Defined test IDs: any `-T<n>` token, or the first cell of a table row, in a testing document.
+    def test_documents(self):
+        """The registered test documents (`documents[].test`) that exist, once each, in ledger order."""
+        return list(dict.fromkeys(doc['test'] for doc in self.manifest['documents'] if self.is_file(doc.get('test'))))
 
-        A registered test document outside docs/testing (tests hosted in a requirement document)
-        contributes only its `-T<n>` tokens, so a requirement ID never defines itself as a test.
+    @functools.cached_property
+    def test_index(self):
+        """(defined test IDs, {test: IDs named on a line beside it}) over the registered test documents.
+
+        Only a registered test document defines a test: any `-T<n>` token, or the first cell of a
+        table row (some documents key tests by the requirement ID). `record` refuses a registered
+        test document as evidence, so a report never defines the test IDs it attests. A test document
+        that is itself a requirement document (tests hosted next to the rows) contributes only
+        `-T<n>` tokens, so a requirement ID never defines itself as a test.
         """
-        defined = set()
-        for rel in self.testing_docs:
-            text = self.text(rel) or ''
-            defined |= tokens(text, tests_only=True) | {rid for rid, _ in ROW.findall(text)}
-        for doc in self.manifest['documents']:
-            if self.is_file(doc.get('test')) and doc['test'] not in self.testing_docs:
-                defined |= tokens(self.text(doc['test']), tests_only=True)
-        return defined
+        defined, beside = set(), {}
+        for rel in self.test_documents:
+            hosted = rel in self.docs
+            for line in (self.text(rel) or '').splitlines():
+                tests = tokens(line, tests_only=True)
+                row = ROW.match(line)
+                if row and not hosted:
+                    tests.add(row.group(1))
+                defined |= tests
+                for test in tests:
+                    beside.setdefault(test, set()).update(tokens(line))
+        return defined, beside
 
-    @functools.cached_property
+    @property
+    def test_ids(self):
+        return self.test_index[0]
+
+    @property
     def testing_mentions(self):
-        return set().union(set(), *(tokens(self.text(rel)) for rel in self.testing_docs))
+        """IDs named by docs/testing documents other than evidence reports (see `reports`)."""
+        return self._mentions(frozenset(self.reports))
+
+    @functools.lru_cache(maxsize=None)
+    def _mentions(self, reports):
+        paths = {str(p.relative_to(self.root)) for p in self.root.glob(TESTING_GLOB) if p.is_file()}
+        return set().union(set(), *(tokens(self.text(rel)) for rel in sorted(paths - reports - set(self.docs))))
+
+    def tied(self, item, test):
+        """The test belongs to a requirement the item cites: the requirement's row cites it, the test
+        is keyed by that requirement ID, or one line of a registered test document names both."""
+        beside = self.test_index[1].get(test, set())
+        return any(test == rid or rid in beside or test in self.facts(ref['path'], rid)[2]
+                   for ref in item.get('requirements', []) if ref['path'] in self.docs for rid in ref['ids'])
+
+    def reopened(self, item):
+        """Why discover.fulfilled no longer accepts a completion: the pinned files that changed, if any."""
+        completion = item['completion']
+        changed = sorted(rel for rel, sha in completion.get('inputs', {}).items()
+                         if not self.is_file(rel) or self.d.digest(self.root / rel) != sha)
+        if changed:
+            return 'changed since recorded: ' + ', '.join(changed)
+        return 'packet scope, pinned input set or attestation changed'
+
+    def shared_pins(self, name, paths):
+        """{path: other items} for the given non-requirement files that other work items also pin."""
+        owners = {}
+        for other in self.items:
+            if other['id'] == name:
+                continue
+            completion = other.get('completion') or {}
+            theirs = set(other.get('verification_inputs') or []) | set(completion.get('inputs', {})) | {completion.get('report')}
+            theirs -= {ref['path'] for ref in other.get('requirements', [])}
+            for path in sorted(set(paths) & theirs):
+                owners.setdefault(path, []).append(other['id'])
+        return dict(sorted(owners.items()))
 
     @functools.cached_property
     def unambiguous_prefixes(self):
@@ -189,8 +247,9 @@ class Ledger:
     def reverse_linked(self, path, rid):
         """A testing document names the requirement.
 
-        Its registered test document always counts. Any docs/testing document counts when the ID's
-        prefix belongs to one registered document, so the mention cannot mean another family's ID.
+        Its registered test document always counts. Any docs/testing document other than an evidence
+        report counts when the ID's prefix belongs to one registered document, so the mention cannot
+        mean another family's ID.
         Tests hosted in the requirement document count on a line that also names a test ID.
         """
         test = self.docs[path].get('test')
@@ -236,20 +295,25 @@ class Ledger:
             tagged = [int(w) for w in (explicit if isinstance(explicit, list) else [explicit])]
         return (min(priorities) if priorities else None, min(tagged) if tagged else None, sorted(cited))
 
-    def depths(self):
-        """Longest depends_on chain above each item across the whole ledger (0 for a root)."""
+    def dependents(self):
+        """Every item that depends on each item, directly or transitively, across the whole ledger."""
+        reverse = {}
+        for item in self.items:
+            for dep in item.get('depends_on', []):
+                reverse.setdefault(dep, set()).add(item['id'])
         memo = {}
 
-        def depth(name, trail):
+        def below(name, trail):
             if name in memo:
                 return memo[name]
-            if name in trail:  # a cycle; discover.audit reports it
-                return 0
-            deps = [dep for dep in self.items[self.index[name]].get('depends_on', []) if dep in self.index]
-            memo[name] = 1 + max((depth(dep, trail | {name}) for dep in deps), default=-1)
-            return memo[name]
+            found = set()
+            for child in reverse.get(name, ()):
+                if child not in trail:  # a cycle; discover.audit reports it
+                    found |= {child} | below(child, trail | {name})
+            memo[name] = found
+            return found
 
-        return {item['id']: depth(item['id'], frozenset()) for item in self.items}
+        return {item['id']: below(item['id'], frozenset()) for item in self.items}
 
     def select(self, items, args):
         wanted_items = set(args.item or [])
@@ -305,20 +369,24 @@ def cmd_next(args):
     else:
         snapshot = offline_snapshot(ledger.manifest, now)
         availability = 'unchecked (ledger only; open PRs and claims not read)'
-    rows = ledger.select(d.classify(ledger.root, ledger.manifest, snapshot, now), args)
-    depth = ledger.depths()
+    classified = d.classify(ledger.root, ledger.manifest, snapshot, now)
+    complete = {row['id'] for row in classified if row['state'] == 'complete'}
+    rows = ledger.select(classified, args)
+    downstream = ledger.dependents()
     ranked = []
     for row in rows:
         if row['state'] != 'ready':
             continue
         priority, week, _ = ledger.item_facts(row)
         ranked.append({'id': row['id'], 'issue': row['issue'], 'title': row['title'], 'kind': row['kind'],
-                       'depth': depth[row['id']], 'priority': priority, 'week': week,
+                       'priority': priority, 'week': week, 'unblocks': len(downstream[row['id']] - complete),
                        'ledger_index': ledger.index[row['id']], 'next_action': row['next_action'],
                        'requirements': row['requirements'], 'depends_on': row.get('depends_on', []),
                        'reason': row['reason']})
-    ranked.sort(key=lambda r: (r['depth'], UNRANKED if r['priority'] is None else r['priority'],
-                               UNRANKED if r['week'] is None else r['week'], r['ledger_index']))
+    # Every dependency of a ready item is complete, so dependency order no longer constrains the
+    # choice; it only breaks ties, toward the item that opens up the most unfinished work.
+    ranked.sort(key=lambda r: (UNRANKED if r['priority'] is None else r['priority'],
+                               UNRANKED if r['week'] is None else r['week'], -r['unblocks'], r['ledger_index']))
     for position, entry in enumerate(ranked, 1):
         entry['rank'] = position
     counts = dict(sorted(Counter(row['state'] for row in rows).items()))
@@ -330,7 +398,8 @@ def cmd_next(args):
     else:
         verdict = 'no ready item in scope; this is not evidence that the scope is complete'
     payload = {'repository': ledger.manifest['repository'], 'checkout': str(ledger.root),
-               'availability': availability, 'scope_items': len(rows), 'counts': counts,
+               'availability': availability, 'availability_checked': bool(args.live or args.snapshot),
+               'scope_items': len(rows), 'counts': counts,
                'ledger_gaps': gaps, 'next': chosen, 'ranked': ranked, 'verdict': verdict}
     lines = [f"hype-align next · {ledger.manifest['repository']} · {len(rows)} of {len(ledger.items)} items in scope",
              f'availability: {availability}',
@@ -338,13 +407,13 @@ def cmd_next(args):
     lines += [f'GAP: {gap}' for gap in gaps]
     if chosen:
         lines += [f"NEXT: {chosen['id']} #{chosen['issue']} [{chosen['kind']}] {chosen['title']}",
-                  f"  {label(chosen['priority'], chosen['week'])} · depth {chosen['depth']}",
+                  f"  {label(chosen['priority'], chosen['week'])} · unblocks {chosen['unblocks']}",
                   f"  next_action: {chosen['next_action']}"]
     else:
         lines.append('NEXT: none')
     if ranked:
-        lines.append('Ranked ready items (depth, priority, week, ledger order):')
-        lines += [f"  {r['rank']:>2}. {r['id']} #{r['issue']} · depth {r['depth']} · {label(r['priority'], r['week'])} · {r['title']}"
+        lines.append('Ranked ready items (priority, week, unfinished items it unblocks, ledger order):')
+        lines += [f"  {r['rank']:>2}. {r['id']} #{r['issue']} · {label(r['priority'], r['week'])} · unblocks {r['unblocks']} · {r['title']}"
                   for r in ranked]
     lines.append(f'Verdict: {verdict}')
     emit(args, payload, lines)
@@ -364,10 +433,14 @@ class Lab:
             raise ValueError(f'no feature definitions found in {data / "features.ts"}')
         self.work = json.loads((data / 'work.json').read_text(encoding='utf-8')).get('features', {})
 
-    def link(self, item):
-        for feature, entries in sorted(self.work.items()):
-            for entry in entries:
-                if entry.get('id') == item['id'] or entry.get('issue') == item.get('issue'):
+    def link(self, item, issue_counts):
+        # The item id links it. An issue number links it only when no other ledger item shares it.
+        issue = item.get('issue')
+        by_issue = issue is not None and issue_counts.get(issue) == 1
+        for match in ((lambda entry: entry.get('id') == item['id']),
+                      (lambda entry: by_issue and entry.get('issue') == issue)):
+            for feature, entries in sorted(self.work.items()):
+                if any(match(entry) for entry in entries):
                     return f'work.json {feature}'
         cited = {}
         for ref in item.get('requirements', []):
@@ -422,11 +495,14 @@ def item_links(ledger, item, lab=None):
             add(broken, 'completion', 'completion records no test_ids')
         for test in recorded:
             if test not in ledger.test_ids:
-                add(broken, 'completion', f'recorded test {test} is not defined in any testing document')
+                add(broken, 'completion', f'recorded test {test} is not defined in any registered test document')
+            elif not ledger.tied(item, test):
+                add(broken, 'completion', f'recorded test {test} does not test any requirement this item cites')
         if not ledger.is_file(completion.get('report')):
             add(broken, 'completion', f"evidence {completion.get('report') or '(unset)'} does not exist")
         elif not ledger.d.fulfilled(ledger.root, item):
-            add(broken, 'completion', 'completion no longer holds (scope, inputs or evidence changed); verify again and re-record')
+            add(broken, 'completion', f'completion no longer holds ({ledger.reopened(item)}); '
+                                      'verify again and re-record with --replace')
         paths = item.get('implementation_paths') or []
         if not paths:
             add(broken, 'implementation', 'completed item lists no implementation_paths')
@@ -436,10 +512,10 @@ def item_links(ledger, item, lab=None):
     if item.get('requirements') and not has_test_link:
         add(broken, 'test-link', 'no cited requirement has a test ID or a testing document that names it')
     if lab is not None:
-        if not lab.link(item):
+        if not lab.link(item, ledger.issue_counts):
             ids = [rid for ref in item.get('requirements', []) for rid in ref['ids']]
             shown = ', '.join(ids[:3]) + (f' or {len(ids) - 3} more' if len(ids) > 3 else '')
-            add(broken, 'lab', f"Lab work.json and features.ts link neither issue #{item.get('issue')} nor {shown}")
+            add(broken, 'lab', f"Lab work.json and features.ts link neither {item['id']} (issue #{item.get('issue')}) nor {shown}")
         for feature in item.get('feature_ids') or []:
             if feature not in lab.features:
                 add(broken, 'lab-feature', f'feature {feature} is not defined in Lab features.ts')
@@ -450,6 +526,9 @@ def cmd_check(args):
     ledger = Ledger(studio_root(args))
     lab = Lab(args.lab) if args.lab else None
     items = ledger.select(ledger.items, args)
+    # A chain is only as good as the ledger under it: discover.audit gaps fail the check for any scope,
+    # as they fail the product's own `next-work.py --check` gate.
+    gaps = ledger.d.audit(ledger.root, ledger.manifest)
     broken, warnings = [], []
     for item in items:
         b, w = item_links(ledger, item, lab)
@@ -458,11 +537,14 @@ def cmd_check(args):
     failing = sorted({b['item'] for b in broken}, key=ledger.index.get)
     verdict = (f'{len(broken)} broken links in {len(failing)} of {len(items)} items' if broken
                else f'chain intact for {len(items)} items')
+    if gaps:
+        verdict = f'reconcile the requirement ledger first ({len(gaps)} gaps); {verdict}'
     payload = {'repository': ledger.manifest['repository'], 'checkout': str(ledger.root),
-               'lab': str(lab.root) if lab else None, 'items_checked': len(items), 'ok': not broken,
-               'broken': broken, 'warnings': warnings, 'verdict': verdict}
+               'lab': str(lab.root) if lab else None, 'items_checked': len(items), 'ok': not broken and not gaps,
+               'ledger_gaps': gaps, 'broken': broken, 'warnings': warnings, 'verdict': verdict}
     lines = [f"hype-align check · {ledger.manifest['repository']} · {len(items)} items · "
              f"lab: {lab.root if lab else 'not checked (pass --lab)'}"]
+    lines += [f'GAP: {gap}' for gap in gaps]
     for name in failing:
         lines.append(f'BROKEN {name}')
         lines += [f"  {b['kind']}: {b['detail']}" for b in broken if b['item'] == name]
@@ -472,7 +554,7 @@ def cmd_check(args):
                      '(see --json warnings)')
     lines.append(f'Verdict: {verdict}')
     emit(args, payload, lines)
-    return 1 if broken else 0
+    return 1 if broken or gaps else 0
 
 
 # --- record ---------------------------------------------------------------------------------
@@ -503,9 +585,40 @@ def pr_number(value):
     return int(found.group(1) or found.group(2))
 
 
+def merged_commit(root, value):
+    """The full SHA of a commit that HEAD contains and, when the checkout has it, origin/main too."""
+    if not re.fullmatch(r'[0-9a-f]{7,40}', value or ''):
+        raise Refusal('--commit must be a 7-40 character hexadecimal commit SHA')
+    if git(root, 'rev-parse', '--is-inside-work-tree').stdout.strip() != 'true':
+        raise Refusal(f'{root} is not a git work tree; record needs one to confirm the commit was merged')
+    resolved = git(root, 'rev-parse', '--verify', '--quiet', f'{value}^{{commit}}')
+    if resolved.returncode != 0:
+        raise Refusal(f'commit {value} is not in this checkout; fetch it or use a checkout that contains the merge')
+    sha = resolved.stdout.strip()
+    has_origin_main = git(root, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main').returncode == 0
+    for base in ['HEAD'] + (['origin/main'] if has_origin_main else []):
+        if git(root, 'merge-base', '--is-ancestor', sha, base).returncode != 0:
+            raise Refusal(f'commit {sha[:12]} is not an ancestor of {base}; record the merge commit on main '
+                          '(the squash commit, not the PR branch head) from a checkout that contains it')
+    return sha
+
+
+def require_committed(root, pinned, report):
+    """Every pinned file is tracked, and all but a new evidence report match HEAD."""
+    tracked = set(git(root, 'ls-files', '-z', '--', *pinned).stdout.split('\0'))
+    untracked = [rel for rel in pinned if rel not in tracked]
+    if untracked:
+        raise Refusal('not tracked by git: ' + ', '.join(untracked) + '; commit them (a new evidence report '
+                      'ships with the ledger edit), or every other checkout loses what the completion pins')
+    changed = git(root, 'diff', '--name-only', 'HEAD', '--', *[rel for rel in pinned if rel != report]).stdout.splitlines()
+    if changed:
+        raise Refusal('uncommitted changes in pinned files: ' + ', '.join(changed) + '; a completion pins the merged content')
+    return git(root, 'cat-file', '-e', f'HEAD:{report}').returncode == 0
+
+
 def cmd_record(args):
     ledger = Ledger(studio_root(args))
-    d = ledger.d
+    d, root = ledger.d, ledger.root
     if args.item not in ledger.index:
         raise Refusal(f'unknown work item: {args.item}')
     item = ledger.items[ledger.index[args.item]]
@@ -514,19 +627,25 @@ def cmd_record(args):
         raise Refusal('--tests is required: name the test IDs whose results this completion rests on')
     unknown = [t for t in tests if t not in ledger.test_ids]
     if unknown:
-        raise Refusal('test IDs not defined in any testing document: ' + ', '.join(unknown))
+        raise Refusal('test IDs not defined in any registered test document: ' + ', '.join(unknown))
     report = inside(ledger, args.evidence, '--evidence')
     if report == MANIFEST:
         raise Refusal('--evidence cannot be the ledger itself')
+    if report in ledger.test_documents:
+        raise Refusal(f'--evidence {report} is a registered test document; write the run record to its own file '
+                      'so the report cannot define the tests it attests')
     if not (args.reviewed_by or '').strip():
         raise Refusal('--reviewed-by is required: the independent reviewer of this verdict')
-    if not re.fullmatch(r'[0-9a-f]{7,40}', args.commit or ''):
-        raise Refusal('--commit must be a 7-40 character hexadecimal commit SHA')
-    if git(ledger.root, 'rev-parse', '--is-inside-work-tree').returncode == 0 and \
-            git(ledger.root, 'cat-file', '-e', f'{args.commit}^{{commit}}').returncode != 0:
-        raise Refusal(f'commit {args.commit} is not in this checkout; fetch it or use a checkout that contains the merge')
+    commit = merged_commit(root, args.commit)
     if item.get('completion') and not args.replace:
         raise Refusal(f'{args.item} already has a completion record; pass --replace to supersede it')
+    if item.get('gate'):
+        raise Refusal(f"{args.item} is gated: {item['gate'].get('reason')}; lift the gate in the ledger once it is resolved")
+    open_deps = [dep for dep in item.get('depends_on', [])
+                 if dep not in ledger.index or not d.fulfilled(root, ledger.items[ledger.index[dep]])]
+    if open_deps:
+        raise Refusal(f"{args.item} depends on work that is not complete: {', '.join(open_deps)}; "
+                      'record or re-record it first')
     candidate = copy.deepcopy(item)
     inputs = list(candidate.get('verification_inputs') or [])
     for extra in args.input or []:
@@ -536,37 +655,55 @@ def cmd_record(args):
     if not inputs:
         raise Refusal(f'{args.item} has no verification_inputs; pass --input for the implementation and test files verified')
     for rel in inputs:
+        if rel == MANIFEST:
+            raise Refusal('the ledger cannot be a verification input: record rewrites it, so the pin would break at once')
         if not ledger.is_file(rel):
             raise Refusal(f'verification input {rel} is not a file in the checkout')
     candidate['verification_inputs'] = inputs
-    pinned = sorted({ref['path'] for ref in candidate['requirements']} | set(inputs) | {report})
+    requirement_docs = {ref['path'] for ref in candidate['requirements']}
+    pinned = sorted(requirement_docs | set(inputs) | {report})
+    report_in_head = require_committed(root, pinned, report)
+    stray = [t for t in tests if not ledger.tied(candidate, t)]
+    if stray:
+        raise Refusal(f'tests not tied to a requirement {args.item} cites: ' + ', '.join(stray)
+                      + '; the requirement row must cite the test, or one test-document line must name both')
+    gaps = d.audit(root, ledger.manifest)
+    if gaps:
+        raise Refusal(f'the requirement ledger has {len(gaps)} gaps; reconcile it first: ' + '; '.join(gaps))
     completion = {'verdict': 'PASS', 'reviewed_by': args.reviewed_by.strip(), 'report': report,
                   'scope_sha256': d.scope_digest(candidate),
-                  'inputs': {rel: d.digest(ledger.root / rel) for rel in pinned},
-                  'commit': args.commit, 'test_ids': tests,
+                  'inputs': {rel: d.digest(root / rel) for rel in pinned},
+                  'commit': commit, 'test_ids': tests,
                   'recorded_at': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')}
     number = pr_number(args.pr)
     if number is not None:
         completion['pr'] = number
     candidate['completion'] = completion
-    if not d.fulfilled(ledger.root, candidate):
+    ledger.reports.add(report)
+    if not d.fulfilled(root, candidate):
         raise Refusal('discover.py would not classify this record as complete; see references/ledger-contract.md')
     broken, _ = item_links(ledger, candidate)
     if broken:
         raise Refusal('alignment chain broken: ' + '; '.join(f"{b['kind']}: {b['detail']}" for b in broken))
+    shared = ledger.shared_pins(args.item, set(pinned) - requirement_docs)
     if not args.dry_run:
-        manifest = json.loads((ledger.root / MANIFEST).read_text(encoding='utf-8'))
+        manifest = json.loads((root / MANIFEST).read_text(encoding='utf-8'))
         manifest['work_items'][ledger.index[args.item]] = candidate
-        (ledger.root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     verdict = (f"{args.item} would be recorded complete (dry run)" if args.dry_run
                else f"{args.item} recorded complete in {MANIFEST}; not committed")
-    payload = {'item': args.item, 'checkout': str(ledger.root), 'written': not args.dry_run,
-               'completion': completion, 'verification_inputs': inputs, 'verdict': verdict}
+    payload = {'item': args.item, 'checkout': str(root), 'written': not args.dry_run,
+               'completion': completion, 'verification_inputs': inputs, 'report_in_head': report_in_head,
+               'shared_inputs': shared, 'verdict': verdict}
     lines = [f'hype-align record · {args.item} #{item.get("issue")} · {item.get("title")}',
-             f"  commit {args.commit} · PR {('#' + str(number)) if number else '(none)'} · reviewed by {completion['reviewed_by']}",
+             f"  commit {commit} · PR {('#' + str(number)) if number else '(none)'} · reviewed by {completion['reviewed_by']}",
              f"  tests {', '.join(tests)} · evidence {report}",
-             f"  pinned inputs: {len(completion['inputs'])} · scope {completion['scope_sha256'][:12]}",
-             f'Verdict: {verdict}']
+             f"  pinned inputs: {len(completion['inputs'])} · scope {completion['scope_sha256'][:12]}"]
+    if not report_in_head:
+        lines.append(f'note: {report} is not in HEAD yet; commit it together with the ledger edit')
+    lines += [f"warning: {path} is also pinned by {', '.join(owners)}; an edit to it for any of them reopens this "
+              'completion, so run check over the whole epic after each slice' for path, owners in shared.items()]
+    lines.append(f'Verdict: {verdict}')
     emit(args, payload, lines)
     return 0
 
@@ -810,7 +947,8 @@ def build_parser():
     p = sub.add_parser('record', help='write a completion record for one work item (never commits)')
     common(p, scope=False)
     p.add_argument('item', help='work item id')
-    p.add_argument('--commit', required=True, help='merged commit SHA that delivered the item')
+    p.add_argument('--commit', required=True, help='merge commit on main that delivered the item; HEAD (and origin/main, '
+                                                   'when present) must contain it; stored as the full SHA')
     p.add_argument('--tests', action='append', help='test IDs verified, comma separated or repeated')
     p.add_argument('--evidence', help='repo-relative evidence report committed in the product checkout')
     p.add_argument('--reviewed-by', help='independent reviewer of the verdict')
@@ -837,11 +975,17 @@ def main(argv=None):
     try:
         return args.func(args)
     except Refusal as exc:
-        print(f'hype-align {args.command}: refused: {exc}', file=sys.stderr)
-        return 1
+        return fail(args, 'refused', exc, 1)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
-        print(f'hype-align {args.command}: could not evaluate: {exc}', file=sys.stderr)
-        return 2
+        return fail(args, 'could not evaluate', exc, 2)
+
+
+def fail(args, verdict, exc, code):
+    print(f'hype-align {args.command}: {verdict}: {exc}', file=sys.stderr)
+    if args.json:
+        print(json.dumps({'command': args.command, 'verdict': verdict, 'error': str(exc), 'exit_code': code},
+                         ensure_ascii=False, indent=2))
+    return code
 
 
 if __name__ == '__main__':
