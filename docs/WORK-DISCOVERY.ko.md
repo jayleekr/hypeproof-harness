@@ -52,6 +52,10 @@ python3 /path/to/hypeproof-harness/scripts/work-discovery/discover.py --checkout
 `verdict: PASS`를 검토하며 `verification_inputs`에 구현·테스트·fixture를 지정한다.
 `completion.scope_sha256`에는 검토 시점의 packet 범위 digest를 기록한다
 (`discover.py --checkout . --scope-digest <packet id>`). 값이 없거나 현재 범위와 다르면 완료가 아니다.
+완료 기록은 `hype-align` 스킬의 `record`로 쓴다. packet 요구사항에 속한 테스트 ID, 별도 증거 보고서,
+main에 머지된 커밋, 검토자를 확인한 뒤 `scope_sha256`과 입력 hash를 계산하고, 조건이 빠지면 쓰지 않는다.
+여러 packet이 같은 파일을 고정하면 그 파일을 고친 다음 slice가 앞선 완료를 다시 열므로
+slice마다 `hype-align check --doc <epic>`으로 확인한다.
 파일 존재/hash 일치는 그 증거의 독립 실행·인간 승인·실제 학습 효과를 증명하지 않는다.
 설계 문서나 테스트 파일의 존재도 의미적 충족의 보증이 아니다.
 
@@ -62,7 +66,8 @@ python3 /path/to/hypeproof-harness/scripts/work-discovery/discover.py --checkout
 3. ready packet의 원문과 현재 구현을 읽고 기존 기능을 재사용한다. 큰 packet은 첫 PR
    하나로 잘라 하위 이슈·허용 경로·의존성·검증을 적는다. ready는 전체 인수 가능 선언이 아니다.
 4. GitHub를 다시 확인하고 이슈별 wip/담당/세션/branch를 남긴다. 공통 App·포트는 별도 예약한다.
-5. 수정 후 검증과 PR 준비를 수행한다. 완료한 범위만 기록하며 남은 조건은 새 packet으로 연결한다.
+5. 수정 후 검증과 PR 준비를 수행한다. 완료한 범위만 `hype-align record`로 기록하며 남은 조건은
+   새 packet으로 연결한다. 여러 ready packet 중 순서는 `hype-align next`가 정한다.
 6. ready가 없으면 claimed/in_review/dependency/blocked/reconcile과 gap을 보고한다.
    사람 결정·실기 환경·운영 승인 각각의 구체적인 해제 조건을 적는다.
 
@@ -75,4 +80,5 @@ human gate 뒤에 임의로 넣지 않으며, 새 원장이 배포 승인이나 
 정상 원장, 누락/추가/수정 REQ, 미등록 문서, 순환 의존성, 닫힌 이슈, fresh/stale claim,
 입력 변경 후 완료 무효화, packet 범위 확장·인수 기준 변경·범위 digest 누락 시 완료 무효화,
 사람 gate, 열린 PR의 자동 닫기·명시 참조·단순 언급 구분(다른 저장소 제외), 원문 접근 실패를 대조한다.
+`tests/work_discovery/test_align.py`는 `hype-align`의 순위, 완료 기록 거부 조건, 정렬 검사, Lab 드리프트를 대조한다.
 이 테스트는 작업 탐색 계약의 검사이며 Studio의 제품 인수가 아니다.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "HypeProof Alignment"
+  short_description: "Rank, record and check HypeProof requirement work"
+  default_prompt: "Use $hype-align to name the next HypeProof work item, record a verified completion in the requirement ledger, or check ledger and Lab catalog alignment."

@@ -207,7 +207,10 @@ def test_consumer_install_is_repeatable_preserves_local_rules_and_delegates(worl
     assert (target / ".agents/skills/hype-pr/SKILL.md").read_bytes() == (ROOT / "skills/hype-pr/SKILL.md").read_bytes()
     assert not (target / ".agents/skills/hype-pr").is_symlink()
     assert (target / ".agents/skills/hype-pr/agents/openai.yaml").is_file()
-    proc = subprocess.run([sys.executable, str(target / "scripts/hype-pr/pr.py"), "plan", "--repo", "hypeproof-studio", "--author", "jayleekr"], cwd=target, env={**os.environ, "HYPEPROOF_HARNESS": str(ROOT)}, capture_output=True, text=True)
+    # PIN: ROOT is the checkout under test. Without it the launcher's repair
+    # (#225) checks ROOT out to main, and every later test in the session runs
+    # against main instead of the PR.
+    proc = subprocess.run([sys.executable, str(target / "scripts/hype-pr/pr.py"), "plan", "--repo", "hypeproof-studio", "--author", "jayleekr"], cwd=target, env={**os.environ, "HYPEPROOF_HARNESS": str(ROOT), "HYPEPROOF_HARNESS_PIN": "1"}, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["repo"] == "jayleekr/hypeproof-studio"
 
@@ -279,3 +282,162 @@ def test_consumer_refuses_delegation_to_old_harness(tmp_path):
                           env={**os.environ, "HYPEPROOF_HARNESS": str(canonical)}, capture_output=True, text=True)
     assert proc.returncode != 0
     assert "outdated" in proc.stderr and "unguarded old entrypoint ran" not in proc.stderr
+
+
+def _repo_with_blob(tmp_path, name, remote, body):
+    repo = tmp_path / name
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", "--initial-branch", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", remote], check=True)
+    (repo / "doc.md").write_text(body)
+    subprocess.run(["git", "-C", str(repo), "add", "doc.md"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "--quiet", "-m", "seed"], check=True)
+    sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                         text=True, capture_output=True).stdout.strip()
+    return repo, sha
+
+
+def test_registered_sources_are_read_from_a_local_checkout_not_the_api(tmp_path, monkeypatch):
+    """The cost this exists to remove: one contents request per source file."""
+    repo, sha = _repo_with_blob(tmp_path, "hypeproof-studio",
+                                "https://github.com/jayleekr/hypeproof-studio", "local bytes\n")
+    monkeypatch.setattr(prep.impact, "gh", lambda *_a, **_k: pytest.fail("read hit the GitHub API"))
+
+    reader = prep.impact.Reader(content_roots={"jayleekr/hypeproof-studio": str(repo)})
+
+    assert reader.read("jayleekr/hypeproof-studio", sha, "doc.md") == "local bytes\n"
+
+
+def test_a_checkout_without_the_commit_falls_back_instead_of_failing(tmp_path, monkeypatch):
+    repo, _ = _repo_with_blob(tmp_path, "hypeproof-studio",
+                              "https://github.com/jayleekr/hypeproof-studio", "local bytes\n")
+    calls = []
+
+    def fake_gh(path, **_):
+        calls.append(path)
+        return {"encoding": "base64", "content": base64.b64encode(b"remote bytes\n").decode()}
+
+    monkeypatch.setattr(prep.impact, "gh", fake_gh)
+    reader = prep.impact.Reader(content_roots={"jayleekr/hypeproof-studio": str(repo)})
+
+    unknown = "0" * 40
+    assert reader.read("jayleekr/hypeproof-studio", unknown, "doc.md") == "remote bytes\n"
+    assert len(calls) == 1
+    # The checkout is dropped once it fails, so the rest of the run does not pay
+    # for a fetch and a failed `git show` on every remaining source file.
+    assert "jayleekr/hypeproof-studio" not in reader.content_roots
+
+
+def test_local_sources_refuses_a_directory_that_is_not_that_repository(tmp_path, monkeypatch):
+    impostor, _ = _repo_with_blob(tmp_path, "hypeproof-studio",
+                                  "https://github.com/someone-else/hypeproof-studio", "x\n")
+    (tmp_path / "hypeproof-harness").mkdir()
+    monkeypatch.setattr(prep, "ROOT", tmp_path / "hypeproof-harness")
+    policy = {"repositories": {"jayleekr/hypeproof-studio": {}}}
+
+    assert prep.local_sources(policy, str(impostor)) == {}
+
+
+def test_local_sources_can_be_turned_off(tmp_path, monkeypatch):
+    repo, _ = _repo_with_blob(tmp_path, "hypeproof-studio",
+                              "https://github.com/jayleekr/hypeproof-studio", "x\n")
+    (tmp_path / "hypeproof-harness").mkdir()
+    monkeypatch.setattr(prep, "ROOT", tmp_path / "hypeproof-harness")
+    policy = {"repositories": {"jayleekr/hypeproof-studio": {}}}
+
+    assert prep.local_sources(policy, str(repo)) == {"jayleekr/hypeproof-studio": str(repo)}
+    monkeypatch.setenv("HYPEPROOF_NO_LOCAL_SOURCES", "1")
+    assert prep.local_sources(policy, str(repo)) == {}
+
+
+def test_a_local_checkout_never_gets_to_say_what_main_is(tmp_path):
+    """Blobs may come from disk; which revision `main` names must not."""
+    repo, _ = _repo_with_blob(tmp_path, "hypeproof-studio",
+                              "https://github.com/jayleekr/hypeproof-studio", "x\n")
+    reader = prep.impact.Reader(content_roots={"jayleekr/hypeproof-studio": str(repo)})
+
+    assert reader.roots == {}
+
+
+def test_local_sources_looks_beside_the_canonical_checkout_too(tmp_path, monkeypatch):
+    """ROOT can be a throwaway clone whose siblings are not the real ones."""
+    workspace = tmp_path / "workspace"
+    repo, _ = _repo_with_blob(workspace, "hypeproof-studio",
+                              "https://github.com/jayleekr/hypeproof-studio", "x\n")
+    (workspace / "hypeproof-harness").mkdir()
+    throwaway = tmp_path / "scratch" / "harness"
+    throwaway.mkdir(parents=True)
+    monkeypatch.setattr(prep, "ROOT", throwaway)
+    policy = {"repositories": {"jayleekr/hypeproof-studio": {}}}
+
+    monkeypatch.delenv("HYPEPROOF_HARNESS", raising=False)
+    assert prep.local_sources(policy, str(repo)) == {"jayleekr/hypeproof-studio": str(repo)}
+
+    # A checkout with no siblings at all still finds them through the canonical path.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    subprocess.run(["git", "init", "--quiet", str(elsewhere)], check=True)
+    assert prep.local_sources(policy, str(elsewhere)) == {}
+    monkeypatch.setenv("HYPEPROOF_HARNESS", str(workspace / "hypeproof-harness"))
+    assert prep.local_sources(policy, str(elsewhere)) == {"jayleekr/hypeproof-studio": str(repo)}
+@pytest.mark.parametrize(
+    "remote,allowed",
+    [
+        ("https://github.com/jayleekr/sediment.git", True),
+        ("git@github.com:jayleekr/sediment.git", True),
+        ("https://github.com/jayleekr/hypeprooflab.git", True),
+        ("git@github.com:jayleekr/hypeproof-studio.git", True),
+        ("https://github.com/jayleekr/personal-blog.git", False),
+        ("https://github.com/someoneelse/sediment.git", False),
+    ],
+)
+def test_installer_scope_matches_the_repos_sync_vendors_to(tmp_path, remote, allowed):
+    """Every consumer in tests/consumers.txt must also be installable.
+
+    sync.sh vendors the hype-pr skill to studio, sediment and lab, but the
+    entrypoint block, the .agents alias and SKILLS.md come from this installer.
+    A repo that sync vendors to and the installer refuses is left half-installed
+    (harness #210), so the two lists are asserted together here.
+    """
+    spec = importlib.util.spec_from_file_location(f"install_scope_{abs(hash(remote))}", ROOT / "scripts/hype-pr/install.py")
+    install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(install)
+
+    target = tmp_path / "checkout"
+    target.mkdir()
+    run(target, "init", "-qb", "main")
+    run(target, "config", "user.email", "test@example.com")
+    run(target, "config", "user.name", "Fixture")
+    run(target, "remote", "add", "origin", remote)
+    (target / "README.md").write_text("consumer\n")
+    commit(target, "base")
+
+    if allowed:
+        install.install(target)
+        assert (target / ".claude/skills/hype-pr/SKILL.md").is_file()
+        assert (target / ".agents/skills/hype-pr/SKILL.md").is_file()
+        assert "docs/AGENT-GUIDE.ko.md" in (target / "CLAUDE.md").read_text()
+        assert "docs/AGENT-GUIDE.ko.md" in (target / "AGENTS.md").read_text()
+    else:
+        with pytest.raises(ValueError, match="scoped to explicit"):
+            install.install(target)
+        assert not (target / ".claude/skills/hype-pr").exists()
+
+
+def test_installer_scope_covers_every_sync_consumer():
+    """tests/consumers.txt and the installer allowlist must not drift apart."""
+    spec = importlib.util.spec_from_file_location("install_scope_list", ROOT / "scripts/hype-pr/install.py")
+    install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(install)
+
+    consumers = [
+        line.strip().rsplit("/", 1)[-1]
+        for line in (ROOT / "tests/consumers.txt").read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert consumers, "consumers.txt yielded no repos"
+    for name in consumers:
+        assert install.CONSUMER_REMOTE.fullmatch(
+            f"https://github.com/jayleekr/{name}.git"
+        ), f"{name} is vendored by sync.sh but refused by the installer"

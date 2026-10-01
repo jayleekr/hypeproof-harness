@@ -7,6 +7,14 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
+# Consumers that vendor this skill. Keep in step with tests/consumers.txt:
+# sync.sh delivers the skill files, this installer delivers the entrypoint
+# block, the .agents alias and the SKILLS.md row. A repo in one list but not
+# the other is left half-installed (#210).
+CONSUMER_REMOTE = re.compile(
+    r"(?:https://github\.com/|git@github\.com:)(?:jayleekr)/"
+    r"(?:hypeprooflab|hypeproof-studio|sediment)(?:\.git)?"
+)
 START, END = "<!-- hype-pr-skill:start -->", "<!-- hype-pr-skill:end -->"
 BLOCK = f"""{START}
 ## Agent PR preparation
@@ -26,8 +34,8 @@ This adds no GitHub required check and does not grant human approval or merge au
 def install(target):
     target = Path(target).resolve()
     remote = subprocess.check_output(["git", "-C", str(target), "remote", "get-url", "origin"], text=True).strip()
-    if not re.fullmatch(r"(?:https://github\.com/|git@github\.com:)(?:jayleekr)/(?:hypeprooflab|hypeproof-studio)(?:\.git)?", remote):
-        raise ValueError("installer is scoped to explicit Lab/Studio checkouts")
+    if not CONSUMER_REMOTE.fullmatch(remote):
+        raise ValueError("installer is scoped to explicit Lab/Studio/Sediment checkouts")
     # Validate the whole destination before writing any managed file.
     destinations = [".claude/skills/hype-pr", "scripts/hype-pr", ".agents/skills/hype-pr",
                     "docs/AGENT-GUIDE.ko.md", "docs/HYPE-PR.ko.md", "AGENTS.md", "CLAUDE.md", ".claude/SKILLS.md"]
@@ -79,5 +87,5 @@ def install(target):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("checkout", help="Explicit isolated Lab or Studio checkout; never scans siblings")
+    parser.add_argument("checkout", help="Explicit isolated Lab, Studio or Sediment checkout; never scans siblings")
     install(parser.parse_args().checkout)

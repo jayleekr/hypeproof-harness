@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
 import importlib.util
@@ -22,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 STAGES = ["philosophy", "mission", "strategy", "intent", "requirement", "design",
           "implementation", "test", "validation"]
 DISPOSITIONS = {"change-required", "satisfied", "no-impact", "unknown"}
+# Reasoning outcomes that leave a task without an AI proposal. Recorded, never blocking.
+REASONING_GAPS = {"budget-exhausted", "failed", "not-configured", "context-too-large"}
 SHA = re.compile(r"[0-9a-f]{40}")
 ID = re.compile(r"[A-Z][A-Z0-9-]{2,79}")
 QUESTIONS = {
@@ -102,8 +105,16 @@ def source_representation(path, raw):
 
 
 class Reader:
-    def __init__(self, roots=None):
+    def __init__(self, roots=None, content_roots=None):
         self.roots = roots or {}
+        # Blob reads ONLY, never ref resolution. A stale checkout must not be
+        # allowed to say what `main` is -- that is the hazard `resolve` keeps
+        # remote. A blob addressed by the commit SHA it lives in is a different
+        # thing: either the object is present and its bytes are exactly the
+        # remote's, or it is absent and we fall back to the API. There is no
+        # third outcome, so this cannot bless a receipt with stale content.
+        self.content_roots = content_roots or {}
+        self.fetched = set()
         self.cache = {}
 
     def git(self, repo, *args):
@@ -136,12 +147,47 @@ class Reader:
             if repo in self.roots:
                 raw = self.git(repo, "show", f"{sha}:{path}")
             else:
+                raw = self.local_content(repo, sha, path)
+            if raw is None:
                 data = gh(f"repos/{repo}/contents/{path}?ref={sha}")
                 if data.get("encoding") != "base64":
                     raise ValueError("unsupported/oversized source; split into smaller files")
                 raw = base64.b64decode(data["content"])
             self.cache[key] = source_representation(path, raw)
         return self.cache[key]
+
+    def local_content(self, repo, sha, path):
+        """A source blob from a local checkout, or None to use the API.
+
+        A snapshot reads every registered source of every registered
+        repository, twice, and each of those was one `contents` request. With
+        three repositories that is enough calls in a burst to trip GitHub's
+        secondary rate limit, which is what made `hype-pr inspect` expensive.
+
+        The checkout may simply not have the commit yet, so one fetch per
+        repository per run is attempted before giving up on it. Anything that
+        goes wrong here is answered with None: this is an optimisation, and it
+        must never be the reason a run fails.
+        """
+        root = self.content_roots.get(repo)
+        if not root:
+            return None
+        for attempt in range(2):
+            try:
+                return subprocess.check_output(["git", "-C", root, "show", f"{sha}:{path}"],
+                                               timeout=60, stderr=subprocess.DEVNULL)
+            except (subprocess.SubprocessError, OSError):
+                if attempt or repo in self.fetched:
+                    self.content_roots.pop(repo, None)
+                    return None
+                self.fetched.add(repo)
+                try:
+                    subprocess.run(["git", "-C", root, "fetch", "--quiet", "origin"],
+                                   timeout=180, capture_output=True)
+                except (subprocess.SubprocessError, OSError):
+                    self.content_roots.pop(repo, None)
+                    return None
+        return None
 
     def changed(self, repo, base, head):
         if base == head:
@@ -297,16 +343,12 @@ def plan(before, after):
                 children[parent].add(nid)
     impacted = {}
     for origin in changed:
-        todo, seen = [origin], set()
-        while todo:
-            nid = todo.pop()
-            if nid in seen:
-                continue
-            seen.add(nid)
+        # One review round is the changed node (upward consistency) and its DIRECT
+        # children (downstream obligations). Deeper nodes join a later round only
+        # when a direct child actually changes, which makes that child an origin.
+        # The full transitive closure put one table edit in front of 239 reviews.
+        for nid in [origin, *sorted(children[origin])]:
             impacted.setdefault(nid, set()).add(origin)
-            todo.extend(children[nid])
-        # Upward consistency is a review on the changed node, not automatic edits
-        # to every ancestor or unrelated sibling.
     tasks = []
     for nid, causes in sorted(impacted.items()):
         node = union[nid]
@@ -457,16 +499,25 @@ def find_marker(issues, marker):
     return matches[0] if matches else None
 
 
-def upsert(repo, inventory, marker, title, block, owner=None):
+def upsert(repo, inventory, marker, title, block, owner=None, closed_notice=None):
+    """Create or update a managed issue. A closed issue is never reopened.
+
+    Closing is a human decision (and never a resolution). A new managed body is
+    still written so the record stays current; `closed_notice`, when given, is
+    posted as a comment instead of reopening and re-assigning.
+    """
     old = find_marker(inventory, marker)
     body = managed_body(old.get("body") or "", block) if old else block
     if old:
         if body != old.get("body"):
-            payload = {"body": body, "state": "open"}
-            if owner:
+            is_open = old.get("state", "open") == "open"
+            payload = {"body": body}
+            if owner and is_open:
                 payload["assignees"] = sorted({a["login"] for a in old.get("assignees", [])} | {owner})
             result = gh(f"repos/{repo}/issues/{old['number']}", "PATCH", payload)
             old.update(result)
+            if not is_open and closed_notice:
+                gh(f"repos/{repo}/issues/{old['number']}/comments", "POST", {"body": closed_notice})
         return old
     payload = {"title": title, "body": body}
     if owner:
@@ -474,6 +525,34 @@ def upsert(repo, inventory, marker, title, block, owner=None):
     result = gh(f"repos/{repo}/issues", "POST", payload)
     inventory.append(result)
     return result
+
+
+EPIC_MARKER = "<!-- impact-adoption:v1 -->"
+LEGACY_WAVE_MARKER = "<!-- impact-wave:"
+
+
+def closed_task_notice(task):
+    # Deterministic text only, like the issue body: no source or model prose.
+    return (f"change-impact: a new review revision `{task['revision']}` (target "
+            f"`{task['target_revision']}`, causes: {', '.join(task['causes']) or '(none)'}) "
+            "was recorded in this issue's managed block. The issue stays closed: the engine "
+            "never reopens an issue a person closed. Closing is not a resolution; reopen it to "
+            f"review, or record `/impact-resolve {task['revision']} "
+            "<satisfied|no-impact|validated> <reason/evidence>`.")
+
+
+def supersede_legacy_epics(repo, inventory, epic):
+    """Close per-wave Epics from before the single adoption Epic existed."""
+    for issue in inventory:
+        body = issue.get("body") or ""
+        if ("pull_request" in issue or issue.get("state") != "open" or issue is epic
+                or LEGACY_WAVE_MARKER not in body or EPIC_MARKER in body):
+            continue
+        gh(f"repos/{repo}/issues/{issue['number']}/comments", "POST", {"body":
+           f"change-impact: superseded by the single adoption Epic {epic['html_url']}, which is "
+           "updated in place each round. Review issues linked here remain open on their own."})
+        issue.update(gh(f"repos/{repo}/issues/{issue['number']}", "PATCH",
+                        {"state": "closed", "state_reason": "not_planned"}))
 
 
 def sync(report, policy):
@@ -485,18 +564,28 @@ def sync(report, policy):
         grouped.setdefault(task["repo"], []).append(task)
     wave = digest([(t["id"], t["revision"]) for t in report["tasks"]])[:20]
     for repo, tasks in grouped.items():
-        marker = f"<!-- impact-wave:{wave} -->"
-        block = f"{START}\n{marker}\n## Change adoption\n\nSource wave: `{wave}`\n\n"
-        block += "\n".join(f"- [ ] `{t['id']}` — {t['stage']}" for t in tasks) + f"\n{END}"
-        epic = upsert(repo, inventories[repo], marker, f"change-impact: adoption {wave}", block)
+        inventory = inventories[repo]
+        # One Epic per repository, updated in place: its URL (quoted in every task
+        # body) stays stable, so a new round does not rewrite bodies for that alone.
+        header = f"{START}\n{EPIC_MARKER}\n## Change adoption\n\nLatest source wave: `{wave}`\n\n"
+        epic = find_marker(inventory, EPIC_MARKER) or upsert(
+            repo, inventory, EPIC_MARKER, "change-impact: adoption",
+            header + "\n".join(f"- [ ] `{t['id']}` — {t['stage']}" for t in tasks) + f"\n{END}")
         links = []
         for task in tasks:
-            issue = upsert(repo, inventories[repo], f"<!-- impact-task:{task['id']} -->",
-                           f"change-impact: review {task['id']}", task_body(task, report, epic["html_url"]),
-                           task.get("owner"))
+            marker = f"<!-- impact-task:{task['id']} -->"
+            old = find_marker(inventory, marker)
+            # Notify a closed issue once per new review revision, not per head move.
+            notice = (closed_task_notice(task) if old and
+                      f" · revision: `{task['revision']}`" not in (old.get("body") or "") else None)
+            issue = upsert(repo, inventory, marker, f"change-impact: review {task['id']}",
+                           task_body(task, report, epic["html_url"]), task.get("owner"), notice)
             links.append(f"- [ ] [{task['id']}]({issue['html_url']}) — `{task['revision']}`")
-        block = f"{START}\n{marker}\n## Change adoption\n\n" + "\n".join(links) + f"\n{END}"
-        upsert(repo, inventories[repo], marker, "unused", block)
+        upsert(repo, inventory, EPIC_MARKER, "unused", header + "\n".join(links) + f"\n{END}")
+    for repo, inventory in inventories.items():
+        epic = find_marker(inventory, EPIC_MARKER)
+        if epic:  # a repository without a round yet keeps its old Epics until it has one
+            supersede_legacy_epics(repo, inventory, epic)
 
 
 def resolution(task, comments, policy):
@@ -524,6 +613,50 @@ def resolution(task, comments, policy):
             continue
         return {"state": state, "comment": comment["html_url"], "reviewer": comment["user"]["login"]}
     return None
+
+
+STATUS_WORKERS = 8
+
+
+def adoption_status(policy, after):
+    """Pending review URLs and tracked node IDs, across every persistent task issue.
+
+    Comments are the slow part (one request each), so they are fetched only for
+    issues that could resolve: the body matches the node on main AND the issue
+    has at least one comment. Those requests run concurrently.
+    """
+    pending, tracked, candidates = [], set(), []
+    for repo in policy["repositories"]:
+        for issue in pages(f"repos/{repo}/issues?state=all"):
+            body = issue.get("body") or ""
+            match = re.search(r"<!-- impact-task:([A-Z0-9-]+) -->", body)
+            if "pull_request" in issue or not match:
+                continue
+            nid = match[1]
+            tracked.add(nid)
+            rev = re.search(r" · revision: `([a-f0-9]{64})`", body)
+            target = re.search(r"Target revision: `([a-f0-9]{64}|[a-f0-9]{40}|removed)`", body)
+            node = after["nodes"].get(nid)
+            if nid.startswith("MAP-") and target:
+                node = {"owner": None, "stage": "strategy", "revision": target[1]}
+            if node is None and target and target[1] == "removed":
+                node = {"owner": None, "stage": "strategy", "revision": "removed"}
+            if (not rev or not target or not node or target[1] != node["revision"]
+                    or not issue.get("comments", 1)):
+                # A missing count is fetched anyway: skipping must never hide a resolution.
+                pending.append(issue["html_url"])
+                continue
+            candidates.append((repo, issue, {**node, "revision": rev[1]}))
+
+    def resolved(candidate):
+        repo, issue, task = candidate
+        return resolution(task, pages(f"repos/{repo}/issues/{issue['number']}/comments"), policy)
+
+    with ThreadPoolExecutor(max_workers=STATUS_WORKERS) as pool:
+        for (_, issue, _), result in zip(candidates, pool.map(resolved, candidates)):
+            if not result:
+                pending.append(issue["html_url"])
+    return pending, tracked
 
 
 def mappings(items):
@@ -584,6 +717,31 @@ def publish_pr_report(repo, pr, body, transport, inventory):
     return existing
 
 
+PREVIEW_MARKER = re.compile(r"<!-- impact-pr-preview:(\d+) -->")
+
+
+def close_finished_previews(repo, inventory, open_numbers):
+    """Close preview issues whose PR is no longer open (merged or closed).
+
+    `open_numbers` must be the COMPLETE open-PR list (`pages` refuses a partial
+    one), not the `max_prs_per_repo` slice: an open PR beyond the slice keeps
+    its preview.
+    """
+    closed = []
+    for issue in inventory:
+        match = PREVIEW_MARKER.search(issue.get("body") or "")
+        if ("pull_request" in issue or issue.get("state") != "open" or not match
+                or int(match[1]) in open_numbers):
+            continue
+        gh(f"repos/{repo}/issues/{issue['number']}/comments", "POST", {"body":
+           f"change-impact: PR #{match[1]} is no longer open (merged or closed), so this advisory "
+           "preview is closed. Adopted changes are reviewed in `change-impact: review` issues."})
+        issue.update(gh(f"repos/{repo}/issues/{issue['number']}", "PATCH",
+                        {"state": "closed", "state_reason": "completed"}))
+        closed.append(issue["number"])
+    return closed
+
+
 def pr_reports(reader, policy, after, reasoning, publish):
     """Poll PRs from trusted harness code. Never check out or execute PR-head code."""
     reports = []
@@ -592,7 +750,10 @@ def pr_reports(reader, policy, after, reasoning, publish):
         raise ValueError("unknown PR report transport")
     for repo in policy["repositories"]:
         inventory = pages(f"repos/{repo}/issues?state=all") if publish and transport == "issue" else []
-        for pr in pages(f"repos/{repo}/pulls?state=open")[:policy["max_prs_per_repo"]]:
+        open_prs = pages(f"repos/{repo}/pulls?state=open")
+        if publish and transport == "issue":
+            close_finished_previews(repo, inventory, {pr["number"] for pr in open_prs})
+        for pr in open_prs[:policy["max_prs_per_repo"]]:
             if pr["base"]["ref"] != "main" or pr["head"]["repo"]["full_name"] != repo:
                 continue  # fork onboarding needs separate review, no privileged code execution
             try:
@@ -626,6 +787,9 @@ def main():
     parser.add_argument("command", choices=["report", "scan", "status", "prs", "preflight"])
     parser.add_argument("--policy", default=str(ROOT / "policy/change-impact.json"))
     parser.add_argument("--root", action="append", default=[], help="owner/repo=local git path")
+    parser.add_argument("--content-root", action="append", default=[],
+                        help="owner/repo=local clone used ONLY for blob reads at pinned SHAs; "
+                             "refs still resolve through the API and misses fall back to it")
     parser.add_argument("--ref", action="append", default=[], help="owner/repo=immutable ref or main")
     parser.add_argument("--base", action="append", default=[], help="report: owner/repo=base ref")
     parser.add_argument("--reason", action="store_true")
@@ -647,9 +811,9 @@ def main():
         return 0
     if args.apply or args.publish_reports:
         preflight(policy)
-    reader = Reader(mappings(args.root))
+    reader = Reader(mappings(args.root), mappings(args.content_root))
     refs = mappings(args.ref)
-    for repo in set(refs) | set(mappings(args.base)) | set(reader.roots):
+    for repo in set(refs) | set(mappings(args.base)) | set(reader.roots) | set(reader.content_roots):
         if repo not in policy["repositories"]:
             raise ValueError("repository outside change-impact scope")
     after = snapshot(reader, policy, refs)
@@ -676,7 +840,9 @@ def main():
             if not all(isinstance(v, str) and SHA.fullmatch(v) for v in prior["commits"].values()):
                 raise ValueError("checkpoint must contain immutable SHAs")
             # Reload old texts at pinned SHAs for semantic review; checkpoint has no source text.
-            before = snapshot(reader, policy, prior["commits"])
+            # Nothing moved since the checkpoint: a second snapshot would be identical.
+            before = (after if prior["commits"] == after["commits"]
+                      else snapshot(reader, policy, prior["commits"]))
         else:
             # Bootstrap explicitly reports all registered nodes as unreviewed.
             before = {"commits": {}, "nodes": {}}
@@ -691,30 +857,7 @@ def main():
             for task in report["tasks"]:
                 task["reasoning_status"] = "not-configured"
     if args.command == "status":
-        pending = []
-        tracked = set()
-        # Check every persistent task, not only changes since the checkpoint.
-        for repo in policy["repositories"]:
-            for issue in pages(f"repos/{repo}/issues?state=all"):
-                body = issue.get("body") or ""
-                match = re.search(r"<!-- impact-task:([A-Z0-9-]+) -->", body)
-                if not match:
-                    continue
-                nid = match[1]
-                tracked.add(nid)
-                rev = re.search(r" · revision: `([a-f0-9]{64})`", body)
-                target = re.search(r"Target revision: `([a-f0-9]{64}|[a-f0-9]{40}|removed)`", body)
-                node = after["nodes"].get(nid)
-                if nid.startswith("MAP-") and target:
-                    node = {"owner": None, "stage": "strategy", "revision": target[1]}
-                if node is None and target and target[1] == "removed":
-                    node = {"owner": None, "stage": "strategy", "revision": "removed"}
-                if not rev or not target or not node or target[1] != node["revision"]:
-                    pending.append(issue["html_url"])
-                    continue
-                task = {**node, "revision": rev[1]}
-                if not resolution(task, pages(f"repos/{repo}/issues/{issue['number']}/comments"), policy):
-                    pending.append(issue["html_url"])
+        pending, tracked = adoption_status(policy, after)
         report["pending_reviews"] = pending
         report["missing_reviews"] = sorted(set(after["nodes"]) - tracked)
         report["complete"] = (not pending and not report["tasks"]
@@ -728,17 +871,27 @@ def main():
             if not reader.adopted(repo, sha):
                 raise ValueError("source revision is not adopted on main")
         sync(report, policy)
-        incomplete = {t["reasoning_status"] for t in report["tasks"]} & {"budget-exhausted", "failed", "not-configured"}
-        if incomplete:
-            print("Reasoning incomplete; issues saved, checkpoint retained for resumable next run.")
-            return 2 if incomplete & {"failed", "not-configured"} else 0
+        # The AI proposal is advisory and every task is already persisted with its
+        # reasoning status, so the gap is recorded instead of holding the checkpoint.
+        # A held checkpoint re-planned a growing round every hour and rewrote the
+        # same issues. Counts only: private node IDs stay out of the public record.
+        gaps = {}
+        for task in report["tasks"]:
+            if task["reasoning_status"] in REASONING_GAPS:
+                gaps[task["reasoning_status"]] = gaps.get(task["reasoning_status"], 0) + 1
         block = (START + "\n<!-- impact-checkpoint:v1 -->\n"
                  "Processed source revisions; NOT evidence of completed reviews.\n```json\n"
-                 + json.dumps({"commits": after["commits"]}, sort_keys=True) + "\n```\n" + END)
+                 + json.dumps({"commits": after["commits"], "reasoning_gaps": gaps}, sort_keys=True)
+                 + "\n```\n" + END)
         upsert(policy["checkpoint_repo"], checkpoints, "<!-- impact-checkpoint:v1 -->",
                "change-impact: processed revisions (not adoption status)", block)
+        if gaps:
+            print(f"Reasoning incomplete {json.dumps(gaps, sort_keys=True)}; issues saved with a "
+                  "pending AI recommendation; checkpoint advanced and gap recorded.")
     print(json.dumps({"changed": len(report["changed"]), "reviews": len(report["tasks"]),
                       "applied": args.apply, "output": args.output}))
+    if args.apply and {t["reasoning_status"] for t in report["tasks"]} & {"failed", "not-configured"}:
+        return 2  # A provider/configuration fault stays visible even though progress was saved.
     return 1 if args.command == "status" and not report["complete"] else 0
 
 

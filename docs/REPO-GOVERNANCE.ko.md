@@ -302,7 +302,7 @@ Audit/apply 엔진은 작은 module로 나뉜다.
 | `rulesets` | org/repo ruleset | 가능, 플랜 미지원은 unsupported |
 | `actions` | token permission, fork approval, allowed actions | 가능 |
 | `security` | secret scanning, push protection, Dependabot | 가능, repo visibility/plan 의존 |
-| `review_request` | 활성 멤버 전원 review request 기준 | 템플릿/CODEOWNERS 생성, API 요청은 PR tooling |
+| `review_request` | 활성 멤버 전원 review request 기준. `codeowners` module이 CODEOWNERS 전원 행을 `members.yaml`과 대조 | audit only. CODEOWNERS는 생성하지 않으며 drift는 대상 repo PR로 고친다. API 요청은 PR tooling |
 | `templates` | CODEOWNERS, SECURITY, PR template | PR 생성 또는 patch |
 | `workflows` | required workflow 존재와 위험 패턴 | PR 생성 또는 warning |
 | `secrets` | required secret 이름 존재 여부 | audit only |
@@ -465,7 +465,16 @@ HypeProof repo의 기본값은 "작성자를 제외한 활성 멤버 전원에�
 count와는 별개다.
 
 - 활성 멤버 목록은 `policy/members.yaml`이 원천이다.
-- `CODEOWNERS` 템플릿은 모든 활성 멤버를 catch-all owner로 둔다.
+- `CODEOWNERS` 템플릿은 모든 활성 멤버를 catch-all owner로 둔다. 멤버 명단은
+  생성되지 않고 사람이 적는다. 대신 `audit.py`가 대조한다.
+  - 전원 행: `*` catch-all, 또는 admin이 아닌 멤버를 한 명이라도 적은 행. admin만
+    적은 행(예: `/policy/ @jayleekr @JeHyeong2`)은 maintainer 전용으로 보고 대조하지 않는다.
+  - `--offline`(CI `repo-governance (policy validation)`)은 harness의
+    `.github/CODEOWNERS`와 `policy/templates/common/CODEOWNERS`를 검사한다.
+    `members.yaml`에 멤버를 추가·제거하는 PR은 두 파일을 같이 고쳐야 통과한다.
+  - live audit은 `collaborators.manage: members` profile repo의 기본 브랜치
+    CODEOWNERS를 읽어 `codeowners.all_member_rows` finding으로 drift를 보고한다.
+    CODEOWNERS 파일이 없는 repo와 admin 전용 profile(release repo)은 대상이 아니다.
 - GitHub가 PR 작성자 본인을 reviewer로 받을 수 없으면 예외로 본다.
 - release repo처럼 사람이 직접 개발하지 않는 repo도 정책상 reviewer request 기준은
   유지하되, 실제 변경은 source repo release workflow나 maintainer PR에서만 발생한다.

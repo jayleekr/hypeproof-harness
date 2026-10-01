@@ -29,6 +29,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `skills/hype-pr/` | criteria 링크 점검 + 에이전트 영향 평가를 묶어 PR을 생성하는 스킬 | 3 consumers `.claude/skills/` |
 | `skills/weekly-loop/` | 회의록 → Context/Tasks/Owner/ETA 이슈 분해·발행 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hype-deliver/` | 사용자 가시 수직 기능을 구현부터 머지·배포·실제품 확인까지 소유하는 Astra Captain 스킬 | 3 consumers `.claude/skills/` |
+| `skills/hype-align/` | Next / record / check / drift verdicts over a product requirement ledger, built on `scripts/work-discovery/discover.py` | 3 consumers `.claude/skills/` |
 | `skills/hype-verify/` | 새 구현 SHA 또는 인수 revision만 독립 검증하는 스킬 | 3 consumers `.claude/skills/` |
 | `skills/hype-intent/` | 실제 제품 모호성만 해결하는 선택적 Intent specialist | 3 consumers `.claude/skills/` |
 | `skills/hype-studio/` | 비중첩 Studio 하위 작업용 선택적 specialist | 3 consumers `.claude/skills/` |
@@ -55,7 +56,7 @@ canonical source로 둔다. 루트의 `CLAUDE.md`, `AGENTS.md`, `OPENCLAW.md`는
 | `scripts/docs-harness/` | dev docs manifest/frontmatter/source-path/quality gate | 3 consumers `scripts/docs-harness/` |
 | `scripts/hype-review/` | 내게 온 PR 리뷰 요청 조회 + 역할별 워크시트 생성 | 3 consumers `scripts/hype-review/` |
 | `scripts/hype-pr/` | PR 생성 시 active 멤버 reviewer 요청 + auto-merge eligibility 판정 | 3 consumers `scripts/hype-pr/` |
-| `scripts/security/` | high-confidence 시크릿 스캐너 (`check-secrets.sh`) | 3 consumers `scripts/security/` |
+| `scripts/security/check-secrets.sh` | high-confidence 시크릿 스캐너 | 3 consumers `scripts/security/check-secrets.sh` (**파일 단위** — 디렉토리는 consumer 소유) |
 | `scripts/weekly-harness/` | weekly cycle 이슈 Owner/ETA 검증 + 번다운 리포트 | 3 consumers `scripts/weekly-harness/` |
 | `docs/studio-quality-dashboard.html` | 강의별 HypeProof Studio 사용 가능 여부를 보는 quality dashboard | (harness-local) |
 | `scripts/studio-quality-dashboard/` | 강의별 단일 JSON 생성 + G1/G2/G3 GitHub 이슈 발행 CLI | (harness-local) |
@@ -140,12 +141,25 @@ git commit && git push origin main
 
 # 2. 모든 consumer로 동기
 bash scripts/sync.sh --check          # drift 미리보기 (read-only)
-bash scripts/sync.sh --check --preserve-extra # canonical drift 검사 + consumer-only 파일 보고/허용
-bash scripts/sync.sh --preserve-extra # canonical overlay, consumer-only 파일 보존
-bash scripts/sync.sh --commit         # rsync + 각 consumer main에 커밋
+bash scripts/sync.sh --check --preserve-extra # inspect canonical drift; allow only manifest files
+bash scripts/sync.sh --preserve-extra # preserve exact consumer-owned paths in .harness-preserve
+bash scripts/sync.sh --commit         # 각 consumer에 sync/harness-<sha7> 브랜치를 따서 커밋
 
-# 3. 각 consumer push (또는 PR — harness 변경은 피어리뷰 권장)
+# 3. 각 consumer에서 그 브랜치를 push하고 PR (main 직접 push 금지)
 ```
+
+apply·`--commit`은 **쓰기 전에 모든 consumer를 먼저 점검**한다. `origin`이 있는
+consumer는 fetch한 뒤 다음 중 하나라도 걸리면 아무 것도 쓰지 않고 중단하며, 이유와
+해결 명령을 출력한다.
+
+- `main`이 origin/main보다 뒤처졌거나 origin/main에 없는 로컬 커밋이 있다
+- `main`이 아닌 브랜치에 있다(이전 sync가 만든 `sync/harness-<sha7>`은 예외)
+- 벤더 경로 밖에 수정·미추적 파일이 있다(벤더 경로의 잔여물은 새 sync가 덮어쓴다)
+
+통과하면 origin/main에서 `sync/harness-<sha7>` 브랜치를 새로 따서 거기에 쓴다.
+`ALLOW_ANY_BRANCH=1`은 브랜치를 바꾸지 않고 현재 브랜치에 쓰지만, origin/main보다
+뒤처진 checkout은 여전히 거부한다. `origin`이 없는 로컬 repo(CI mock)는 예전처럼
+제자리에 쓴다.
 
 **새 스킬을 추가할 때** — `skills/<name>/`만 만들면 harness repo에서 `/<name>`이
 잡히지 않는다. `.claude/skills/<name>` 등록 심링크가 필요한데, 손으로 만들지 말고
@@ -163,7 +177,13 @@ git config core.hooksPath .githooks   # (선택) 커밋 전 자동 검사 훅 �
 - Git 신원은 각 consumer의 ambient config 그대로 — 스크립트가 override하지 않는다
 - `rsync --delete`가 consumer-only 파일을 지우려 하면 abort — `--force-delete`로 명시 우회
 - consumer-only 파일을 의도적으로 유지해야 하면 `--preserve-extra`를 사용한다. 이 모드는
-  extra를 출력하되 canonical 파일의 누락·변경은 계속 실패시키며 파일을 삭제하지 않는다.
+  consumer 루트의 `.harness-preserve`에 적은 **정확한 파일 경로만** 보존한다. 예:
+  `scripts/notify/requirements.txt` (한 줄에 하나, 빈 줄과 `#` 주석 허용).
+  디렉터리·glob·절대 경로·`..`·심링크·현재 canonical 파일·버전 stamp는 허용하지 않는다.
+  manifest는 consumer가 소유하며 먼저 커밋한다. 목록에 없는 extra(삭제된 canonical 포함)는
+  check에서 실패하고 apply에서도 삭제 전 중단한다. 목록에 적힌 파일에는 rsync protect를
+  적용하되 `--delete`는 유지한다. 알려진 삭제가 필요하면 별도로 검토한 `--force-delete`를
+  사용한다. 두 옵션은 함께 쓸 수 없다. 기존 blanket overlay 사용자는 manifest를 먼저 추가한다.
 
 ### 🔎 리뷰어 — 내게 온 PR 확인
 
@@ -331,6 +351,10 @@ Vendor를 고른 이유는 [migration report][migration]에.
 | Jinyong Shin | [`@JinyongShin`](https://github.com/JinyongShin) | `write` | Onboarding + 기여 |
 | TJ Kang | [`@TJ-kr`](https://github.com/TJ-kr) | `write` | Onboarding + 기여 |
 | Jkim | [`@ico1036`](https://github.com/ico1036) | `write` | Onboarding + 기여 |
+| Nick | [`@rabqatab`](https://github.com/rabqatab) | `write` | Onboarding + 기여 |
+| Yoda | [`@J3llyBe4n`](https://github.com/J3llyBe4n) | `write` | Onboarding + 기여 |
+
+권한 정본은 [`policy/members.yaml`](policy/members.yaml)이다. 이 표와 다르면 정책 파일이 맞다.
 
 멤버는 온보딩 때 한 번 clone한다. 일상은 자기 consumer repo에서. shared
 콘텐츠 개선은 PR로.

@@ -23,14 +23,33 @@ def snap(*nodes):
     return {"commits": {n["repo"]: "a" * 40 for n in nodes}, "nodes": {n["id"]: n for n in nodes}}
 
 
-def test_intent_change_reviews_descendants_and_upward_consistency_not_siblings():
+def test_intent_change_reviews_direct_children_and_upward_consistency_not_siblings():
     before = snap(node("MISSION"), node("INT-A", ["MISSION"]), node("INT-B", ["MISSION"]),
                   node("REQ-A", ["INT-A"]), node("TEST-A", ["REQ-A"], stage="test"))
     after = copy.deepcopy(before)
     after["nodes"]["INT-A"]["revision"] = "new"
     tasks = m.plan(before, after)["tasks"]
-    assert {t["id"] for t in tasks} == {"INT-A", "REQ-A", "TEST-A"}
+    # TEST-A is a grandchild: it joins a round only when REQ-A itself changes.
+    assert {t["id"] for t in tasks} == {"INT-A", "REQ-A"}
     assert next(t for t in tasks if t["id"] == "INT-A")["parents"] == ["MISSION"]
+    after["nodes"]["REQ-A"]["revision"] = "new"
+    tasks = m.plan(before, after)["tasks"]
+    assert {t["id"] for t in tasks} == {"INT-A", "REQ-A", "TEST-A"}
+    assert next(t for t in tasks if t["id"] == "TEST-A")["causes"] == ["REQ-A"]
+
+
+def test_one_upstream_edit_does_not_fan_out_to_the_whole_graph():
+    # Issue #255: one table edit in a strategy node re-opened 239 reviews.
+    chain = [node("LAB-ROLES", stage="strategy")]
+    for depth in range(1, 6):
+        parent = chain[depth - 1]["id"] if depth == 1 else f"N{depth - 1}-0"
+        chain += [node(f"N{depth}-{i}", [parent]) for i in range(3)]
+    before = snap(*chain)
+    after = copy.deepcopy(before)
+    after["nodes"]["LAB-ROLES"]["revision"] = "new"
+    tasks = m.plan(before, after)["tasks"]
+    assert sorted(t["id"] for t in tasks) == ["LAB-ROLES", "N1-0", "N1-1", "N1-2"]
+    assert all(t["causes"] == ["LAB-ROLES"] for t in tasks)
 
 
 def test_removed_mapping_still_propagates_old_edges():
@@ -56,11 +75,16 @@ def test_diamond_deduplicates_and_new_origin_version_invalidates_review():
     after = copy.deepcopy(before)
     after["nodes"]["PH-A"]["revision"] = "v2"
     tasks = m.plan(before, after)["tasks"]
-    assert len(tasks) == 4
-    first = next(t for t in tasks if t["id"] == "REQ-A")
+    assert {t["id"] for t in tasks} == {"PH-A", "INT-A", "INT-B"}
+    first = next(t for t in tasks if t["id"] == "INT-A")
     after["nodes"]["PH-A"]["revision"] = "v3"
-    second = next(t for t in m.plan(before, after)["tasks"] if t["id"] == "REQ-A")
+    second = next(t for t in m.plan(before, after)["tasks"] if t["id"] == "INT-A")
     assert first["revision"] != second["revision"]
+    # Both parents of the diamond change: REQ-A is reviewed once, for both causes.
+    after["nodes"]["INT-A"]["revision"] = after["nodes"]["INT-B"]["revision"] = "v2"
+    tasks = m.plan(before, after)["tasks"]
+    assert len(tasks) == 4
+    assert next(t for t in tasks if t["id"] == "REQ-A")["causes"] == ["INT-A", "INT-B"]
 
 
 def test_section_boundary_and_missing_heading_fail_closed():
@@ -103,21 +127,70 @@ def test_oversized_context_is_not_silently_truncated():
     assert report["tasks"][0]["reasoning_status"] == "context-too-large"
 
 
-def test_upsert_is_idempotent_preserves_human_text_and_reopens(monkeypatch):
+def test_upsert_is_idempotent_preserves_human_text_and_never_reopens(monkeypatch):
     inventory, calls = [], []
     def api(path, method, payload):
-        calls.append((method, payload))
-        return {"number": 1, "html_url": "https://github.com/x/y/issues/1", "state": "open", **payload}
+        calls.append((path, method, payload))
+        result = {"number": 1, "html_url": "https://github.com/x/y/issues/1", "state": "open", **payload}
+        result["assignees"] = [{"login": a} for a in payload.get("assignees", [])]
+        return result
     monkeypatch.setattr(m, "gh", api)
     block = m.START + "\n<!-- impact-task:INT-A -->\nreview\n" + m.END
-    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block)
+    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block, "owner")
     inventory[0]["body"] += "\nHuman decision; do not erase."
-    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block)
+    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block, "owner")
     assert len(calls) == 1
     inventory[0]["state"] = "closed"
-    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block + "\n")
-    assert calls[-1][0] == "PATCH"
-    assert "Human decision" in calls[-1][1]["body"]
+    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block + "\n", "owner",
+             "new revision notice")
+    (_, patch, payload), (path, post, comment) = calls[-2:]
+    assert patch == "PATCH" and "Human decision" in payload["body"]
+    assert "state" not in payload and "assignees" not in payload  # closed stays closed, unassigned
+    assert (path, post, comment) == ("repos/x/y/issues/1/comments", "POST", {"body": "new revision notice"})
+    # An open issue still gets the owner assigned, and no notice comment.
+    inventory[0]["state"] = "open"
+    m.upsert("x/y", inventory, "<!-- impact-task:INT-A -->", "Review", block + "\n\n", "owner", "unused")
+    assert calls[-1][1] == "PATCH" and calls[-1][2]["assignees"] == ["owner"]
+    assert "state" not in calls[-1][2]
+
+
+def test_sync_comments_on_a_closed_review_once_per_revision_instead_of_reopening(monkeypatch):
+    repo = "jayleekr/hypeprooflab"
+    store, calls = [], []
+    def api(path, method, payload):
+        calls.append((path, method, payload))
+        if path.endswith("/comments"):
+            return {"html_url": "https://github.com/c"}
+        if method == "POST":
+            item = {"number": len(store) + 1, "state": "open", **payload,
+                    "html_url": f"https://github.com/{repo}/issues/{len(store) + 1}"}
+            store.append(item)
+            return copy.deepcopy(item)
+        item = next(i for i in store if i["number"] == int(path.rsplit("/", 1)[1]))
+        item.update(payload)
+        return copy.deepcopy(item)
+    monkeypatch.setattr(m, "gh", api)
+    monkeypatch.setattr(m, "pages", lambda _: copy.deepcopy(store))
+    policy = {"repositories": {repo: {}}}
+    before = snap(node("INT-A"))
+    m.sync(m.plan({"commits": {}, "nodes": {}}, before), policy)
+    task_issue = next(i for i in store if "impact-task:INT-A" in i["body"])
+    task_issue["state"] = "closed"  # a person closed it
+    after = copy.deepcopy(before)
+    after["nodes"]["INT-A"]["revision"] = "new"
+    report = m.plan(before, after)
+    calls.clear()
+    m.sync(report, policy)
+    assert task_issue["state"] == "closed"
+    assert all(p.get("state") != "open" for _, _, p in calls)
+    notices = [p["body"] for path, _, p in calls if path == f"repos/{repo}/issues/{task_issue['number']}/comments"]
+    assert len(notices) == 1 and report["tasks"][0]["revision"] in notices[0]
+    assert "source evidence" not in notices[0]
+    # Same review revision, different source head: body refresh, no second notice.
+    report["head"] = {repo: "b" * 40}
+    calls.clear()
+    m.sync(report, policy)
+    assert not [p for path, _, p in calls if path.endswith(f"/{task_issue['number']}/comments")]
 
 
 def test_ambiguous_markers_fail_instead_of_overwriting():
@@ -310,19 +383,53 @@ def test_later_unknown_revokes_earlier_acceptance():
     assert m.resolution(task, comments, {"ownership_triage": []}) is None
 
 
-def test_failed_model_does_not_advance_checkpoint(monkeypatch, tmp_path):
+def checkpoint_json(block):
+    import re
+    return json.loads(re.search(r"```json\n(.*?)\n```", block, re.S)[1])
+
+
+def test_failed_model_advances_checkpoint_but_stays_visible(monkeypatch, tmp_path):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
     monkeypatch.setattr(m, "preflight", lambda _: {})
     monkeypatch.setattr(m, "snapshot", lambda *_: snap(node("INT-A")))
     monkeypatch.setattr(m.Reader, "resolve", lambda *_: "a" * 40)
     monkeypatch.setattr(m, "pages", lambda _: [])
     monkeypatch.setattr(m, "model_call", lambda _: lambda _: (_ for _ in ()).throw(ValueError("provider outage")))
-    published = []
+    published, saved = [], []
     monkeypatch.setattr(m, "sync", lambda report, _: published.append(report))
-    monkeypatch.setattr(m, "upsert", lambda *_: pytest.fail("checkpoint advanced after model failure"))
+    monkeypatch.setattr(m, "upsert", lambda *args: saved.append(args[4]))
     monkeypatch.setattr("sys.argv", ["impact", "scan", "--reason", "--apply", "--output", str(tmp_path / "out.json")])
-    assert m.main() == 2
+    assert m.main() == 2  # provider fault is still a red run...
     assert published[0]["tasks"][0]["reasoning_status"] == "failed"
+    # ...but progress is saved: the next run does not re-plan the same round.
+    assert checkpoint_json(saved[0]) == {"commits": snap(node("INT-A"))["commits"],
+                                         "reasoning_gaps": {"failed": 1}}
+
+
+def test_budget_exhaustion_advances_checkpoint_and_records_the_gap(monkeypatch, tmp_path):
+    # Issue #255: 8 model calls against 200+ tasks held the checkpoint for days.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setattr(m, "preflight", lambda _: {})
+    after = snap(*(node(f"INT-{i}") for i in range(5)))
+    monkeypatch.setattr(m, "snapshot", lambda *_: after)
+    monkeypatch.setattr(m.Reader, "adopted", lambda *_: True)
+    monkeypatch.setattr(m, "pages", lambda _: [])
+    monkeypatch.setattr(m, "restore_recommendations", lambda *_: None)
+    verdict = {"disposition": "no-impact", "rationale": "reason", "evidence_ids": ["INT-0"]}
+    monkeypatch.setattr(m, "model_call", lambda _: lambda prompt: {**verdict, "evidence_ids": [
+        next(iter(json.loads(prompt)["nodes"]))]})
+    monkeypatch.setattr(m, "sync", lambda *_: None)
+    saved = []
+    monkeypatch.setattr(m, "upsert", lambda *args: saved.append(args[4]))
+    policy = json.loads((ROOT / "policy/change-impact.json").read_text())
+    policy["max_model_calls"] = 2
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(policy))
+    monkeypatch.setattr("sys.argv", ["impact", "scan", "--reason", "--apply", "--policy", str(policy_path),
+                                     "--output", str(tmp_path / "out.json")])
+    assert m.main() == 0
+    assert checkpoint_json(saved[0])["reasoning_gaps"] == {"budget-exhausted": 3}
+    assert "INT-" not in saved[0]  # counts only, never node IDs, in the public checkpoint
 
 
 def test_partial_checkpoint_cannot_skip_repository_history(monkeypatch, tmp_path):
@@ -425,7 +532,7 @@ def test_main_advancing_keeps_pinned_checkpoint_for_next_scan(monkeypatch, tmp_p
     monkeypatch.setattr(m, "upsert", lambda *args: saved.append(args[-1]))
     monkeypatch.setattr("sys.argv", ["impact", "scan", "--apply", "--output", str(tmp_path / "report.json")])
     assert m.main() == 0
-    assert json.dumps({"commits": after["commits"]}, sort_keys=True) in saved[0]
+    assert checkpoint_json(saved[0])["commits"] == after["commits"]
 
 
 def test_pr_preview_issue_transport_updates_same_issue_and_preserves_human_text(monkeypatch):
@@ -570,3 +677,160 @@ def test_unknown_or_malformed_text_still_fails_utf8(transport, monkeypatch):
         with pytest.raises(UnicodeDecodeError):
             reader.read("x/y", "a" * 40, path)
     assert isinstance(reader.read("x/y", "a" * 40, "protocol.PDF"), m.BinarySource)
+
+
+class FakeIssues:
+    """In-memory Issues API: POST/PATCH issues and comments, list via `pages`."""
+
+    def __init__(self, repo):
+        self.repo, self.issues, self.comments, self.calls = repo, [], {}, []
+
+    def gh(self, path, method="GET", payload=None):
+        self.calls.append((path, method, payload))
+        if path.endswith("/comments"):
+            number = int(path.split("/")[-2])
+            if method == "POST":
+                self.comments.setdefault(number, []).append(payload["body"])
+                return {"html_url": f"https://github.com/{self.repo}/issues/{number}#c"}
+            return []
+        if method == "POST":
+            number = len(self.issues) + 1
+            item = {"number": number, "state": "open", "comments": 0, **payload,
+                    "html_url": f"https://github.com/{self.repo}/issues/{number}"}
+            self.issues.append(item)
+            return copy.deepcopy(item)
+        item = self.issue(int(path.rsplit("/", 1)[1]))
+        item.update(payload)
+        return copy.deepcopy(item)
+
+    def pages(self, _path):
+        return copy.deepcopy(self.issues)
+
+    def issue(self, number):
+        return next(i for i in self.issues if i["number"] == number)
+
+
+def test_one_adoption_epic_per_repo_is_updated_in_place_and_supersedes_wave_epics(monkeypatch):
+    repo = "jayleekr/hypeprooflab"
+    api = FakeIssues(repo)
+    # A per-wave Epic left by the previous engine version (65 of these were open).
+    api.gh(f"repos/{repo}/issues", "POST", {"title": "change-impact: adoption abc",
+           "body": m.START + "\n<!-- impact-wave:abc -->\n## Change adoption\n" + m.END})
+    monkeypatch.setattr(m, "gh", api.gh)
+    monkeypatch.setattr(m, "pages", api.pages)
+    policy = {"repositories": {repo: {}}}
+    first = snap(node("INT-A"), node("INT-B"))
+    m.sync(m.plan({"commits": {}, "nodes": {}}, first), policy)
+    second = copy.deepcopy(first)
+    second["nodes"]["INT-A"]["revision"] = "new"
+    m.sync(m.plan(first, second), policy)
+    third = copy.deepcopy(second)
+    third["nodes"]["INT-B"]["revision"] = "new"
+    m.sync(m.plan(second, third), policy)
+    epics = [i for i in api.issues if m.EPIC_MARKER in i["body"]]
+    assert len(epics) == 1 and epics[0]["state"] == "open"
+    assert epics[0]["title"] == "change-impact: adoption"
+    assert "INT-B" in epics[0]["body"] and "INT-A" not in epics[0]["body"]  # latest round
+    legacy = api.issue(1)
+    assert legacy["state"] == "closed" and legacy["state_reason"] == "not_planned"
+    assert len(api.comments[1]) == 1 and epics[0]["html_url"] in api.comments[1][0]
+    tasks = [i for i in api.issues if "impact-task:" in i["body"]]
+    assert len(tasks) == 2
+    assert all(epics[0]["html_url"] in i["body"] for i in tasks)  # one stable Epic URL
+
+
+def test_finished_pr_previews_close_and_open_ones_stay(monkeypatch):
+    repo = "jayleekr/hypeprooflab"
+    api = FakeIssues(repo)
+    for number in (5, 6, 7):
+        api.gh(f"repos/{repo}/issues", "POST", {"title": f"change-impact: PR #{number} preview",
+               "body": m.START + f"\n<!-- impact-pr-preview:{number} -->\n" + m.END})
+    api.issue(3)["state"] = "closed"  # a person already closed #7's preview
+    monkeypatch.setattr(m, "gh", api.gh)
+    # PR 6 is open but beyond max_prs_per_repo: its preview must survive the slice.
+    assert m.close_finished_previews(repo, api.issues, {6, 8}) == [1]
+    assert api.issue(1)["state"] == "closed" and "PR #5" in api.comments[1][0]
+    assert api.issue(2)["state"] == "open" and 2 not in api.comments
+    assert 3 not in api.comments  # already closed: no noise
+
+
+def test_pr_reports_close_previews_only_when_publishing(monkeypatch):
+    repo = "jayleekr/hypeprooflab"
+    preview = {"number": 1, "state": "open", "body": "<!-- impact-pr-preview:5 -->"}
+    seen = []
+    def pages(path):
+        if "/pulls" in path:
+            return [{"number": 6, "base": {"ref": "dev"}, "head": {"repo": {"full_name": repo}}}]
+        return [preview]
+    monkeypatch.setattr(m, "pages", pages)
+    monkeypatch.setattr(m, "close_finished_previews", lambda *args: seen.append(args[1:]))
+    policy = {"repositories": {repo: {}}, "max_prs_per_repo": 0, "pr_report_transport": "issue"}
+    m.pr_reports(None, policy, None, False, True)
+    assert seen == [([preview], {6})]  # the full open list, not the max_prs slice
+    seen.clear()
+    m.pr_reports(None, policy, None, False, False)  # a dry run never closes anything
+    assert seen == []
+
+
+def status_issue(number, nid, rev, target, comments):
+    return {"number": number, "comments": comments, "state": "open",
+            "html_url": f"https://github.com/x/y/issues/{number}",
+            "body": f"<!-- impact-task:{nid} -->\nStage: `intent` · revision: `{rev}`\n"
+                    f"Target revision: `{target}`\n"}
+
+
+def test_status_fetches_comments_only_for_resolvable_issues(monkeypatch):
+    rev, target, stale = "1" * 64, "2" * 64, "3" * 64
+    after = {"nodes": {f"INT-{c}": {"owner": "owner", "stage": "intent", "revision": target} for c in "ABCD"}}
+    issues = [status_issue(1, "INT-A", rev, target, 0),   # no comment: cannot resolve
+              status_issue(2, "INT-B", rev, stale, 3),    # stale body: cannot resolve
+              status_issue(3, "INT-C", rev, target, 2),   # resolved
+              status_issue(4, "INT-D", rev, target, 1)]   # commented, not resolved
+    fetched = []
+    good = {"user": {"login": "owner"}, "html_url": "c", "body": f"/impact-resolve {rev} no-impact " + "x" * 30}
+    def pages(path):
+        if path.endswith("/comments"):
+            fetched.append(path)
+            return [good] if "/3/" in path else []
+        return issues
+    monkeypatch.setattr(m, "pages", pages)
+    pending, tracked = m.adoption_status({"repositories": {"x/y": {}}, "ownership_triage": []}, after)
+    assert sorted(fetched) == ["repos/x/y/issues/3/comments", "repos/x/y/issues/4/comments"]
+    assert sorted(pending) == [f"https://github.com/x/y/issues/{n}" for n in (1, 2, 4)]
+    assert tracked == {"INT-A", "INT-B", "INT-C", "INT-D"}
+
+
+def test_status_and_idle_scan_skip_the_second_snapshot_when_nothing_moved(monkeypatch, tmp_path):
+    commits = {"jayleekr/hypeprooflab": "a" * 40, "jayleekr/hypeproof-studio": "b" * 40,
+               "jayleekr/hypeproof-harness": "c" * 40}
+    after = {**snap(node("PH-A", stage="philosophy")), "commits": commits}
+    calls = []
+    def snapshot(_reader, _policy, refs):
+        calls.append(refs)
+        return after
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    checkpoint = {"body": "<!-- impact-checkpoint:v1 -->\n```json\n" + json.dumps({"commits": commits}) + "\n```"}
+    monkeypatch.setattr(m, "pages", lambda path: [checkpoint] if "hypeproof-harness/issues" in path else [])
+    monkeypatch.setattr(m, "adoption_status", lambda *_: ([], {"PH-A"}))
+    output = tmp_path / "status.json"
+    monkeypatch.setattr("sys.argv", ["impact", "status", "--output", str(output)])
+    assert m.main() == 0
+    assert len(calls) == 1
+    assert json.loads(output.read_text())["complete"] is True
+
+
+def test_content_root_flag_feeds_blob_reads_only_and_stays_in_scope(monkeypatch):
+    seen = []
+    def snapshot(reader, *_):
+        seen.append((reader.roots, reader.content_roots))
+        raise ValueError("stop after wiring")
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    monkeypatch.setattr("sys.argv", ["impact", "report", "--base", "jayleekr/hypeprooflab=main",
+                                     "--content-root", "jayleekr/hypeprooflab=/src/lab"])
+    with pytest.raises(ValueError, match="stop"):
+        m.main()
+    assert seen == [({}, {"jayleekr/hypeprooflab": "/src/lab"})]
+    monkeypatch.setattr("sys.argv", ["impact", "report", "--base", "jayleekr/hypeprooflab=main",
+                                     "--content-root", "someone/else=/src/other"])
+    with pytest.raises(ValueError, match="outside change-impact scope"):
+        m.main()

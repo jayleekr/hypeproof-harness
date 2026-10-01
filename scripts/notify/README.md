@@ -99,3 +99,12 @@ DISCORD_WEBHOOK_SEDIMENT="https://discord.com/api/webhooks/..." \
 - pyyaml 6.0+
 
 All of these are already in sediment's `pyproject.toml`. New consumers add them if not present.
+
+### Discord display name
+
+For `discord_webhook`, the configured channel `bot_name` takes precedence over
+`HP_NOTIFY_BOT_NAME`. If neither is non-empty, the payload omits `username` and
+Discord uses the webhook's configured name; the old hardcoded `Sediment` default
+is not sent. Other transports retain their existing call contract and do not
+receive the Discord-only display-name option. The regression test mocks HTTP and
+sends no real notification (`tests/notify/test_bot_name.py`).

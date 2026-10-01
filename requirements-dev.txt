@@ -4,3 +4,5 @@
 #   python3 -m pytest tests/
 -r requirements.txt
 pytest>=8,<9
+# scripts/notify 템플릿 렌더링 시험 (tests/notify)
+jinja2>=3.1,<4
