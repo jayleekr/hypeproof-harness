@@ -286,7 +286,8 @@ async def notify(
 
         t0 = time.time()
         try:
-            http_status, http_err = await trans.send(target, rendered)
+            send_opts = {"bot_name": spec["bot_name"]} if transport_name == "discord_webhook" and "bot_name" in spec else {}
+            http_status, http_err = await trans.send(target, rendered, **send_opts)
             elapsed = int((time.time() - t0) * 1000)
             if 200 <= http_status < 300:
                 result.routes_fired.append(RouteResult(

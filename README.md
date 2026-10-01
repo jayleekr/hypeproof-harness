@@ -141,6 +141,8 @@ git commit && git push origin main
 
 # 2. 모든 consumer로 동기
 bash scripts/sync.sh --check          # drift 미리보기 (read-only)
+bash scripts/sync.sh --check --preserve-extra # inspect canonical drift; allow only manifest files
+bash scripts/sync.sh --preserve-extra # preserve exact consumer-owned paths in .harness-preserve
 bash scripts/sync.sh --commit         # 각 consumer에 sync/harness-<sha7> 브랜치를 따서 커밋
 
 # 3. 각 consumer에서 그 브랜치를 push하고 PR (main 직접 push 금지)
@@ -174,6 +176,14 @@ git config core.hooksPath .githooks   # (선택) 커밋 전 자동 검사 훅 �
 - `--commit`은 `main` 위 + skill 외 변경 없을 때만 실행 (`ALLOW_ANY_BRANCH=1`로 우회)
 - Git 신원은 각 consumer의 ambient config 그대로 — 스크립트가 override하지 않는다
 - `rsync --delete`가 consumer-only 파일을 지우려 하면 abort — `--force-delete`로 명시 우회
+- consumer-only 파일을 의도적으로 유지해야 하면 `--preserve-extra`를 사용한다. 이 모드는
+  consumer 루트의 `.harness-preserve`에 적은 **정확한 파일 경로만** 보존한다. 예:
+  `scripts/notify/requirements.txt` (한 줄에 하나, 빈 줄과 `#` 주석 허용).
+  디렉터리·glob·절대 경로·`..`·심링크·현재 canonical 파일·버전 stamp는 허용하지 않는다.
+  manifest는 consumer가 소유하며 먼저 커밋한다. 목록에 없는 extra(삭제된 canonical 포함)는
+  check에서 실패하고 apply에서도 삭제 전 중단한다. 목록에 적힌 파일에는 rsync protect를
+  적용하되 `--delete`는 유지한다. 알려진 삭제가 필요하면 별도로 검토한 `--force-delete`를
+  사용한다. 두 옵션은 함께 쓸 수 없다. 기존 blanket overlay 사용자는 manifest를 먼저 추가한다.
 
 ### 🔎 리뷰어 — 내게 온 PR 확인
 

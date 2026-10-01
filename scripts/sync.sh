@@ -6,6 +6,7 @@
 #   sync.sh --check          read-only diff; exits 1 if any consumer drifts
 #   sync.sh --commit         apply + git stage/commit in each consumer (no push)
 #   sync.sh --force-delete   in apply, accept rsync --delete of files only in consumer
+#   sync.sh --preserve-extra preserve only exact files listed in consumer/.harness-preserve
 #
 # Consumers come from tests/consumers.txt (one path per line; ~ and ${VAR}
 # expanded; nonexistent paths are SKIPPED with a non-zero overall exit).
@@ -53,17 +54,21 @@ fi
 
 MODE="apply"
 FORCE_DELETE=0
-case "${1:-}" in
-  --check)         MODE="check" ;;
-  --commit)        MODE="commit" ;;
-  --force-delete)  FORCE_DELETE=1 ;;
-  --help|-h)
-    sed -n '/^# /{s/^# \{0,1\}//;p;}; /^[^#]/q' "$0"; exit 0 ;;
-  "") : ;;
-  *) echo "unknown arg: $1" >&2; exit 2 ;;
-esac
-# Second-arg form: sync.sh --commit --force-delete (allowed)
-[ "${2:-}" = "--force-delete" ] && FORCE_DELETE=1
+PRESERVE_EXTRA=0
+for arg in "$@"; do
+  case "$arg" in
+    --check)          MODE="check" ;;
+    --commit)         MODE="commit" ;;
+    --force-delete)   FORCE_DELETE=1 ;;
+    --preserve-extra) PRESERVE_EXTRA=1 ;;
+    --help|-h)
+      sed -n '/^# /{s/^# \{0,1\}//;p;}; /^[^#]/q' "$0"; exit 0 ;;
+    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+  esac
+done
+[ "$FORCE_DELETE" -eq 0 ] || [ "$PRESERVE_EXTRA" -eq 0 ] || {
+  echo "--force-delete and --preserve-extra are mutually exclusive" >&2; exit 2;
+}
 
 SKILLS=(skill-creator hype-review weekly-loop hype-pr hype-deliver hype-align hype-verify hype-intent hype-studio hype-chalk hype-coordinate hypeproof-operator) # vendored to consumer/.claude/skills/<name>/
 DOCS=(MEMBER-GUIDE.ko.md AGENT-GUIDE.ko.md DOCS-CONTRACT.ko.md HYPE-REVIEW.ko.md HYPE-PR.ko.md WEEKLY-LOOP.ko.md FIVE-SESSION-DELIVERY.ko.md WORK-DISCOVERY.ko.md) # vendored to consumer/docs/<file>
@@ -119,6 +124,59 @@ done < "$CONSUMERS_FILE"
 
 HARNESS_SHA="$(git rev-parse HEAD)"
 SYNC_BRANCH="sync/harness-${HARNESS_SHA:0:7}"
+
+# Preservation is an explicit file ownership declaration, never a directory glob.
+# Reject ambiguous paths before any consumer is written. Canonical files cannot
+# be excluded from updates by a consumer manifest.
+PRESERVE_PATHS=()
+load_preserve_manifest() {
+  local consumer="$1" manifest="$1/.harness-preserve" line path source x parent matched
+  PRESERVE_PATHS=()
+  [ "$PRESERVE_EXTRA" -eq 1 ] || return 0
+  [ ! -L "$manifest" ] || { echo "ABORT: preservation manifest must not be a symlink" >&2; return 2; }
+  [ -e "$manifest" ] || return 0
+  [ -f "$manifest" ] || { echo "ABORT: preservation manifest must be a regular file" >&2; return 2; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|\#*) continue ;; esac
+    case "$line" in
+      *[!a-zA-Z0-9_./-]*|/*|*/|*//*|HARNESS_VERSION|*/HARNESS_VERSION)
+        echo "ABORT: preservation entries must be exact relative file paths" >&2; return 2 ;;
+    esac
+    case "/$line/" in */../*|*/./*) echo "ABORT: unsafe preservation path" >&2; return 2 ;; esac
+    source=""; matched=0
+    for x in "${SKILLS[@]}"; do
+      case "$line" in ".claude/skills/$x/"*) source="$HARNESS_ROOT/skills/$x/${line#.claude/skills/$x/}"; matched=1 ;; esac
+    done
+    for x in "${SCRIPTS[@]}"; do
+      case "$line" in "scripts/$x/"*) source="$HARNESS_ROOT/$line"; matched=1 ;; esac
+    done
+    [ "$matched" -eq 1 ] || { echo "ABORT: preservation path is outside a vendored tree" >&2; return 2; }
+    [ ! -e "$source" ] && [ ! -L "$source" ] || { echo "ABORT: cannot preserve a canonical path" >&2; return 2; }
+    path="$consumer/$line"; parent="$path"
+    while [ "$parent" != "$consumer" ]; do
+      [ ! -L "$parent" ] || { echo "ABORT: preservation path traverses a symlink" >&2; return 2; }
+      parent="$(dirname "$parent")"
+    done
+    [ ! -e "$path" ] || [ -f "$path" ] || { echo "ABORT: preservation entry must name a regular file" >&2; return 2; }
+    PRESERVE_PATHS+=("$line")
+  done < "$manifest"
+}
+is_preserved() {
+  local path="$1" entry
+  for entry in "${PRESERVE_PATHS[@]:-}"; do [ "$path" = "$entry" ] && return 0; done
+  return 1
+}
+# Build anchored rsync receiver-protection rules, while retaining --delete.
+preserve_filters() {
+  local prefix="$1" entry
+  RSYNC_PRESERVE=(--delete)
+  for entry in "${PRESERVE_PATHS[@]:-}"; do
+    case "$entry" in "$prefix/"*) RSYNC_PRESERVE+=("--filter=P /${entry#"$prefix/"}") ;; esac
+  done
+}
+for C in "${CONSUMERS[@]}"; do
+  [ ! -d "$C" ] || load_preserve_manifest "$C"
+done
 
 # --- consumer pre-flight (apply / commit) ---
 # Sync writes into whatever the consumer has checked out. A checkout far behind
@@ -253,6 +311,7 @@ for C in "${CONSUMERS[@]}"; do
     continue
   fi
   found=$((found+1))
+  load_preserve_manifest "$C"
   for S in "${SKILLS[@]}"; do
     SRC="$HARNESS_ROOT/skills/$S"
     DST="$C/.claude/skills/$S"
@@ -271,7 +330,14 @@ for C in "${CONSUMERS[@]}"; do
         while IFS= read -r -d '' f; do
           rel="${f#$DST/}"
           [ "$rel" = "HARNESS_VERSION" ] && continue
-          [ -f "$SRC/$rel" ] || { echo "EXTRA  $CNAME/$S/$rel"; d=1; overall_drift=1; }
+          if [ ! -f "$SRC/$rel" ]; then
+            if is_preserved ".claude/skills/$S/$rel"; then
+              echo "EXTRA  $CNAME/$S/$rel (preserved)"
+            else
+              echo "EXTRA  $CNAME/$S/$rel"
+            fi
+            if ! is_preserved ".claude/skills/$S/$rel"; then d=1; overall_drift=1; fi
+          fi
         done < <(find "$DST" -type f -print0)
       fi
       [ "$d" -eq 0 ] && echo "OK     $CNAME/$S"
@@ -285,7 +351,7 @@ for C in "${CONSUMERS[@]}"; do
       while IFS= read -r -d '' f; do
         rel="${f#$DST/}"
         [ "$rel" = "HARNESS_VERSION" ] && continue
-        [ -f "$SRC/$rel" ] || will_delete+=("$rel")
+        [ -f "$SRC/$rel" ] || is_preserved ".claude/skills/$S/$rel" || will_delete+=("$rel")
       done < <(find "$DST" -type f -print0)
     fi
     if [ "${#will_delete[@]}" -gt 0 ]; then
@@ -302,7 +368,8 @@ for C in "${CONSUMERS[@]}"; do
 
     # --- apply ---
     mkdir -p "$DST"
-    rsync -a --delete --exclude='HARNESS_VERSION' "$SRC/" "$DST/"
+    preserve_filters ".claude/skills/$S"
+    rsync -a "${RSYNC_PRESERVE[@]}" --exclude='HARNESS_VERSION' "$SRC/" "$DST/"
     echo "$HARNESS_SHA" > "$DST/HARNESS_VERSION"
 
     if [ "$MODE" = "commit" ]; then
@@ -341,7 +408,14 @@ for C in "${CONSUMERS[@]}"; do
         while IFS= read -r -d '' f; do
           rel="${f#$SCDST/}"
           [ "$rel" = "HARNESS_VERSION" ] && continue
-          [ -f "$SCSRC/$rel" ] || { echo "EXTRA  $CNAME/scripts/$SC/$rel"; d=1; overall_drift=1; }
+          if [ ! -f "$SCSRC/$rel" ]; then
+            if is_preserved "scripts/$SC/$rel"; then
+              echo "EXTRA  $CNAME/scripts/$SC/$rel (preserved)"
+            else
+              echo "EXTRA  $CNAME/scripts/$SC/$rel"
+            fi
+            if ! is_preserved "scripts/$SC/$rel"; then d=1; overall_drift=1; fi
+          fi
         done < <(find "$SCDST" -type f -print0)
       fi
       [ "$d" -eq 0 ] && echo "OK     $CNAME/scripts/$SC"
@@ -354,7 +428,7 @@ for C in "${CONSUMERS[@]}"; do
       while IFS= read -r -d '' f; do
         rel="${f#$SCDST/}"
         [ "$rel" = "HARNESS_VERSION" ] && continue
-        [ -f "$SCSRC/$rel" ] || will_delete+=("$rel")
+        [ -f "$SCSRC/$rel" ] || is_preserved "scripts/$SC/$rel" || will_delete+=("$rel")
       done < <(find "$SCDST" -type f -print0)
     fi
     if [ "${#will_delete[@]}" -gt 0 ]; then
@@ -367,7 +441,8 @@ for C in "${CONSUMERS[@]}"; do
     fi
 
     mkdir -p "$SCDST"
-    rsync -a --delete --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
+    preserve_filters "scripts/$SC"
+    rsync -a "${RSYNC_PRESERVE[@]}" --exclude='HARNESS_VERSION' "$SCSRC/" "$SCDST/"
     echo "$HARNESS_SHA" > "$SCDST/HARNESS_VERSION"
 
     if [ "$MODE" = "commit" ]; then
